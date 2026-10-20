@@ -4,7 +4,8 @@ use lightcraft_catalog::{Album, Photo, PhotoId};
 use lightcraft_develop::{CONTROLS, controls};
 use serde_json::{Value, json};
 
-use super::{CommandSpec, always, bad, has_active, raw_cmd};
+use super::params::{NoParams, params};
+use super::{CommandSpec, always, bad, cmd, has_active};
 use crate::{LibrarySource, Session};
 
 pub fn photo_summary(p: &Photo) -> Value {
@@ -60,9 +61,54 @@ fn album_json(a: &Album, all: &[Album], cat: &lightcraft_catalog::Catalog, depth
     v
 }
 
+params! {
+    /// Queries about one photo (default: the active one).
+    struct OnePhoto {
+        id: Option<PhotoId>,
+    }
+}
+
+params! {
+    /// `catalog.query`
+    struct Query {
+        filter: Option<lightcraft_catalog::Filter>,
+        sort: Option<lightcraft_catalog::Sort>,
+        offset: Option<u64>,
+        limit: Option<u64>,
+    }
+}
+
+params! {
+    /// `develop.controls`
+    struct Controls {
+        section: Option<lightcraft_develop::Section>,
+    }
+}
+
+params! {
+    /// `app.gpu`
+    struct Gpu {
+        enabled: Option<bool>,
+    }
+}
+
+params! {
+    /// `app.memoryBudget`
+    struct MemoryBudget {
+        mb: Option<f64>,
+    }
+}
+
+params! {
+    /// `journal.list`
+    struct Limit {
+        limit: Option<u64>,
+    }
+}
+
 /// The photo a query is about: `id` when given (which must be in the library), else the active one.
-fn photo_arg(s: &Session, p: &Value, c: &str) -> crate::Result<PhotoId> {
-    match p.get("id").and_then(Value::as_u64).map(PhotoId) {
+fn photo_arg(s: &Session, p: &OnePhoto, c: &str) -> crate::Result<PhotoId> {
+    match p.id {
         Some(id) if s.catalog.photo(id).is_some() => Ok(id),
         Some(id) => Err(bad(c, format!("no such photo {}", id.0))),
         None => s.active().ok_or_else(|| bad(c, "no photo")),
@@ -77,20 +123,18 @@ fn pagination_usize(value: u64) -> usize {
 
 pub fn specs() -> Vec<CommandSpec> {
     vec![
-        raw_cmd!(query "catalog.query", "Query Photos", [], None, "{filter?: Filter, sort?: Sort, offset?, limit?} — omit filter to list the current view", always, |s, p| {
-            let ids = if p.get("filter").is_some() || p.get("sort").is_some() {
-                let f = p.get("filter").map(|f| serde_json::from_value(f.clone())).transpose().map_err(|e| bad("catalog.query", e.to_string()))?.unwrap_or_default();
-                let so = p.get("sort").map(|f| serde_json::from_value(f.clone())).transpose().map_err(|e| bad("catalog.query", e.to_string()))?.unwrap_or_default();
-                s.catalog.query(&f, &so)
+        cmd!(query "catalog.query", "Query Photos", [], None, "{filter?: Filter, sort?: Sort, offset?, limit?} — omit filter to list the current view", Query, always, |s, p| {
+            let ids = if p.filter.is_some() || p.sort.is_some() {
+                s.catalog.query(&p.filter.unwrap_or_default(), &p.sort.unwrap_or_default())
             } else {
                 s.visible_cloned()
             };
-            let off = pagination_usize(p.get("offset").and_then(Value::as_u64).unwrap_or(0));
-            let lim = pagination_usize(p.get("limit").and_then(Value::as_u64).unwrap_or(200));
+            let off = pagination_usize(p.offset.unwrap_or(0));
+            let lim = pagination_usize(p.limit.unwrap_or(200));
             let items: Vec<Value> = ids.iter().skip(off).take(lim).filter_map(|id| s.catalog.photo(*id)).map(|p| photo_summary(p)).collect();
             Ok(json!({"total": ids.len(), "photos": items}))
         }),
-        raw_cmd!(query "catalog.stats", "Catalog Statistics", [], None, "{}", always, |s, _| {
+        cmd!(query "catalog.stats", "Catalog Statistics", [], None, "{}", NoParams, always, |s, _| {
             let all: Vec<_> = s.catalog.photos().filter(|p| p.in_library()).collect();
             Ok(json!({
                 "photos": all.len(),
@@ -103,7 +147,7 @@ pub fn specs() -> Vec<CommandSpec> {
                 "keywords": s.catalog.keywords(),
             }))
         }),
-        raw_cmd!(query "library.state", "Library State", [], None, "{}", always, |s, _| {
+        cmd!(query "library.state", "Library State", [], None, "{}", NoParams, always, |s, _| {
             let label = match (s.source, s.library_folder.as_deref()) {
                 (LibrarySource::LibraryFolder, Some(path)) => lightcraft_catalog::folders::folder_label(path),
                 _ => s.source.label(&s.catalog),
@@ -124,8 +168,8 @@ pub fn specs() -> Vec<CommandSpec> {
                 "clipboard": s.clipboard.is_some(),
             }))
         }),
-        raw_cmd!(query "photo.allMetadata", "All Metadata", [], None, "{id?} → {exif: [{group, tag, name, value}], xmp: [{name, value}]} — every EXIF / TIFF / GPS tag of the file and its XMP properties", always, |s, p| {
-            let id = photo_arg(s, p, "photo.allMetadata")?;
+        cmd!(query "photo.allMetadata", "All Metadata", [], None, "{id?} → {exif: [{group, tag, name, value}], xmp: [{name, value}]} — every EXIF / TIFF / GPS tag of the file and its XMP properties", OnePhoto, always, |s, p| {
+            let id = photo_arg(s, &p, "photo.allMetadata")?;
             let ph = s.catalog.photo(id).ok_or_else(|| super::bad("photo.allMetadata", "no such photo"))?.clone();
             let lightcraft_catalog::Source::File { path } = &ph.source else {
                 return Ok(json!({"exif": [], "xmp": [], "note": "a generated demo photo has no file"}));
@@ -147,12 +191,12 @@ pub fn specs() -> Vec<CommandSpec> {
                 .unwrap_or_default();
             Ok(json!({"exif": exif, "xmp": xmp}))
         }),
-        raw_cmd!(query "albums.list", "List Albums", [], None, "{}", always, |s, _| {
+        cmd!(query "albums.list", "List Albums", [], None, "{}", NoParams, always, |s, _| {
             let all: Vec<Album> = s.catalog.albums().cloned().collect();
             Ok(Value::Array(all.iter().filter(|a| a.parent.is_none()).map(|a| album_json(a, &all, &s.catalog, 0)).collect()))
         }),
-        raw_cmd!(query "photo.inspect", "Inspect Photo", [], None, "{id?}", always, |s, p| {
-            let id = photo_arg(s, p, "photo.inspect")?;
+        cmd!(query "photo.inspect", "Inspect Photo", [], None, "{id?}", OnePhoto, always, |s, p| {
+            let id = photo_arg(s, &p, "photo.inspect")?;
             let ph = s.catalog.photo(id).ok_or_else(|| bad("photo.inspect", "no such photo"))?;
             let mut v = serde_json::to_value(ph.as_ref()).unwrap_or_default();
             v["albums"] = json!(s.catalog.albums_of(id).iter().map(|a| a.0).collect::<Vec<_>>());
@@ -167,8 +211,8 @@ pub fn specs() -> Vec<CommandSpec> {
             }
             Ok(v)
         }),
-        raw_cmd!(query "develop.get", "Get Develop Settings", [], None, "{id?} → the photo's develop settings; `process` is the rendering process they are interpreted by (see develop.updateProcess)", always, |s, p| {
-            let id = photo_arg(s, p, "develop.get")?;
+        cmd!(query "develop.get", "Get Develop Settings", [], None, "{id?} → the photo's develop settings; `process` is the rendering process they are interpreted by (see develop.updateProcess)", OnePhoto, always, |s, p| {
+            let id = photo_arg(s, &p, "develop.get")?;
             Ok(s.develop_of(id)
                 .map(|d| {
                     let mut v = d.to_json();
@@ -180,9 +224,9 @@ pub fn specs() -> Vec<CommandSpec> {
                 })
                 .unwrap_or(Value::Null))
         }),
-        raw_cmd!(query "develop.controls", "List Develop Controls", [], None, "{section?} — every slider with range, default and current value", always, |s, p| {
+        cmd!(query "develop.controls", "List Develop Controls", [], None, "{section?} — every slider with range, default and current value", Controls, always, |s, p| {
             let d = s.active().and_then(|id| s.develop_of(id)).unwrap_or_default();
-            let sec = p.get("section").and_then(|v| serde_json::from_value::<lightcraft_develop::Section>(v.clone()).ok());
+            let sec = p.section;
             Ok(Value::Array(
                 CONTROLS
                     .iter()
@@ -202,10 +246,10 @@ pub fn specs() -> Vec<CommandSpec> {
                     .collect(),
             ))
         }),
-        raw_cmd!(query "presets.list", "List Presets", [], None, "{}", always, |s, _| {
+        cmd!(query "presets.list", "List Presets", [], None, "{}", NoParams, always, |s, _| {
             Ok(Value::Array(s.presets.iter().map(|p| json!({"id": p.id, "name": p.name, "group": p.group, "favorite": p.favorite, "builtin": p.builtin})).collect()))
         }),
-        raw_cmd!(query "profiles.list", "List Profiles", [], None, "{} — every profile (built-in, then imported LUTs marked `imported`) with its group and favourite flag", always, |s, _| {
+        cmd!(query "profiles.list", "List Profiles", [], None, "{} — every profile (built-in, then imported LUTs marked `imported`) with its group and favourite flag", NoParams, always, |s, _| {
             let favorite = |id: &str| s.profile_favorites.iter().any(|f| f == id);
             let builtin = crate::presets::PROFILES.iter().map(|p| json!({"id": p.id, "name": p.name, "group": p.group, "favorite": favorite(p.id)}));
             // imported LUT profiles too (#618), marked as in `profiles.menu`
@@ -213,9 +257,9 @@ pub fn specs() -> Vec<CommandSpec> {
                 s.lut_profiles.iter().map(|p| json!({"id": p.id, "name": p.name, "group": p.group, "favorite": favorite(&p.id), "imported": true}));
             Ok(Value::Array(builtin.chain(imported).collect()))
         }),
-        raw_cmd!(query "profiles.menu", "Profile Menu", [], None, "{} — favourites, recent (newest first) and groups", always, |s, _| Ok(s.profile_menu())),
-        raw_cmd!(query "history.list", "List History", [], None, "{id?} — returns {history: labels oldest first, cursor: index of the step the settings are at (later steps can be returned to), versions}", has_active, |s, p| {
-            let id = photo_arg(s, p, "history.list")?;
+        cmd!(query "profiles.menu", "Profile Menu", [], None, "{} — favourites, recent (newest first) and groups", NoParams, always, |s, _| Ok(s.profile_menu())),
+        cmd!(query "history.list", "List History", [], None, "{id?} — returns {history: labels oldest first, cursor: index of the step the settings are at (later steps can be returned to), versions}", OnePhoto, has_active, |s, p| {
+            let id = photo_arg(s, &p, "history.list")?;
             let ph = s.catalog.photo(id).ok_or_else(|| bad("history.list", "no such photo"))?;
             Ok(json!({
                 "history": ph.history.iter().map(|h| h.label.clone()).collect::<Vec<_>>(),
@@ -223,8 +267,8 @@ pub fn specs() -> Vec<CommandSpec> {
                 "versions": ph.versions.iter().map(|v| json!({"name": v.name, "created": v.created})).collect::<Vec<_>>(),
             }))
         }),
-        raw_cmd!(query "app.gpu", "GPU Rendering", [], None, "{enabled?: bool} — allow/forbid GPU rendering (CPU fallback; LIGHTCRAFT_GPU=0 forbids it for the process); returns {enabled, available, adapter, reason (why the GPU is off), lastFallback (latest render redone on the CPU, and why)}", always, |_, p| {
-            if let Some(on) = p.get("enabled").and_then(Value::as_bool) {
+        cmd!(query "app.gpu", "GPU Rendering", [], None, "{enabled?: bool} — allow/forbid GPU rendering (CPU fallback; LIGHTCRAFT_GPU=0 forbids it for the process); returns {enabled, available, adapter, reason (why the GPU is off), lastFallback (latest render redone on the CPU, and why)}", Gpu, always, |_, p| {
+            if let Some(on) = p.enabled {
                 lightcraft_gpu::set_enabled(on);
             }
             Ok(json!({
@@ -235,11 +279,11 @@ pub fn specs() -> Vec<CommandSpec> {
                 "lastFallback": lightcraft_gpu::last_fallback(),
             }))
         }),
-        raw_cmd!(query "library.memory", "Memory Usage", [], None, "{} — bytes held by each cache (decoded sources, rendered previews, GPU buffers; heap when instrumented)", always, |s, _| {
+        cmd!(query "library.memory", "Memory Usage", [], None, "{} — bytes held by each cache (decoded sources, rendered previews, GPU buffers; heap when instrumented)", NoParams, always, |s, _| {
             Ok(serde_json::to_value(s.memory_report()).unwrap_or_default())
         }),
-        raw_cmd!(query "app.memoryBudget", "Memory Budget", [], None, "{mb?: number} — set the memory budget shared by the caches (default: a quarter of RAM, at most 1536 MB); returns the report", always, |s, p| {
-            if let Some(mb) = p.get("mb").and_then(Value::as_f64) {
+        cmd!(query "app.memoryBudget", "Memory Budget", [], None, "{mb?: number} — set the memory budget shared by the caches (default: a quarter of RAM, at most 1536 MB); returns the report", MemoryBudget, always, |s, p| {
+            if let Some(mb) = p.mb {
                 if !(64.0..=1_048_576.0).contains(&mb) {
                     return Err(bad("app.memoryBudget", "mb must be 64..1048576"));
                 }
@@ -247,8 +291,8 @@ pub fn specs() -> Vec<CommandSpec> {
             }
             Ok(serde_json::to_value(s.memory_report()).unwrap_or_default())
         }),
-        raw_cmd!(query "journal.list", "Command Journal", [], None, "{limit?}", always, |s, p| {
-            let lim = p.get("limit").and_then(Value::as_u64).unwrap_or(100) as usize;
+        cmd!(query "journal.list", "Command Journal", [], None, "{limit?}", Limit, always, |s, p| {
+            let lim = pagination_usize(p.limit.unwrap_or(100));
             let start = s.journal.len().saturating_sub(lim);
             Ok(Value::Array(s.journal[start..].iter().map(|(c, p)| json!({"command": c, "params": p})).collect()))
         }),

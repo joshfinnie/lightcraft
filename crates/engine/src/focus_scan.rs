@@ -367,9 +367,9 @@ fn status(s: &Session) -> Value {
 }
 
 /// `focus.pump {pace?}`: cheap to call every frame.
-pub(crate) fn pump(s: &mut Session, p: &Value) -> Result<Value> {
+pub(crate) fn pump(s: &mut Session, pace: Option<&str>) -> Result<Value> {
     follow_library(s);
-    let pace = Pace::parse(p.get("pace").and_then(Value::as_str));
+    let pace = Pace::parse(pace);
     s.focus_scan.pace = pace;
     if !step(s, pace) && !s.focus_scan.auto_checked {
         // once per library opening: start by itself when photos are left to look at (a few KB each)
@@ -385,28 +385,17 @@ pub(crate) fn pump(s: &mut Session, p: &Value) -> Result<Value> {
 }
 
 /// `photo.readFocusPoints {ids?, wait?}`.
-pub(crate) fn read_points(s: &mut Session, p: &Value) -> Result<Value> {
+pub(crate) fn read_points(s: &mut Session, ids: Option<Vec<PhotoId>>, wait: bool) -> Result<Value> {
     const C: &str = "photo.readFocusPoints";
     follow_library(s);
     if s.focus_scan.job.is_some() {
         return Ok(json!({"queued": 0, "running": true, "status": status(s)}));
     }
-    let ids: Option<Vec<PhotoId>> = match p.get("ids") {
-        None | Some(Value::Null) => None,
-        Some(v) => Some(
-            v.as_array()
-                .ok_or_else(|| crate::cmd::bad(C, "`ids` must be a list of photo ids"))?
-                .iter()
-                .map(|v| v.as_u64().map(PhotoId).ok_or_else(|| crate::cmd::bad(C, "`ids` must be a list of photo ids")))
-                .collect::<Result<Vec<_>>>()?,
-        ),
-    };
     let list = candidates(s, ids.as_deref());
     let queued = list.len();
     if queued == 0 {
         return Ok(json!({"queued": 0, "running": false}));
     }
-    let wait = p.get("wait").and_then(Value::as_bool) == Some(true);
     start(s, list, if wait { Pace::Normal } else { s.focus_scan.pace }).map_err(|e| crate::cmd::bad(C, e))?;
     // a run asked for counts as this library opening's automatic one
     s.focus_scan.auto_checked = true;

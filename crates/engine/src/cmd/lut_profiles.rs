@@ -7,7 +7,8 @@ use std::path::{Path, PathBuf};
 
 use serde_json::{Value, json};
 
-use super::{CommandSpec, always, bad, raw_cmd, str_param};
+use super::params::params;
+use super::{CommandSpec, always, bad, cmd};
 use crate::{Result, Session};
 
 /// One imported LUT profile.
@@ -87,10 +88,24 @@ fn cube_files(paths: &[String]) -> (Vec<(String, String, Option<String>)>, Vec<V
     (out, failed)
 }
 
-fn import(s: &mut Session, p: &Value) -> Result<Value> {
+params! {
+    /// `profile.import`
+    struct Import {
+        #[serde(default)]
+        paths: Vec<String>,
+    }
+}
+
+params! {
+    /// `profile.deleteImported`
+    struct ProfileRef {
+        id: Option<String>,
+    }
+}
+
+fn import(s: &mut Session, p: Import) -> Result<Value> {
     const C: &str = "profile.import";
-    let paths: Vec<String> =
-        p.get("paths").and_then(Value::as_array).map(|a| a.iter().filter_map(Value::as_str).map(str::to_string).collect()).unwrap_or_default();
+    let paths = p.paths;
     if paths.is_empty() {
         return Err(bad(C, "no paths"));
     }
@@ -142,17 +157,18 @@ fn import(s: &mut Session, p: &Value) -> Result<Value> {
 
 pub fn specs() -> Vec<CommandSpec> {
     vec![
-        raw_cmd!(
+        cmd!(
             "profile.import",
             "Import Profiles",
             [],
             None,
             "{paths: [.cube file, folder or .zip]} — 3D LUTs become creative profiles (Amount 0–200 %; rendered on the CPU) in the profile browser's groups (folder / zip name, else Imported) → {imported: [{id, name, group}], failed}",
+            Import,
             always,
             import
         ),
-        raw_cmd!("profile.deleteImported", "Delete Imported Profile", [], None, "{id: lut:…}", always, |s, p| {
-            let id = str_param(p, "id").ok_or_else(|| bad("profile.deleteImported", "missing id"))?.to_string();
+        cmd!("profile.deleteImported", "Delete Imported Profile", [], None, "{id: lut:…}", ProfileRef, always, |s, p| {
+            let id = p.id.ok_or_else(|| bad("profile.deleteImported", "missing id"))?;
             let Some(i) = s.lut_profiles.iter().position(|x| x.id == id) else {
                 return Err(bad("profile.deleteImported", format!("no imported profile `{id}`")));
             };

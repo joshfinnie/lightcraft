@@ -3,19 +3,35 @@
 use serde_json::{Value, json};
 
 use super::mask_effect_files as mef;
-use super::{CommandSpec, always, bad, raw_cmd, str_param};
+use super::params::params;
+use super::{CommandSpec, always, bad, cmd};
 use crate::preset_import::{group_from_dir, read_presets};
 use crate::presets::{LCPRESET_EXT, expand_preset_paths, to_lcpreset};
 use crate::{Result, Session};
 
-fn strings(p: &Value, key: &str) -> Option<Vec<String>> {
-    p.get(key).and_then(Value::as_array).map(|a| a.iter().filter_map(Value::as_str).map(str::to_string).collect())
+params! {
+    /// `preset.import`
+    struct Import {
+        paths: Option<Vec<String>>,
+        group: Option<String>,
+        #[serde(default)]
+        dry_run: bool,
+    }
 }
 
-fn import(s: &mut Session, p: &Value) -> Result<Value> {
-    let paths = strings(p, "paths").filter(|v| !v.is_empty()).ok_or_else(|| bad("preset.import", "no paths"))?;
-    let group = str_param(p, "group").map(str::trim).filter(|g| !g.is_empty()).map(str::to_string);
-    let dry = p.get("dryRun").and_then(Value::as_bool).unwrap_or(false);
+params! {
+    /// `preset.export`
+    struct Export {
+        path: Option<String>,
+        ids: Option<Vec<String>>,
+        group: Option<String>,
+    }
+}
+
+fn import(s: &mut Session, p: Import) -> Result<Value> {
+    let paths = p.paths.filter(|v| !v.is_empty()).ok_or_else(|| bad("preset.import", "no paths"))?;
+    let group = p.group.as_deref().map(str::trim).filter(|g| !g.is_empty()).map(str::to_string);
+    let dry = p.dry_run;
     let mut imported = Vec::new();
     let mut failed = Vec::new();
     let mut skipped = 0usize;
@@ -84,14 +100,14 @@ fn import(s: &mut Session, p: &Value) -> Result<Value> {
     Ok(json!({"imported": imported, "skipped": skipped, "failed": failed, "effects": effects, "effectDividers": dividers}))
 }
 
-fn export(s: &mut Session, p: &Value) -> Result<Value> {
-    let path = str_param(p, "path").filter(|x| !x.trim().is_empty()).ok_or_else(|| bad("preset.export", "missing path"))?;
+fn export(s: &mut Session, p: Export) -> Result<Value> {
+    let path = p.path.as_deref().filter(|x| !x.trim().is_empty()).ok_or_else(|| bad("preset.export", "missing path"))?;
     let mut path = std::path::PathBuf::from(path);
     if path.extension().is_none() {
         path.set_extension(LCPRESET_EXT);
     }
-    let ids = strings(p, "ids");
-    let group = str_param(p, "group");
+    let ids = p.ids;
+    let group = p.group.as_deref();
     let chosen: Vec<_> = s
         .presets
         .iter()
@@ -113,21 +129,23 @@ fn export(s: &mut Session, p: &Value) -> Result<Value> {
 
 pub fn specs() -> Vec<CommandSpec> {
     vec![
-        raw_cmd!(
+        cmd!(
             "preset.import",
             "Import Presets",
             [],
             None,
             "{paths: [file or folder], group?, dryRun?} — .lcpreset, XMP presets, .lrtemplate, photos carrying edits (DNG/JPEG/TIFF \"DNG presets\"), Luminar looks (.lmp, .mplumpack collections) and .zip bundles of these; folders give their name as group; crs: fields mapped per docs/xmp-interop.md; local adjustment presets (Lightroom .lrtemplate, Camera Raw local .xmp, .lceffect) become mask effects (`mask.effects`; divider presets become their groups); a profile the preset names applies when it was imported with profile.import (before or after) → {imported: [{id,name,group,file,unmapped,profile: {name, id}|null}], skipped, failed, effects: [{name,group,file,unmapped}], effectDividers: [{name,group,file}]}",
+            Import,
             always,
             import
         ),
-        raw_cmd!(
+        cmd!(
             "preset.export",
             "Export Presets",
             [],
             None,
             "{path, ids?: [presetId], group?: name} (default: all user presets) → {path, count}; writes a .lcpreset JSON file",
+            Export,
             always,
             export
         ),

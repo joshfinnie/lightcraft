@@ -13,7 +13,7 @@
 use lightcraft_catalog::{Catalog, Op, Photo, PhotoId};
 use serde_json::{Value, json};
 
-use super::{CommandSpec, always, bad, raw_cmd};
+use super::{CommandSpec, always, bad, cmd};
 use crate::media::{FileProbe, ProbeInfo};
 use crate::{Result, Session};
 
@@ -104,9 +104,17 @@ pub fn apply(s: &mut Session, results: Vec<(Stale, std::result::Result<ProbeInfo
     Ok(out)
 }
 
-fn recheck(s: &mut Session, p: &Value) -> Result<Value> {
+super::params::params! {
+    /// `library.recheckPreviewOnly`
+    struct Recheck {
+        #[serde(default)]
+        all: bool,
+    }
+}
+
+fn recheck(s: &mut Session, p: Recheck) -> Result<Value> {
     const C: &str = "library.recheckPreviewOnly";
-    let all = p.get("all").and_then(Value::as_bool).unwrap_or(false);
+    let all = p.all;
     // without file access every probe "succeeds" with nothing known, which would clear every flag
     let fp = file_probe(s).ok_or_else(|| bad(C, "this session has no file access"))?;
     let listed = stale(&s.catalog, all);
@@ -117,12 +125,13 @@ fn recheck(s: &mut Session, p: &Value) -> Result<Value> {
 }
 
 pub fn specs() -> Vec<CommandSpec> {
-    vec![raw_cmd!(
+    vec![cmd!(
         "library.recheckPreviewOnly",
         "Recheck Preview-Only Raws",
         [],
         None,
         "{all?: bool} — probe again the raws shown from their embedded preview whose flag another LightCraft version set (the app does this in the background when a library opens; `all` rechecks every preview-only raw, e.g. when testing a decoder build of the same version), and bring each up to date as Reload from Disk would; not an undo step, develop settings and history are kept; files that can't be read are left for next time → {checked, updated: [ids], cleared: [ids] (develop from their raw data now)}",
+        Recheck,
         always,
         recheck
     )]

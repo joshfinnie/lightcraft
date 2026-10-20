@@ -341,8 +341,10 @@ fn a_folder_that_is_not_there_is_not_scanned_as_if_everything_went_missing() {
     let mut s = library(&dir);
     // an unplugged disk, or a folder moved away whole
     std::fs::rename(dir.0.join("trip"), dir.0.join("trip-elsewhere")).unwrap();
-    for cmd in ["folder.scanChanges", "folder.synchronize"] {
-        let e = s.execute(cmd, &json!({"path": dir.path("trip"), "removeMissing": true})).unwrap_err().to_string();
+    for (cmd, p) in
+        [("folder.scanChanges", json!({"path": dir.path("trip")})), ("folder.synchronize", json!({"path": dir.path("trip"), "removeMissing": true}))]
+    {
+        let e = s.execute(cmd, &p).unwrap_err().to_string();
         assert!(e.contains("not there"), "{cmd}: {e}");
     }
     assert_eq!(s.catalog.photos().filter(|p| p.in_library()).count(), 2, "nothing was removed");

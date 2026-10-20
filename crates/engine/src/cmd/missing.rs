@@ -9,7 +9,8 @@ use std::path::Path;
 use lightcraft_catalog::{Catalog, Op, Photo, PhotoId, Source};
 use serde_json::{Value, json};
 
-use super::{CommandSpec, always, bad, raw_cmd, str_param};
+use super::params::{NoParams, params};
+use super::{CommandSpec, always, bad, cmd, str_param};
 use crate::{Result, Session};
 
 /// The file Missing Photos checks for `p`, if it is in scope: a library photo (not in Recently
@@ -56,10 +57,29 @@ pub(crate) fn relink_op(id: PhotoId, path: &str) -> Op {
     Op::Relink { id, file_name, source: Source::File { path: path.to_string() }, format: None }
 }
 
-fn relink(s: &mut Session, p: &Value) -> Result<Value> {
+params! {
+    /// `photo.relink`
+    struct Relink {
+        id: Option<PhotoId>,
+        path: Option<String>,
+    }
+}
+
+params! {
+    /// `library.findMissing`: a `folder` to search, or what a search found (`found`, `missing`,
+    /// `ambiguous`, as the command returns them).
+    struct FindMissing {
+        folder: Option<String>,
+        found: Option<Value>,
+        missing: Option<Value>,
+        ambiguous: Option<Value>,
+    }
+}
+
+fn relink(s: &mut Session, p: Relink) -> Result<Value> {
     const C: &str = "photo.relink";
-    let id = p.get("id").and_then(Value::as_u64).map(PhotoId).or(s.active()).ok_or_else(|| bad(C, "no photo (give `id`)"))?;
-    let path = str_param(p, "path").ok_or_else(|| bad(C, "missing `path`"))?;
+    let id = p.id.or(s.active()).ok_or_else(|| bad(C, "no photo (give `id`)"))?;
+    let path = p.path.as_deref().ok_or_else(|| bad(C, "missing `path`"))?;
     let abs = std::path::absolute(path).map_err(|e| bad(C, e.to_string()))?;
     if !abs.is_file() {
         return Err(bad(C, format!("{path}: no such file")));
@@ -326,36 +346,38 @@ fn commit_find(s: &mut Session, plan: FindPlan) -> Result<Value> {
 /// Search `folder` (recursively) for each missing photo's file ([`plan_find_missing`]) and
 /// relink every match in one undoable step. With `found` instead (what a search on a worker
 /// thread returned, as `{found, missing, ambiguous}`), only the relinking is done.
-fn find_missing(s: &mut Session, p: &Value) -> Result<Value> {
+fn find_missing(s: &mut Session, p: FindMissing) -> Result<Value> {
     const C: &str = "library.findMissing";
-    if p.get("found").is_some_and(Value::is_array) {
-        return commit_find(s, FindPlan::from_json(p));
+    if p.found.as_ref().is_some_and(Value::is_array) {
+        return commit_find(s, FindPlan::from_json(&json!({"found": p.found, "missing": p.missing, "ambiguous": p.ambiguous})));
     }
-    let folder = str_param(p, "folder").ok_or_else(|| bad(C, "missing `folder`"))?;
+    let folder = p.folder.as_deref().ok_or_else(|| bad(C, "missing `folder`"))?;
     let plan = plan_find_missing(&find_candidates(&s.catalog), folder).map_err(|e| bad(C, e))?;
     commit_find(s, plan)
 }
 
 pub fn specs() -> Vec<CommandSpec> {
     vec![
-        raw_cmd!(query "library.missing", "Missing Photos", [], None, "{} → [{id, path}] — photos whose original file isn't where the library expects it", always, |s, _| {
+        cmd!(query "library.missing", "Missing Photos", [], None, "{} → [{id, path}] — photos whose original file isn't where the library expects it", NoParams, always, |s, _| {
             Ok(Value::Array(missing(s).into_iter().map(|(id, path)| json!({"id": id.0, "path": path})).collect()))
         }),
-        raw_cmd!(
+        cmd!(
             "photo.relink",
             "Locate Photo",
             [],
             None,
             "{id?, path} — point a photo at its file's new location (undo never moves files)",
+            Relink,
             always,
             relink
         ),
-        raw_cmd!(
+        cmd!(
             "library.findMissing",
             "Find Missing Photos",
             [],
             None,
             "{folder} — relink every missing photo whose file is somewhere in the folder: same name and size (and content, when the library knows its hash), or — renamed — same size and content; or {found, missing, ambiguous} — relink what a search already found (the app searches on a worker thread; photos relinked meanwhile and files now in use are skipped) → {found: [{id, from, to, by: name|content}], missing, ambiguous: [{id, from, candidates}] (several same-name candidates and no hash to tell them apart: skipped)}",
+            FindMissing,
             always,
             find_missing
         ),

@@ -1,33 +1,45 @@
 //! `activity.list` / `activity.cancel`: the background tasks in flight (see [`crate::activity`]).
 
-use serde_json::{Value, json};
+use serde_json::json;
 
-use super::{CommandSpec, always, bad, raw_cmd};
+use super::params::{NoParams, params};
+use super::{CommandSpec, always, bad, cmd};
+
+params! {
+    /// `activity.cancel`
+    struct Cancel {
+        id: Option<u64>,
+        #[serde(default)]
+        all: bool,
+    }
+}
 
 pub fn specs() -> Vec<CommandSpec> {
     vec![
-        raw_cmd!(
+        cmd!(
             query "activity.list",
             "Background Tasks",
             [],
             None,
             "{} → {tasks: [{id, kind, label, done, total, unit: count|bytes|percent, detail, cancellable, cancelling, ageMs}]} — the long-running tasks in flight (imports, exports, preview builds, downloads, the face scan…), oldest first; total 0 = not known yet",
+            NoParams,
             always,
             |s, _| Ok(json!({"tasks": s.activity.list()}))
         ),
-        raw_cmd!(
+        cmd!(
             "activity.cancel",
             "Cancel Background Task",
             [],
             None,
             "{id} | {all: true} → {cancelled: n} — ask a task (or every cancellable task) to stop; it stops at its next file or photo. An unknown id (it may have just finished) or a task that can't be cancelled is an error",
+            Cancel,
             always,
             |s, p| {
                 const C: &str = "activity.cancel";
-                if p.get("all").and_then(Value::as_bool) == Some(true) {
+                if p.all {
                     return Ok(json!({"cancelled": s.activity.cancel_all()}));
                 }
-                let id = p.get("id").and_then(Value::as_u64).ok_or_else(|| bad(C, "id or all"))?;
+                let id = p.id.ok_or_else(|| bad(C, "id or all"))?;
                 s.activity.cancel(id).map_err(|e| bad(C, e))?;
                 Ok(json!({"cancelled": 1}))
             }

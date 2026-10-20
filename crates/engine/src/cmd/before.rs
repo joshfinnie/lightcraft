@@ -9,7 +9,8 @@ use lightcraft_catalog::Photo;
 use lightcraft_develop::DevelopSettings;
 use serde_json::{Value, json};
 
-use super::{CommandSpec, bad, has_active, raw_cmd};
+use super::params::{NoParams, params};
+use super::{CommandSpec, bad, cmd, has_active};
 use crate::{Result, Session};
 
 impl Session {
@@ -29,20 +30,29 @@ fn state(s: &Session) -> Result<Value> {
     Ok(json!({"before": if custom { "custom" } else { "import" }}))
 }
 
+params! {
+    /// `beforeAfter.setBefore`
+    struct SetBefore {
+        source: Option<String>,
+        index: Option<usize>,
+        name: Option<String>,
+    }
+}
+
 /// `{source: import | current | history | version, index?, name?}`
-fn set_before(s: &mut Session, p: &Value) -> Result<Value> {
+fn set_before(s: &mut Session, p: SetBefore) -> Result<Value> {
     const C: &str = "beforeAfter.setBefore";
     let id = active(s, C)?;
     let photo = s.catalog.photo(id).ok_or_else(|| bad(C, "no photo"))?;
-    let settings: Option<Arc<DevelopSettings>> = match p.get("source").and_then(Value::as_str).unwrap_or("current") {
+    let settings: Option<Arc<DevelopSettings>> = match p.source.as_deref().unwrap_or("current") {
         "import" | "original" => None,
         "current" => Some(photo.develop.clone()),
         "history" => {
-            let i = p.get("index").and_then(Value::as_u64).ok_or_else(|| bad(C, "history needs `index`"))? as usize;
+            let i = p.index.ok_or_else(|| bad(C, "history needs `index`"))?;
             Some(photo.history.get(i).ok_or_else(|| bad(C, format!("no history step {i}")))?.settings.clone())
         }
         "version" => {
-            let name = p.get("name").and_then(Value::as_str).ok_or_else(|| bad(C, "version needs `name`"))?;
+            let name = p.name.as_deref().ok_or_else(|| bad(C, "version needs `name`"))?;
             Some(photo.versions.iter().find(|v| v.name == name).ok_or_else(|| bad(C, format!("no version `{name}`")))?.settings.clone())
         }
         other => return Err(bad(C, format!("unknown source `{other}` (import, current, history, version)"))),
@@ -71,38 +81,48 @@ fn before_to_after(s: &mut Session, swap: bool) -> Result<Value> {
 
 pub fn specs() -> Vec<CommandSpec> {
     vec![
-        raw_cmd!(
+        cmd!(
             "beforeAfter.setBefore",
             "Set Before",
             [],
             None,
             "{source: import|current|history|version, index? (history step), name? (version)} — what the before side shows (this session)",
+            SetBefore,
             has_active,
             set_before
         ),
-        raw_cmd!(
+        cmd!(
             "beforeAfter.copyAfterToBefore",
             "Copy After's Settings to Before",
             ["View", "Before/After Settings"],
             None,
             "{}",
+            NoParams,
             has_active,
-            |s, _| { set_before(s, &json!({"source": "current"})) }
+            |s, _| { set_before(s, SetBefore { source: Some("current".into()), index: None, name: None }) }
         ),
-        raw_cmd!(
+        cmd!(
             "beforeAfter.copyBeforeToAfter",
             "Copy Before's Settings to After",
             ["View", "Before/After Settings"],
             None,
             "{}",
+            NoParams,
             has_active,
             |s, _| { before_to_after(s, false) }
         ),
-        raw_cmd!("beforeAfter.swap", "Swap Before and After Settings", ["View", "Before/After Settings"], None, "{}", has_active, |s, _| {
+        cmd!("beforeAfter.swap", "Swap Before and After Settings", ["View", "Before/After Settings"], None, "{}", NoParams, has_active, |s, _| {
             before_to_after(s, true)
         }),
-        raw_cmd!("beforeAfter.resetBefore", "Reset Before to Import State", ["View", "Before/After Settings"], None, "{}", has_active, |s, _| {
-            set_before(s, &json!({"source": "import"}))
-        }),
+        cmd!(
+            "beforeAfter.resetBefore",
+            "Reset Before to Import State",
+            ["View", "Before/After Settings"],
+            None,
+            "{}",
+            NoParams,
+            has_active,
+            |s, _| { set_before(s, SetBefore { source: Some("import".into()), index: None, name: None }) }
+        ),
     ]
 }

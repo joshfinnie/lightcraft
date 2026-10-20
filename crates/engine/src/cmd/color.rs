@@ -14,7 +14,8 @@ use lightcraft_develop::{DevelopSettings, MAX_POINT_COLORS, MIXER_BANDS, PointCo
 use lightcraft_geom::Point;
 use serde_json::{Value, json};
 
-use super::{CommandSpec, bad, f64_req, has_active, raw_cmd};
+use super::params::{params, whole};
+use super::{CommandSpec, bad, cmd, has_active};
 use crate::media::SourceLevel;
 use crate::{Result, Session};
 
@@ -67,12 +68,39 @@ pub(crate) fn after_mixer_neutral(d: &mut DevelopSettings) {
     d.curve = Default::default();
 }
 
+params! {
+    /// `develop.targeted`
+    struct Targeted {
+        target: Option<String>,
+        x: f64,
+        y: f64,
+        delta: f64,
+        channel: Option<String>,
+    }
+}
+
+params! {
+    /// `pointColor.pick`
+    struct Xy {
+        x: f64,
+        y: f64,
+    }
+}
+
+params! {
+    /// `pointColor.delete`
+    struct Index {
+        #[serde(deserialize_with = "whole")]
+        index: usize,
+    }
+}
+
 /// The targeted adjustment tool: the controls (and their new values) a vertical drag of `delta`
 /// at `(x, y)` changes, computed on `d` (applied by the caller).
-fn targeted(s: &mut Session, p: &Value) -> Result<Value> {
+fn targeted(s: &mut Session, p: Targeted) -> Result<Value> {
     let c = "develop.targeted";
-    let (x, y, delta) = (f64_req(p, "x", c)?, f64_req(p, "y", c)?, f64_req(p, "delta", c)?);
-    let target = p.get("target").and_then(Value::as_str).unwrap_or("curve").to_string();
+    let (x, y, delta) = (p.x, p.y, p.delta);
+    let target = p.target.clone().unwrap_or_else(|| "curve".into());
     let id = s.active().ok_or_else(|| bad(c, "no active photo"))?;
     let mut d = (*s.develop_of(id).unwrap_or_default()).clone();
     let mut changed = serde_json::Map::new();
@@ -89,7 +117,7 @@ fn targeted(s: &mut Session, p: &Value) -> Result<Value> {
                 d.curve = ToneCurve { refine_saturation: d.curve.refine_saturation, ..Default::default() };
                 d.grain.amount = 0.0;
             })?;
-            let channel = p.get("channel").and_then(Value::as_str).unwrap_or("parametric");
+            let channel = p.channel.as_deref().unwrap_or("parametric");
             label = "Tone Curve";
             if channel == "parametric" {
                 let v = (0.2126 * e[0] + 0.7152 * e[1] + 0.0722 * e[2]) as f64 * 100.0;
@@ -155,22 +183,19 @@ fn targeted(s: &mut Session, p: &Value) -> Result<Value> {
     Ok(Value::Object(changed))
 }
 
-fn index(p: &Value, c: &str) -> Result<usize> {
-    super::index_req(p, "index", c)
-}
-
 pub fn specs() -> Vec<CommandSpec> {
     vec![
-        raw_cmd!(
+        cmd!(
             "pointColor.pick",
             "Add Point Color Sample",
             [],
             None,
             "{x, y} normalized image coords — samples the colour there (max 8); returns {index, lum, chroma, hue}",
+            Xy,
             has_active,
             |s, p| {
                 let c = "pointColor.pick";
-                let (x, y) = (f64_req(p, "x", c)?, f64_req(p, "y", c)?);
+                let (x, y) = (p.x, p.y);
                 let id = s.active().ok_or_else(|| bad(c, "no active photo"))?;
                 if s.develop_of(id).is_some_and(|d| d.point_colors.len() >= MAX_POINT_COLORS) {
                     return Err(bad(c, format!("at most {MAX_POINT_COLORS} point colours")));
@@ -184,18 +209,19 @@ pub fn specs() -> Vec<CommandSpec> {
                 Ok(json!({"index": i, "lum": sample.lum, "chroma": sample.chroma, "hue": sample.hue}))
             }
         ),
-        raw_cmd!(
+        cmd!(
             "develop.targeted",
             "Targeted Adjustment",
             [],
             None,
             "{target: curve|hue|sat|lum, x, y (normalized image coords), delta (slider units; point curves: output levels 0..255), channel?: parametric|master|red|green|blue (curve)} — adjusts the curve region / colour-mixer bands under the point; returns the changed controls",
+            Targeted,
             has_active,
             targeted
         ),
-        raw_cmd!("pointColor.delete", "Delete Point Color Sample", [], None, "{index}", has_active, |s, p| {
+        cmd!("pointColor.delete", "Delete Point Color Sample", [], None, "{index}", Index, has_active, |s, p| {
             let c = "pointColor.delete";
-            let i = index(p, c)?;
+            let i = p.index;
             let id = s.active().ok_or_else(|| bad(c, "no active photo"))?;
             let mut d = (*s.develop_of(id).unwrap_or_default()).clone();
             if i >= d.point_colors.len() {

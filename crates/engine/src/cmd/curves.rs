@@ -7,7 +7,8 @@ use lightcraft_geom::Point;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-use super::{CommandSpec, always, bad, has_active, raw_cmd, str_param};
+use super::params::{NoParams, params};
+use super::{CommandSpec, always, bad, cmd, has_active};
 use crate::{Result, Session};
 
 /// Channels `curve.reset` accepts.
@@ -38,10 +39,41 @@ pub fn reset_channel(c: &mut ToneCurve, channel: &str) -> std::result::Result<()
     Ok(())
 }
 
-fn reset(s: &mut Session, p: &Value) -> Result<Value> {
+params! {
+    /// `curve.reset`
+    struct Reset {
+        channel: Option<String>,
+    }
+}
+
+params! {
+    /// Curve preset commands on one preset.
+    struct PresetName {
+        name: Option<String>,
+    }
+}
+
+params! {
+    /// `curve.importPresets`
+    struct ImportPresets {
+        path: Option<String>,
+        #[serde(default)]
+        paths: Vec<String>,
+    }
+}
+
+params! {
+    /// `curve.exportPresets`
+    struct ExportPresets {
+        path: Option<String>,
+        names: Option<Vec<String>>,
+    }
+}
+
+fn reset(s: &mut Session, p: Reset) -> Result<Value> {
     const C: &str = "curve.reset";
     let id = s.active().ok_or_else(|| bad(C, "no active photo"))?;
-    let channel = str_param(p, "channel").unwrap_or("all");
+    let channel = p.channel.as_deref().unwrap_or("all");
     let mut d = (*s.develop_of(id).unwrap_or_default()).clone();
     reset_channel(&mut d.curve, channel).map_err(|e| bad(C, e))?;
     let label = if channel == "all" { "Reset Tone Curve".to_string() } else { format!("Reset Tone Curve ({channel})") };
@@ -51,66 +83,73 @@ fn reset(s: &mut Session, p: &Value) -> Result<Value> {
 
 pub fn specs() -> Vec<CommandSpec> {
     vec![
-        raw_cmd!(
+        cmd!(
             "curve.reset",
             "Reset Tone Curve",
             [],
             None,
             "{channel?: all|point|parametric|master|red|green|blue (default all)} — the active photo's tone curve (or one channel) back to linear",
+            Reset,
             has_active,
             reset
         ),
-        raw_cmd!(
+        cmd!(
             query "curve.presets",
             "Point Curve Presets",
             [],
             None,
             "{} → {presets: [{name, master, red, green, blue: [[x,y],...], builtin?}], current: name of the preset the active photo's point curves match, or null}",
+            NoParams,
             always,
             |s, _| Ok(list(s))
         ),
-        raw_cmd!(
+        cmd!(
             "curve.applyPreset",
             "Apply Point Curve Preset",
             [],
             None,
             "{name} — sets the active photo's point curves (all four channels; the parametric curve stays)",
+            PresetName,
             has_active,
             apply_preset
         ),
-        raw_cmd!(
+        cmd!(
             "curve.savePreset",
             "Save Point Curve Preset",
             [],
             None,
             "{name} — the active photo's point curves under a name (replaces a user preset of that name; built-in names are reserved), saved with the library",
+            PresetName,
             has_active,
             save_preset
         ),
-        raw_cmd!(
+        cmd!(
             "curve.deletePreset",
             "Delete Point Curve Preset",
             [],
             None,
             "{name} — a user preset (built-ins can't be deleted)",
+            PresetName,
             always,
             delete_preset
         ),
-        raw_cmd!(
+        cmd!(
             "curve.importPresets",
             "Import Point Curve Presets",
             [],
             None,
             "{path | paths: [file]} — .lccurve JSON files ({format, version, presets: [...]}, an array of presets, or one preset); same-named user presets are replaced → {imported: [name], failed: [[file, error]]}",
+            ImportPresets,
             always,
             import_presets
         ),
-        raw_cmd!(
+        cmd!(
             "curve.exportPresets",
             "Export Point Curve Presets",
             [],
             None,
             "{path, names?: [name] (default: every user preset)} — writes a .lccurve JSON file → {path, count}",
+            ExportPresets,
             always,
             export_presets
         ),
@@ -225,8 +264,8 @@ fn upsert(s: &mut Session, p: CurvePreset) {
     }
 }
 
-fn name_param(p: &Value, c: &str) -> Result<String> {
-    str_param(p, "name").map(str::trim).filter(|n| !n.is_empty()).map(str::to_string).ok_or_else(|| bad(c, "missing `name`"))
+fn name_param(p: &PresetName, c: &str) -> Result<String> {
+    p.name.as_deref().map(str::trim).filter(|n| !n.is_empty()).map(str::to_string).ok_or_else(|| bad(c, "missing `name`"))
 }
 
 fn list(s: &Session) -> Value {
@@ -234,9 +273,9 @@ fn list(s: &Session) -> Value {
     json!({"presets": all_presets(s), "current": current})
 }
 
-fn apply_preset(s: &mut Session, p: &Value) -> Result<Value> {
+fn apply_preset(s: &mut Session, p: PresetName) -> Result<Value> {
     const C: &str = "curve.applyPreset";
-    let name = name_param(p, C)?;
+    let name = name_param(&p, C)?;
     let preset =
         all_presets(s).into_iter().find(|x| x.name.eq_ignore_ascii_case(&name)).ok_or_else(|| bad(C, format!("no curve preset `{name}`")))?;
     let id = s.active().ok_or_else(|| bad(C, "no active photo"))?;
@@ -246,9 +285,9 @@ fn apply_preset(s: &mut Session, p: &Value) -> Result<Value> {
     Ok(json!({"name": preset.name}))
 }
 
-fn save_preset(s: &mut Session, p: &Value) -> Result<Value> {
+fn save_preset(s: &mut Session, p: PresetName) -> Result<Value> {
     const C: &str = "curve.savePreset";
-    let name = name_param(p, C)?;
+    let name = name_param(&p, C)?;
     if is_builtin_name(&name) {
         return Err(bad(C, format!("`{name}` is a built-in preset: choose another name")));
     }
@@ -262,9 +301,9 @@ fn save_preset(s: &mut Session, p: &Value) -> Result<Value> {
     Ok(list(s))
 }
 
-fn delete_preset(s: &mut Session, p: &Value) -> Result<Value> {
+fn delete_preset(s: &mut Session, p: PresetName) -> Result<Value> {
     const C: &str = "curve.deletePreset";
-    let name = name_param(p, C)?;
+    let name = name_param(&p, C)?;
     if is_builtin_name(&name) {
         return Err(bad(C, "built-in presets can't be deleted"));
     }
@@ -300,13 +339,10 @@ pub fn to_file(presets: &[CurvePreset]) -> String {
     serde_json::to_string_pretty(&json!({"format": FILE_FORMAT, "version": 1, "presets": presets})).unwrap_or_default()
 }
 
-fn import_presets(s: &mut Session, p: &Value) -> Result<Value> {
+fn import_presets(s: &mut Session, p: ImportPresets) -> Result<Value> {
     const C: &str = "curve.importPresets";
-    let mut paths: Vec<String> =
-        p.get("paths").and_then(Value::as_array).map(|a| a.iter().filter_map(Value::as_str).map(str::to_string).collect()).unwrap_or_default();
-    if let Some(x) = str_param(p, "path") {
-        paths.push(x.to_string());
-    }
+    let mut paths = p.paths;
+    paths.extend(p.path);
     if paths.is_empty() {
         return Err(bad(C, "missing `path` / `paths`"));
     }
@@ -333,15 +369,14 @@ fn import_presets(s: &mut Session, p: &Value) -> Result<Value> {
     Ok(json!({"imported": imported, "failed": failed}))
 }
 
-fn export_presets(s: &mut Session, p: &Value) -> Result<Value> {
+fn export_presets(s: &mut Session, p: ExportPresets) -> Result<Value> {
     const C: &str = "curve.exportPresets";
-    let path = str_param(p, "path").filter(|x| !x.trim().is_empty()).ok_or_else(|| bad(C, "missing `path`"))?;
+    let path = p.path.as_deref().filter(|x| !x.trim().is_empty()).ok_or_else(|| bad(C, "missing `path`"))?;
     let mut path = std::path::PathBuf::from(path);
     if path.extension().is_none() {
         path.set_extension(CURVE_PRESET_EXT);
     }
-    let names: Option<Vec<String>> =
-        p.get("names").and_then(Value::as_array).map(|a| a.iter().filter_map(Value::as_str).map(str::to_string).collect());
+    let names = p.names;
     let chosen: Vec<CurvePreset> = match &names {
         Some(n) => all_presets(s).into_iter().filter(|x| n.iter().any(|m| m.eq_ignore_ascii_case(&x.name))).collect(),
         None => s.curve_presets.clone(),

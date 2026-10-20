@@ -17,6 +17,20 @@ pub trait Params: DeserializeOwned {}
 pub struct NoParams {}
 impl Params for NoParams {}
 
+params! {
+    /// `{name}`: commands on one named thing (a preset, a set).
+    pub struct Named {
+        name: Option<String>,
+    }
+}
+
+impl Named {
+    /// The name, trimmed; `missing `name`` when absent or blank.
+    pub fn name(&self, cmd: &str) -> Result<String> {
+        self.name.as_deref().map(str::trim).filter(|n| !n.is_empty()).map(str::to_string).ok_or_else(|| bad(cmd, "missing `name`"))
+    }
+}
+
 /// Params that are part of another type (`library.filter`: a partial `Filter`): any object here.
 /// The command merges it and reads the result with [`from_value`], which checks its keys.
 #[derive(Debug, serde::Deserialize)]
@@ -280,6 +294,29 @@ mod tests {
         assert!(msg(json!({"rating": "two"})).contains("`rating`"));
         assert!(msg(json!({})).contains("missing field `rating`"));
         assert!(msg(json!([1])).contains("must be a JSON object"));
+    }
+
+    params! {
+        struct Index {
+            #[serde(deserialize_with = "whole")]
+            index: usize,
+        }
+    }
+
+    #[test]
+    fn indices_keep_integer_precision_and_check_usize_bounds() {
+        let index = |v: serde_json::Value| parse::<Index>(&json!({"index": v})).map(|p| p.index);
+        for i in [0, 1, usize::MAX] {
+            assert_eq!(index(json!(i)).unwrap(), i);
+        }
+        #[cfg(target_pointer_width = "64")]
+        assert_eq!(index(json!(9_007_199_254_740_993usize)).unwrap(), 9_007_199_254_740_993, "integer JSON must not round through f64");
+        assert!(index(json!(2.0_f64.powi(usize::BITS as i32))).is_err(), "2^usize::BITS must not saturate");
+        #[cfg(target_pointer_width = "32")]
+        {
+            assert!(index(json!(u64::from(u32::MAX) + 1)).is_err());
+            assert_eq!(index(json!(f64::from(u32::MAX))).unwrap(), usize::MAX);
+        }
     }
 
     #[test]
