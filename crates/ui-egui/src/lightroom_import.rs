@@ -2,13 +2,17 @@
 //!
 //! Reading a catalog, probing its originals and staging its archive can take minutes on a
 //! removable or network drive.  This task keeps that work off the owner thread, commits prepared
-//! data only on the owner thread, then finishes the archive index on a worker.
+//! data only on the owner thread, then finishes the archive index on a worker. The web build has
+//! no Lightroom import: it never starts a task.
+#![cfg_attr(target_arch = "wasm32", allow(dead_code))]
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, mpsc};
 
-use lightcraft_engine::activity::{Cancel, TaskGuard};
+#[cfg(not(target_arch = "wasm32"))]
+use lightcraft_engine::activity::Cancel;
+use lightcraft_engine::activity::TaskGuard;
 use lightcraft_engine::lightroom_job::{LightroomProgress, LightroomStep};
 use serde_json::{Value, json};
 

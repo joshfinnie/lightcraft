@@ -3,7 +3,9 @@
 //! encoding the decoder renders back to; lossless files are Modular and keep their samples as they
 //! are, tagged with the ICC profile when one is given. EXIF and XMP go in `Exif` / `xml ` boxes.
 
-use crate::encode::{EncodeImage, EncodeMeta, HDR_REFERENCE_WHITE_NITS, Samples, pq_encode};
+use crate::encode::{EncodeImage, EncodeMeta};
+#[cfg(all(feature = "jxl", not(target_arch = "wasm32")))]
+use crate::encode::{HDR_REFERENCE_WHITE_NITS, Samples, pq_encode};
 use crate::{Error, Result};
 use serde::{Deserialize, Serialize};
 
