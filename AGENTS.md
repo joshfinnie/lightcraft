@@ -54,7 +54,7 @@ of it. Full standard: `../craftrules/standards/never-crash.md`
 - Enforced by clippy: root `clippy.toml` allows unwrap/expect/panic/indexing in tests only, and every production crate
   root (`lib.rs`, each binary's `main.rs`) carries `#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic,
   clippy::unimplemented, clippy::todo, clippy::unreachable)]`. Not `[workspace.lints]`: those would also hit
-  integration tests, examples and benches. New crates start with the attribute.
+  integration tests, examples and benches. New crates start with the attribute; `cargo xtask layers` (in `ci`) fails when a crate root lacks it or `#![forbid(unsafe_code)]`.
 
 ## Non-negotiables
 - **Clean-room.** Never read/disassemble anything inside Adobe app bundles (names/listings only). Never copy Adobe icons, presets, profiles (DCP), lens profiles (LCP), camera matrices, fonts. Observation of the installed Lightroom is read-only (it syncs the user's personal library: never import/edit/rate/delete there). Never copy GPL/LGPL/AGPL code (darktable, RawTherapee, ART, LibRaw, rawspeed, rawloader, rawler, lensfun, dcraw-derived GPL code…).

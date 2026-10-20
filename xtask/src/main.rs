@@ -219,7 +219,8 @@ fn cmd_layers() -> Result<(), String> {
             .collect();
         println!("{:<28} {:<14} {}", c.name, layers::describe(layers::classify(&c.name)), ws.join(", "));
     }
-    let violations = layers::check(&crates);
+    let mut violations: Vec<String> = layers::check(&crates).iter().map(ToString::to_string).collect();
+    violations.extend(layers::root_attr_violations(&metadata()?)?);
     println!();
     if violations.is_empty() {
         println!("OK: {} crates, no layering violations.", crates.len());

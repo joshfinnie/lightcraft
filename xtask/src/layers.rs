@@ -251,9 +251,83 @@ pub fn describe(class: Option<Class>) -> String {
     }
 }
 
+/// The no-panic lints every production crate root denies (never-crash rule, CLAUDE.md).
+pub const ROOT_DENY: [&str; 6] =
+    ["clippy::unwrap_used", "clippy::expect_used", "clippy::panic", "clippy::unimplemented", "clippy::todo", "clippy::unreachable"];
+
+/// What crate root `src` lacks: `#![forbid(unsafe_code)]` (unless `may_use_unsafe`) and each of
+/// [`ROOT_DENY`] in a `#![deny(…)]` attribute.
+pub fn root_attr_problems(src: &str, may_use_unsafe: bool) -> Vec<String> {
+    let inner: Vec<String> = src.lines().map(str::trim).filter(|l| l.starts_with("#![")).map(|l| l.replace(' ', "")).collect();
+    let mut out = Vec::new();
+    if !may_use_unsafe && !inner.iter().any(|l| l.starts_with("#![forbid(") && l.contains("unsafe_code")) {
+        out.push("no #![forbid(unsafe_code)]".to_string());
+    }
+    let denied = |lint: &str| inner.iter().any(|l| l.starts_with("#![deny(") && l.contains(lint));
+    let missing: Vec<&str> = ROOT_DENY.iter().copied().filter(|l| !denied(l)).collect();
+    if !missing.is_empty() {
+        out.push(format!("does not deny {}", missing.join(", ")));
+    }
+    out
+}
+
+/// The production crate roots (each package's lib and bin targets, outside tooling) that lack the
+/// never-crash attributes ([`root_attr_problems`]).
+pub fn root_attr_violations(meta: &Value) -> Result<Vec<String>, String> {
+    let pkgs = meta["packages"].as_array().ok_or("metadata: no packages array")?;
+    let mut out = Vec::new();
+    for p in pkgs {
+        let name = p["name"].as_str().unwrap_or_default();
+        if matches!(name, "xtask" | "lightcraft-testkit") {
+            continue;
+        }
+        for t in p["targets"].as_array().into_iter().flatten() {
+            let kinds: Vec<&str> = t["kind"].as_array().into_iter().flatten().filter_map(Value::as_str).collect();
+            if !kinds.iter().any(|k| matches!(*k, "lib" | "rlib" | "cdylib" | "bin")) {
+                continue;
+            }
+            let path = t["src_path"].as_str().ok_or("target without src_path")?;
+            let src = std::fs::read_to_string(path).map_err(|e| format!("{path}: {e}"))?;
+            for problem in root_attr_problems(&src, name == "lightcraft-sysmem") {
+                out.push(format!("{path}: {problem}"));
+            }
+        }
+    }
+    Ok(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn crate_roots_need_forbid_unsafe_and_every_no_panic_lint() {
+        let full = "//! x\n#![forbid(unsafe_code)]\n#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]\n";
+        assert!(root_attr_problems(full, false).is_empty());
+        assert_eq!(
+            root_attr_problems(
+                "#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]",
+                true
+            ),
+            Vec::<String>::new()
+        );
+        assert_eq!(
+            root_attr_problems("//! nothing\n", true),
+            ["does not deny clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable"]
+        );
+        let partial = "#![forbid(unsafe_code)]\n#![deny(clippy::unwrap_used, clippy::panic)]\n// #![deny(clippy::todo)]\n";
+        assert_eq!(
+            root_attr_problems(partial, false),
+            ["does not deny clippy::expect_used, clippy::unimplemented, clippy::todo, clippy::unreachable"]
+        );
+        assert_eq!(
+            root_attr_problems(
+                "#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]",
+                false
+            ),
+            ["no #![forbid(unsafe_code)]"]
+        );
+    }
 
     fn c(name: &str, deps: &[(&str, DepKind, bool)]) -> Crate {
         Crate { name: name.into(), deps: deps.iter().map(|(n, k, w)| Dep { name: (*n).into(), kind: *k, workspace: *w }).collect() }
