@@ -12,6 +12,7 @@ pub mod brush_live;
 pub mod button;
 pub mod canvas_keys;
 mod command_error;
+mod commands;
 pub mod control;
 pub mod credits;
 pub mod date_picker;

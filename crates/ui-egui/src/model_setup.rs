@@ -30,6 +30,13 @@ pub(crate) struct Pending {
     next_check: f64,
 }
 
+impl Pending {
+    /// Forget the photo action waiting for a denoise model (`modelSetup.cancel`).
+    pub(crate) fn cancel_denoise(&mut self) {
+        self.denoise = None;
+    }
+}
+
 pub(crate) fn denoise_requested(app: &LightcraftApp, id: PhotoId) -> bool {
     app.model_setup.denoise.as_ref().is_some_and(|r| r.photo == id && r.valid(app))
 }
@@ -38,14 +45,6 @@ pub(crate) fn intercept(app: &mut LightcraftApp, command: &str, params: &Value) 
     if matches!(command, "app.openLibrary" | "file.restoreLibrary") {
         app.model_setup = Pending::default();
         return None;
-    }
-    if command == "modelSetup.cancel" {
-        if params.get("kind").and_then(Value::as_str) != Some("denoise") {
-            return Some(Err("modelSetup.cancel: use kind denoise".into()));
-        }
-        app.model_setup.denoise = None;
-        app.ui.status = tr("Pending photo action cancelled").into();
-        return Some(Ok(json!({"cancelled": true})));
     }
     if command == "denoise.models.downloadCancel" {
         app.model_setup.denoise = None;
