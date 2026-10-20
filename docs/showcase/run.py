@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""lcb.py FILE.jsonl — run control requests from a JSON-lines file ({"method":..., "params":...} or {"sleep": s}).
+"""run.py FILE.jsonl [PORT] — run control requests from a JSON-lines file ({"method":..., "params":...} or {"sleep": s}).
 
-Authenticates like lightcraft-cli: $LIGHTCRAFT_CONTROL_TOKEN, else the token the app wrote to
-control-token-7980 in its settings folder (docs/control-protocol.md → Authentication)."""
+PORT is the app's control port (default 7980; agents use their own, 18000–19999). Authenticates like
+lightcraft-cli: $LIGHTCRAFT_CONTROL_TOKEN, else the token the app wrote to control-token-PORT in its
+settings folder (docs/control-protocol.md → Authentication)."""
 import json, os, socket, sys, time
 from pathlib import Path
-PORT = 7980
+PORT = int(sys.argv[2]) if len(sys.argv) > 2 else 7980
 def token():
     if os.environ.get("LIGHTCRAFT_CONTROL_TOKEN", "").strip():
         return os.environ["LIGHTCRAFT_CONTROL_TOKEN"].strip()
@@ -32,10 +33,10 @@ def call(method, params):
     if not auth.get("ok"):
         return auth
     return line(s, {"id": 1, "method": method, "params": params})
-for line in open(sys.argv[1]):
-    line = line.strip()
-    if not line or line.startswith("#"): continue
-    r = json.loads(line)
+for text in open(sys.argv[1]):
+    text = text.strip()
+    if not text or text.startswith("#"): continue
+    r = json.loads(text)
     if "sleep" in r:
         time.sleep(r["sleep"]); continue
     out = call(r["method"], r.get("params", {}))
