@@ -3,16 +3,30 @@
 use lightcraft_catalog::Op;
 use serde_json::{Value, json};
 
-use super::{CommandSpec, always, bad, has_selection, raw_cmd, str_param};
+use super::params::{NoParams, params};
+use super::{CommandSpec, always, bad, cmd, has_selection};
 use crate::sidecar::SidecarNaming;
 use crate::{Result, Session};
 
-fn save(s: &mut Session, p: &Value) -> Result<Value> {
+params! {
+    /// Sidecar commands on their targets.
+    struct Targets with targets {}
+}
+
+params! {
+    /// `library.xmpPreferences`
+    struct Prefs {
+        auto_write: Option<bool>,
+        naming: Option<String>,
+    }
+}
+
+fn save(s: &mut Session, p: Targets) -> Result<Value> {
     let mut written = Vec::new();
     let mut merged = Vec::new();
     let mut backups = Vec::new();
     let mut failed = Vec::new();
-    let ids = s.targets(p)?;
+    let ids = p.targets(s);
     let owners = crate::sidecar::StemOwners::among(&s.catalog, &ids);
     for id in ids {
         match s.save_sidecar_with(id, &owners) {
@@ -32,12 +46,12 @@ fn save(s: &mut Session, p: &Value) -> Result<Value> {
     Ok(json!({"written": written, "merged": merged, "backups": backups, "failed": failed}))
 }
 
-fn read(s: &mut Session, p: &Value) -> Result<Value> {
+fn read(s: &mut Session, p: Targets) -> Result<Value> {
     let mut ops = Vec::new();
     let mut read = Vec::new();
     let mut failed = Vec::new();
     let mut warnings = Vec::new();
-    for id in s.targets(p)? {
+    for id in p.targets(s) {
         match s.read_sidecar_op_with_warnings(id) {
             Ok(Some((op, from, mut photo_warnings))) => {
                 ops.push(op);
@@ -62,18 +76,18 @@ fn read(s: &mut Session, p: &Value) -> Result<Value> {
     Ok(result)
 }
 
-fn prefs(s: &mut Session, p: &Value) -> Result<Value> {
-    if let Some(a) = p.get("autoWrite").and_then(Value::as_bool) {
+fn prefs(s: &mut Session, p: Prefs) -> Result<Value> {
+    if let Some(a) = p.auto_write {
         s.xmp.auto_write = a;
     }
-    if let Some(n) = str_param(p, "naming") {
+    if let Some(n) = p.naming.as_deref() {
         s.xmp.naming = match n {
             "stem" => SidecarNaming::Stem,
             "full" => SidecarNaming::Full,
             other => return Err(bad("library.xmpPreferences", format!("unknown naming `{other}` (stem|full)"))),
         };
     }
-    if p.as_object().is_some_and(|o| !o.is_empty()) {
+    if p.auto_write.is_some() || p.naming.is_some() {
         s.save_prefs()?;
     }
     Ok(serde_json::to_value(s.xmp).unwrap_or_default())
@@ -81,48 +95,52 @@ fn prefs(s: &mut Session, p: &Value) -> Result<Value> {
 
 pub fn specs() -> Vec<CommandSpec> {
     vec![
-        raw_cmd!(
+        cmd!(
             "photo.saveMetadataToFile",
             "Save Metadata to File",
             ["Photo"],
             Some("Cmd+S"),
             "{ids?} — writes each photo's XMP sidecar (metadata + develop settings) next to the original, merged into an existing one (other apps' data kept; an unreadable one is backed up first) → {written: [path], merged: [path], backups: [{path, backup}], failed}",
+            Targets,
             has_selection,
             save
         ),
-        raw_cmd!(
+        cmd!(
             "photo.readMetadataFromFile",
             "Read Metadata from File",
             ["Photo"],
             None,
             "{ids?} — reads each photo's XMP sidecar (or a raw/DNG's embedded XMP): metadata and develop settings, one undo step; never writes the sidecar, even with auto-write on → {read, failed, warnings?: [{path, code, profile?, mode?, fields?}]}",
+            Targets,
             has_selection,
             read
         ),
-        raw_cmd!(
+        cmd!(
             "library.xmpPreferences",
             "XMP Sidecar Preferences",
             [],
             None,
             "{autoWrite?: bool, naming?: stem (IMG_1.xmp, default) | full (IMG_1.CR3.xmp)} → current preferences (saved with the library)",
+            Prefs,
             always,
             prefs
         ),
-        raw_cmd!(
+        cmd!(
             "library.retrySidecars",
             "Write Waiting XMP Sidecars",
             [],
             None,
             "{} — writes again the automatic XMP sidecars that failed (folder offline, read-only or full) whose originals are reachable now → {written, waiting}",
+            NoParams,
             always,
             |s, _| {
                 let written = s.retry_unsaved_sidecars();
                 Ok(json!({"written": written, "waiting": s.unsaved_sidecars()}))
             }
         ),
-        raw_cmd!("library.toggleAutoWriteXmp", "Automatically Write Changes into XMP", ["File"], None, "{} → {autoWrite}", always, |s, _| {
+        cmd!("library.toggleAutoWriteXmp", "Automatically Write Changes into XMP", ["File"], None, "{} → {autoWrite}", NoParams, always, |s, _| {
             let on = !s.xmp.auto_write;
-            prefs(s, &json!({"autoWrite": on}))
+            prefs(s, Prefs { auto_write: Some(on), naming: None })
         }),
     ]
 }

@@ -205,7 +205,7 @@ fn export_pdf_prints_the_current_settings() {
     // the row in the activity stack is gone when the print is done
     assert!(s.activity.list().is_empty());
     fails(&mut s, "print.exportPdf", json!({}));
-    fails(&mut s, "print.exportPdf", json!({"path": path, "typo": 1}));
+    fails(&mut s, "print.exportPdf", json!({"path": path, "typo": 1})); // unknown on purpose
     fails(&mut s, "print.exportPdf", json!({"path": path, "ids": ["x"]}));
     fails(&mut s, "print.exportPdf", json!({"path": path, "ids": [999_999]}));
     // a package with no cells has nothing to print

@@ -16,19 +16,73 @@ use lightcraft_catalog::query::in_folder;
 use lightcraft_catalog::{Op, PhotoId, Source};
 use serde_json::{Value, json};
 
-use super::{CommandSpec, always, bad, bool_or, raw_cmd, str_param};
+use super::params::params;
+use super::{CommandSpec, always, bad, cmd};
 use crate::import::{ImportMode, ImportOptions, import_with, is_supported};
 use crate::{Browse, LibrarySource, Result, Session};
 
-fn browse(s: &mut Session, p: &Value) -> Result<Value> {
+params! {
+    /// `library.browse`
+    struct BrowseParams {
+        path: Option<String>,
+        subfolders: Option<bool>,
+    }
+}
+
+params! {
+    /// `library.forgetLocal`
+    struct ForgetLocal {
+        #[serde(default)]
+        dry_run: bool,
+        days: Option<u64>,
+    }
+}
+
+params! {
+    /// `photo.addToLibrary`
+    struct Targets with targets {}
+}
+
+params! {
+    /// `folder.rename`
+    struct RenameFolder {
+        path: Option<String>,
+        name: Option<String>,
+    }
+}
+
+params! {
+    /// `folder.move`
+    struct MoveFolder {
+        path: Option<String>,
+        into: Option<String>,
+    }
+}
+
+params! {
+    /// `folder.create`
+    struct CreateFolder {
+        parent: Option<String>,
+        name: Option<String>,
+    }
+}
+
+params! {
+    /// `photo.moveToFolder`
+    struct MoveToFolder with targets {
+        folder: Option<String>,
+    }
+}
+
+fn browse(s: &mut Session, p: BrowseParams) -> Result<Value> {
     const C: &str = "library.browse";
-    let path = str_param(p, "path").ok_or_else(|| bad(C, "missing `path`"))?;
+    let path = p.path.as_deref().ok_or_else(|| bad(C, "missing `path`"))?;
     let dir = std::path::absolute(Path::new(path)).map_err(|e| bad(C, e.to_string()))?;
     if !dir.is_dir() {
         return Err(bad(C, format!("{path}: not a folder")));
     }
     let dir_s = dir.to_string_lossy().trim_end_matches(['/', '\\']).to_string();
-    let subfolders = bool_or(p, "subfolders", s.browse.as_ref().is_some_and(|b| b.subfolders));
+    let subfolders = p.subfolders.unwrap_or_else(|| s.browse.as_ref().is_some_and(|b| b.subfolders));
     let files: Vec<String> = if subfolders {
         crate::import::expand(std::slice::from_ref(&dir_s), None)
     } else {
@@ -197,14 +251,9 @@ impl Session {
     }
 }
 
-fn forget_local(s: &mut Session, p: &Value) -> Result<Value> {
-    let dry_run = bool_or(p, "dryRun", false);
-    let days = match p.get("days") {
-        None | Some(Value::Null) => None,
-        Some(v) => {
-            Some(v.as_u64().ok_or_else(|| bad("library.forgetLocal", "days must be a whole number (0 = never)"))?.min(u64::from(u32::MAX)) as u32)
-        }
-    };
+fn forget_local(s: &mut Session, p: ForgetLocal) -> Result<Value> {
+    let dry_run = p.dry_run;
+    let days = p.days.map(|d| d.min(u64::from(u32::MAX)) as u32);
     let used = days.unwrap_or(s.forget_local_days);
     let plan = s.forget_local(dry_run, days);
     if !dry_run && !plan.evict.is_empty() {
@@ -223,8 +272,8 @@ fn forget_local(s: &mut Session, p: &Value) -> Result<Value> {
 }
 
 /// The browsed photos among `ids` (default: the selection) become library photos.
-fn add_to_library(s: &mut Session, p: &Value) -> Result<Value> {
-    let ids: Vec<PhotoId> = s.targets(p)?.into_iter().filter(|id| s.catalog.photo(*id).is_some_and(|ph| ph.local)).collect();
+fn add_to_library(s: &mut Session, p: Targets) -> Result<Value> {
+    let ids: Vec<PhotoId> = p.targets(s).into_iter().filter(|id| s.catalog.photo(*id).is_some_and(|ph| ph.local)).collect();
     if ids.is_empty() {
         return Ok(json!({"added": 0}));
     }
@@ -236,16 +285,19 @@ fn add_to_library(s: &mut Session, p: &Value) -> Result<Value> {
 
 pub fn specs() -> Vec<CommandSpec> {
     vec![
-        raw_cmd!(
+        cmd!(
             "folder.rename",
             "Rename Folder",
             [],
             None,
             "{path, name} — rename a folder on disk (its files and sidecars go along) and relink the photos in it; one undo step (undo renames it back, refused if the old name is taken) → {path, relinked}",
+            RenameFolder,
             always,
             |s, p| {
-                let from = str_param(p, "path").ok_or_else(|| bad("folder.rename", "missing path"))?.trim_end_matches(['/', '\\']).to_string();
-                let name = str_param(p, "name")
+                let from = p.path.as_deref().ok_or_else(|| bad("folder.rename", "missing path"))?.trim_end_matches(['/', '\\']).to_string();
+                let name = p
+                    .name
+                    .as_deref()
                     .map(str::trim)
                     .filter(|n| !n.is_empty() && !n.contains(['/', '\\']) && *n != "." && *n != "..")
                     .ok_or_else(|| bad("folder.rename", "give a folder name (no slashes)"))?;
@@ -254,64 +306,70 @@ pub fn specs() -> Vec<CommandSpec> {
                 Ok(json!({"path": to, "relinked": n}))
             }
         ),
-        raw_cmd!(
+        cmd!(
             "folder.move",
             "Move Folder",
             [],
             None,
             "{path, into: destination folder} — move a folder on disk into another and relink the photos in it; one undo step (undo moves it back, refused if the old place is taken) → {path, relinked}",
+            MoveFolder,
             always,
             |s, p| {
-                let from = str_param(p, "path").ok_or_else(|| bad("folder.move", "missing path"))?.trim_end_matches(['/', '\\']).to_string();
-                let into = str_param(p, "into").ok_or_else(|| bad("folder.move", "missing into"))?;
+                let from = p.path.as_deref().ok_or_else(|| bad("folder.move", "missing path"))?.trim_end_matches(['/', '\\']).to_string();
+                let into = p.into.as_deref().ok_or_else(|| bad("folder.move", "missing into"))?;
                 let name = Path::new(&from).file_name().ok_or_else(|| bad("folder.move", "bad path"))?;
                 let to = Path::new(into).join(name).to_string_lossy().to_string();
                 let n = move_folder(s, &from, &to).map_err(|e| bad("folder.move", e))?;
                 Ok(json!({"path": to, "relinked": n}))
             }
         ),
-        raw_cmd!(
+        cmd!(
             "folder.create",
             "New Folder on Disk",
             [],
             None,
             "{parent, name} — create a folder on disk inside `parent` (refused if the name is taken); one undo step (undo removes it again while it is empty) → {path}",
+            CreateFolder,
             always,
             create_folder
         ),
-        raw_cmd!(
+        cmd!(
             "photo.moveToFolder",
             "Move to Folder",
             [],
             None,
             "{folder, ids?} — move the photos' files (default: the selection) with their XMP sidecars into `folder` on disk and relink them; virtual copies follow their master; across volumes the file is copied, verified and only then removed; never overwrites (a name taken in `folder` refuses the whole move); missing/offline and Local photos are refused; one undo step (undo moves them back) → {moved, folder}",
+            MoveToFolder,
             always,
             move_to_folder
         ),
-        raw_cmd!(
+        cmd!(
             "library.browse",
             "Browse Folder",
             [],
             None,
             "{path, subfolders?: bool} — show a folder's photos without adding them to the library (they're read in place; edits go to XMP sidecars) → {path, photos, new}",
+            BrowseParams,
             always,
             browse
         ),
-        raw_cmd!(
+        cmd!(
             "library.forgetLocal",
             "Forget Unchanged Local Photos",
             [],
             None,
             "{dryRun?: bool, days?: n (default: the library preference, 0 = never)} — remove Local (browsed, not added) photos nobody changed, of folders not browsed for `days`, from the catalog; files and sidecars stay, browsing the folder again brings them back; not an undo step → {local, forgotten, keptRecent, keptTouched, keptInUse, foldersStamped, days, dryRun}",
+            ForgetLocal,
             always,
             forget_local
         ),
-        raw_cmd!(
+        cmd!(
             "photo.addToLibrary",
             "Add to My Photos",
             ["Photo"],
             None,
             "{ids?} — browsed (Local) photos join the library",
+            Targets,
             always,
             add_to_library
         ),
@@ -380,15 +438,17 @@ fn remove_empty_folder(path: &str) -> std::result::Result<(), String> {
 }
 
 /// A folder path parameter without trailing separators (`None` when missing or blank).
-fn folder_param<'a>(p: &'a Value, key: &str) -> Option<&'a str> {
-    str_param(p, key).map(|x| x.trim_end_matches(['/', '\\'])).filter(|x| !x.is_empty())
+fn folder_param(p: Option<&str>) -> Option<&str> {
+    p.map(|x| x.trim_end_matches(['/', '\\'])).filter(|x| !x.is_empty())
 }
 
 /// `folder.create`: a new folder on disk inside `parent`; undo removes it while it is empty.
-fn create_folder(s: &mut Session, p: &Value) -> Result<Value> {
+fn create_folder(s: &mut Session, p: CreateFolder) -> Result<Value> {
     const C: &str = "folder.create";
-    let parent = folder_param(p, "parent").ok_or_else(|| bad(C, "missing parent"))?;
-    let name = str_param(p, "name")
+    let parent = folder_param(p.parent.as_deref()).ok_or_else(|| bad(C, "missing parent"))?;
+    let name = p
+        .name
+        .as_deref()
         .map(str::trim)
         .filter(|n| !n.is_empty() && !n.contains(['/', '\\']) && *n != "." && *n != "..")
         .ok_or_else(|| bad(C, "give a folder name (no slashes)"))?;
@@ -411,14 +471,14 @@ fn create_folder(s: &mut Session, p: &Value) -> Result<Value> {
 /// `photo.moveToFolder`: move the photos' files (with their sidecars) into `folder` and relink
 /// them, as one undo step. Virtual copies follow their master's file. Never overwrites: a name
 /// already taken in `folder` refuses the whole move.
-fn move_to_folder(s: &mut Session, p: &Value) -> Result<Value> {
+fn move_to_folder(s: &mut Session, p: MoveToFolder) -> Result<Value> {
     const C: &str = "photo.moveToFolder";
-    let folder = folder_param(p, "folder").ok_or_else(|| bad(C, "missing folder"))?;
+    let folder = folder_param(p.folder.as_deref()).ok_or_else(|| bad(C, "missing folder"))?;
     let dir = Path::new(folder);
     if !dir.is_dir() {
         return Err(bad(C, format!("{folder} is not a folder (create it first with folder.create)")));
     }
-    let ids = s.targets(p)?;
+    let ids = p.targets(s);
     if ids.is_empty() {
         return Err(bad(C, "no photos to move: select some or give ids"));
     }

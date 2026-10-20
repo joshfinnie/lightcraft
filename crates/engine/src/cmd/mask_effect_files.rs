@@ -10,8 +10,9 @@
 use lightcraft_develop::LocalAdjustments;
 use serde_json::{Map, Value, json};
 
+use super::bad;
 use super::mask_effects::{MaskEffect, upsert};
-use super::{bad, str_param};
+use super::params::params;
 use crate::preset_import::{Lua, group_from_dir, parse_lua, read_zip};
 use crate::{Result, Session};
 
@@ -443,18 +444,36 @@ pub fn read_capped(path: &str) -> std::result::Result<Vec<u8>, String> {
     std::fs::read(path).map_err(|e| e.to_string())
 }
 
-pub fn import_effects(s: &mut Session, p: &Value) -> Result<Value> {
-    const C: &str = "mask.importEffects";
-    let mut paths: Vec<String> =
-        p.get("paths").and_then(Value::as_array).map(|a| a.iter().filter_map(Value::as_str).map(str::to_string).collect()).unwrap_or_default();
-    if let Some(x) = str_param(p, "path") {
-        paths.push(x.to_string());
+params! {
+    /// `mask.importEffects`
+    pub struct ImportEffects {
+        path: Option<String>,
+        #[serde(default)]
+        paths: Vec<String>,
+        group: Option<String>,
+        #[serde(default)]
+        dry_run: bool,
     }
+}
+
+params! {
+    /// `mask.exportEffects`
+    pub struct ExportEffects {
+        path: Option<String>,
+        names: Option<Vec<String>>,
+        group: Option<String>,
+    }
+}
+
+pub fn import_effects(s: &mut Session, p: ImportEffects) -> Result<Value> {
+    const C: &str = "mask.importEffects";
+    let mut paths = p.paths;
+    paths.extend(p.path);
     if paths.is_empty() {
         return Err(bad(C, "missing `path` / `paths`"));
     }
-    let group = str_param(p, "group").map(str::trim).filter(|g| !g.is_empty());
-    let dry = p.get("dryRun").and_then(Value::as_bool).unwrap_or(false);
+    let group = p.group.as_deref().map(str::trim).filter(|g| !g.is_empty());
+    let dry = p.dry_run;
     let (mut found, mut failed) = (Vec::new(), Vec::new());
     for (f, dir_group, named) in effect_files(&paths) {
         match read_capped(&f) {
@@ -470,16 +489,15 @@ pub fn import_effects(s: &mut Session, p: &Value) -> Result<Value> {
     Ok(json!({"imported": imported, "dividers": dividers, "failed": failed.into_iter().map(|(f, e)| json!([f, e])).collect::<Vec<_>>()}))
 }
 
-pub fn export_effects(s: &mut Session, p: &Value) -> Result<Value> {
+pub fn export_effects(s: &mut Session, p: ExportEffects) -> Result<Value> {
     const C: &str = "mask.exportEffects";
-    let path = str_param(p, "path").filter(|x| !x.trim().is_empty()).ok_or_else(|| bad(C, "missing `path`"))?;
+    let path = p.path.as_deref().filter(|x| !x.trim().is_empty()).ok_or_else(|| bad(C, "missing `path`"))?;
     let mut path = std::path::PathBuf::from(path);
     if path.extension().is_none() {
         path.set_extension(EFFECT_EXT);
     }
-    let names: Option<Vec<String>> =
-        p.get("names").and_then(Value::as_array).map(|a| a.iter().filter_map(Value::as_str).map(str::to_string).collect());
-    let group = str_param(p, "group").map(str::trim);
+    let names = p.names;
+    let group = p.group.as_deref().map(str::trim);
     let chosen: Vec<&MaskEffect> = s
         .mask_effects
         .iter()

@@ -375,30 +375,80 @@ fn output_names(first: &str, suffix: &str) -> impl Iterator<Item = std::path::Pa
     (1u64..).map(move |k| dir.join(if k == 1 { format!("{stem}-{suffix}.dng") } else { format!("{stem}-{suffix}-{k}.dng") }))
 }
 
-/// Parse `merge.*` command parameters into a kind and finishing options.
+crate::cmd::params::params! {
+    /// The `merge.*` commands' params. Each kind takes its own options: `projection` on an HDR
+    /// merge, or `align` on a panorama, is an error rather than ignored.
+    pub struct MergeParams with targets {
+        align: Option<bool>,
+        deghost: Option<Deghost>,
+        show_overlay: Option<bool>,
+        projection: Option<Projection>,
+        boundary_warp: Option<f64>,
+        auto_crop: Option<bool>,
+        fill_edges: Option<bool>,
+        max_megapixels: Option<f64>,
+        bracket: Option<u64>,
+        auto_settings: Option<bool>,
+        stack: Option<bool>,
+        #[serde(default)]
+        preview: bool,
+        preview_path: Option<String>,
+    }
+}
+
+/// Read and check a `merge.*` command's params (`id` is the command).
 pub fn parse(id: &str, p: &Value) -> Result<(MergeKind, MergeFinish)> {
+    options(id, &crate::cmd::params::parse_as(id, p)?)
+}
+
+/// The merge `p` asks for; `id` is the command (`merge.hdrBatch` merges HDRs).
+pub fn options(id: &str, p: &MergeParams) -> Result<(MergeKind, MergeFinish)> {
     let bad = |m: String| EngineError::BadParams { cmd: id.into(), msg: m };
-    let deghost: Deghost = serde_json::from_value(p.get("deghost").cloned().unwrap_or(json!("none"))).map_err(|e| bad(format!("deghost: {e}")))?;
-    let hdr = HdrOptions { align: p.get("align").and_then(Value::as_bool).unwrap_or(true), deghost };
-    let projection: Projection =
-        serde_json::from_value(p.get("projection").cloned().unwrap_or(json!("auto"))).map_err(|e| bad(format!("projection: {e}")))?;
+    let (hdr_kind, pano_kind) = (id != "merge.panorama", matches!(id, "merge.panorama" | "merge.hdrPanorama"));
+    fn given<'a>(set: &[(&'a str, bool)]) -> Option<&'a str> {
+        set.iter().find(|(_, on)| *on).map(|(k, _)| *k)
+    }
+    let pano_only = [
+        ("projection", p.projection.is_some()),
+        ("boundaryWarp", p.boundary_warp.is_some()),
+        ("autoCrop", p.auto_crop.is_some()),
+        ("fillEdges", p.fill_edges.is_some()),
+        ("maxMegapixels", p.max_megapixels.is_some()),
+    ];
+    if let Some(k) = given(&pano_only).filter(|_| !pano_kind) {
+        return Err(bad(format!("`{k}` is a panorama option")));
+    }
+    if let Some(k) =
+        given(&[("align", p.align.is_some()), ("deghost", p.deghost.is_some()), ("showOverlay", p.show_overlay.is_some())]).filter(|_| !hdr_kind)
+    {
+        return Err(bad(format!("`{k}` is an HDR option")));
+    }
+    if p.bracket.is_some() && id != "merge.hdrPanorama" {
+        return Err(bad("`bracket` is an HDR panorama option".into()));
+    }
+    if id == "merge.hdrBatch"
+        && let Some(k) = given(&[("preview", p.preview), ("previewPath", p.preview_path.is_some()), ("showOverlay", p.show_overlay.is_some())])
+    {
+        return Err(bad(format!("`{k}` is for one merge, not merge.hdrBatch")));
+    }
+    let hdr = HdrOptions { align: p.align.unwrap_or(true), deghost: p.deghost.unwrap_or(Deghost::None) };
     let pano = PanoOptions {
-        projection,
-        boundary_warp: p.get("boundaryWarp").and_then(Value::as_f64).unwrap_or(0.0).clamp(0.0, 100.0),
-        auto_crop: p.get("autoCrop").and_then(Value::as_bool).unwrap_or(false),
-        fill_edges: p.get("fillEdges").and_then(Value::as_bool).unwrap_or(false),
+        projection: p.projection.unwrap_or(Projection::Auto),
+        boundary_warp: p.boundary_warp.unwrap_or(0.0).clamp(0.0, 100.0),
+        auto_crop: p.auto_crop.unwrap_or(false),
+        fill_edges: p.fill_edges.unwrap_or(false),
         // the photos' own resolution unless asked (held to what fits in memory when it runs)
-        max_megapixels: p.get("maxMegapixels").and_then(Value::as_f64).filter(|v| *v > 0.0).unwrap_or(MAX_MEGAPIXELS).min(MAX_MEGAPIXELS),
+        max_megapixels: p.max_megapixels.filter(|v| *v > 0.0).unwrap_or(MAX_MEGAPIXELS).min(MAX_MEGAPIXELS),
     };
     let kind = match id {
-        "merge.hdr" => MergeKind::Hdr { hdr },
+        "merge.hdr" | "merge.hdrBatch" => MergeKind::Hdr { hdr },
         "merge.panorama" => MergeKind::Panorama { pano },
-        _ => MergeKind::HdrPanorama { hdr, pano, bracket: p.get("bracket").and_then(Value::as_u64).unwrap_or(0) as usize },
+        _ => MergeKind::HdrPanorama { hdr, pano, bracket: usize::try_from(p.bracket.unwrap_or(0)).unwrap_or(usize::MAX) },
     };
     let finish = MergeFinish {
-        auto_settings: p.get("autoSettings").and_then(Value::as_bool).unwrap_or(true),
-        stack: p.get("stack").and_then(Value::as_bool).unwrap_or(false),
-        show_overlay: p.get("showOverlay").and_then(Value::as_bool).unwrap_or(false),
+        auto_settings: p.auto_settings.unwrap_or(true),
+        stack: p.stack.unwrap_or(false),
+        show_overlay: p.show_overlay.unwrap_or(false),
     };
     Ok((kind, finish))
 }

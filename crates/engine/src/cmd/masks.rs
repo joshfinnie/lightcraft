@@ -4,44 +4,79 @@ use lightcraft_develop::{BrushStroke, LocalAdjustments, Mask, MaskComponent, Mas
 use lightcraft_geom::Point;
 use serde_json::{Value, json};
 
-use super::{CommandSpec, bad, bool_or, f64_or, has_active, ok, point, raw_cmd, str_param};
+use super::params::{NoParams, params, whole};
+use super::{CommandSpec, bad, cmd, has_active, ok};
 use crate::segment::{Click, MAX_CLICKS};
 use crate::{Result, Session};
 
-fn shape_from(kind: &str, p: &Value, c: &str) -> Result<MaskShape> {
+params! {
+    /// `mask.add` (`name`) and `mask.addComponent` (`id`, `op`): a mask shape of `kind` and that
+    /// kind's shape params.
+    struct ShapeCall {
+        kind: Option<String>,
+        name: Option<String>,
+        id: Option<u32>,
+        op: Option<MaskOp>,
+        start: Option<[f64; 2]>,
+        end: Option<[f64; 2]>,
+        center: Option<[f64; 2]>,
+        rx: Option<f64>,
+        ry: Option<f64>,
+        angle: Option<f64>,
+        feather: Option<f64>,
+        #[serde(default)]
+        invert: bool,
+        lo: Option<f64>,
+        hi: Option<f64>,
+        lo_feather: Option<f64>,
+        hi_feather: Option<f64>,
+        #[serde(default)]
+        samples: Vec<[f64; 3]>,
+        refine: Option<f64>,
+        #[serde(default)]
+        points: Vec<[f64; 2]>,
+        #[serde(default)]
+        exclude: Vec<[f64; 2]>,
+        seg: Option<lightcraft_develop::SegMask>,
+        text: Option<String>,
+    }
+}
+
+fn pt([x, y]: [f64; 2]) -> Point {
+    Point::new(x, y)
+}
+
+fn shape_from(kind: &str, p: &ShapeCall, c: &str) -> Result<MaskShape> {
     Ok(match kind {
         "brush" => MaskShape::Brush { strokes: vec![] },
-        "linear" => {
-            MaskShape::Linear { start: point(p, "start").unwrap_or(Point::new(0.5, 0.25)), end: point(p, "end").unwrap_or(Point::new(0.5, 0.6)) }
-        }
+        "linear" => MaskShape::Linear { start: p.start.map_or(Point::new(0.5, 0.25), pt), end: p.end.map_or(Point::new(0.5, 0.6), pt) },
         "radial" => MaskShape::Radial {
-            center: point(p, "center").unwrap_or(Point::new(0.5, 0.5)),
-            rx: f64_or(p, "rx", 0.22),
-            ry: f64_or(p, "ry", 0.16),
-            angle: f64_or(p, "angle", 0.0),
-            feather: f64_or(p, "feather", 50.0),
-            invert: bool_or(p, "invert", false),
+            center: p.center.map_or(Point::new(0.5, 0.5), pt),
+            rx: p.rx.unwrap_or(0.22),
+            ry: p.ry.unwrap_or(0.16),
+            angle: p.angle.unwrap_or(0.0),
+            feather: p.feather.unwrap_or(50.0),
+            invert: p.invert,
         },
         "sky" => MaskShape::Sky,
         "subject" => MaskShape::Subject,
         "background" => MaskShape::Background,
         "luminanceRange" => MaskShape::LuminanceRange {
-            lo: f64_or(p, "lo", 0.6),
-            hi: f64_or(p, "hi", 1.0),
-            lo_feather: f64_or(p, "loFeather", 0.1),
-            hi_feather: f64_or(p, "hiFeather", 0.1),
+            lo: p.lo.unwrap_or(0.6),
+            hi: p.hi.unwrap_or(1.0),
+            lo_feather: p.lo_feather.unwrap_or(0.1),
+            hi_feather: p.hi_feather.unwrap_or(0.1),
         },
-        "colorRange" => {
-            let samples: Vec<[f64; 3]> = p
-                .get("samples")
-                .and_then(Value::as_array)
-                .map(|a| a.iter().filter_map(|s| Some([s.get(0)?.as_f64()?, s.get(1)?.as_f64()?, s.get(2)?.as_f64()?])).collect())
-                .unwrap_or_default();
-            MaskShape::ColorRange { samples, refine: f64_or(p, "refine", 50.0) }
-        }
-        "object" => MaskShape::Object { hint: points(p, "points"), exclude: points(p, "exclude"), seg: seg_param(p), detail: vec![], edge: 0.0 },
+        "colorRange" => MaskShape::ColorRange { samples: p.samples.clone(), refine: p.refine.unwrap_or(50.0) },
+        "object" => MaskShape::Object {
+            hint: p.points.iter().copied().map(pt).collect(),
+            exclude: p.exclude.iter().copied().map(pt).collect(),
+            seg: p.seg.clone(),
+            detail: vec![],
+            edge: 0.0,
+        },
         "prompt" => {
-            MaskShape::Prompt { text: str_param(p, "text").unwrap_or_default().trim().to_string(), seg: seg_param(p), detail: vec![], edge: 0.0 }
+            MaskShape::Prompt { text: p.text.as_deref().unwrap_or_default().trim().to_string(), seg: p.seg.clone(), detail: vec![], edge: 0.0 }
         }
         other => {
             return Err(bad(
@@ -50,19 +85,6 @@ fn shape_from(kind: &str, p: &Value, c: &str) -> Result<MaskShape> {
             ));
         }
     })
-}
-
-/// `[[x, y], …]` normalized points under `key`.
-fn points(p: &Value, key: &str) -> Vec<Point> {
-    p.get(key)
-        .and_then(Value::as_array)
-        .map(|a| a.iter().filter_map(|q| Some(Point::new(q.get(0)?.as_f64()?, q.get(1)?.as_f64()?))).collect())
-        .unwrap_or_default()
-}
-
-/// A segmentation passed in (`seg`: a stored or replayed AI mask; the model isn't needed).
-fn seg_param(p: &Value) -> Option<lightcraft_develop::SegMask> {
-    p.get("seg").and_then(|v| serde_json::from_value(v.clone()).ok())
 }
 
 /// What a new AI shape still needs once it is added.
@@ -199,28 +221,218 @@ fn connected_strokes(from: Point, last: &BrushStroke, to: BrushStroke) -> Vec<Br
     out
 }
 
-pub(super) fn parse_mask_id(v: &Value, c: &str) -> Result<u32> {
-    v.as_u64().and_then(|v| u32::try_from(v).ok()).ok_or_else(|| bad(c, "`id` must be a non-negative integer that fits in u32"))
+/// The mask a call names (`id`), else the selected one.
+pub(super) fn mask_id(id: Option<u32>, active: Option<u32>, c: &str) -> Result<u32> {
+    id.or(active).ok_or_else(|| bad(c, "no mask selected (give `id`)"))
 }
 
-/// Omitted or null targets keep the command's default; malformed explicit targets never do.
-fn optional_mask_id(p: &Value, c: &str) -> Result<Option<u32>> {
-    p.get("id").filter(|v| !v.is_null()).map(|v| parse_mask_id(v, c)).transpose()
+params! {
+    /// Mask commands on one mask (default: the selected one).
+    struct MaskRef {
+        id: Option<u32>,
+    }
 }
 
-pub(super) fn mask_id(p: &Value, active: Option<u32>, c: &str) -> Result<u32> {
-    optional_mask_id(p, c)?.or(active).ok_or_else(|| bad(c, "no mask selected (give `id`)"))
+params! {
+    /// `mask.brushStroke`
+    struct BrushStrokeParams {
+        id: Option<u32>,
+        points: Vec<[f64; 2]>,
+        size: Option<f64>,
+        feather: Option<f64>,
+        flow: Option<f64>,
+        density: Option<f64>,
+        #[serde(default)]
+        erase: bool,
+        #[serde(default)]
+        auto_mask: bool,
+        pressure: Option<Vec<f64>>,
+        #[serde(default)]
+        connect: bool,
+    }
 }
 
-fn optional_index(p: &Value, key: &str, c: &str) -> Result<Option<usize>> {
-    p.get(key)
-        .filter(|v| !v.is_null())
-        .map(|v| {
-            v.as_u64()
-                .and_then(|v| usize::try_from(v).ok())
-                .ok_or_else(|| bad(c, format!("`{key}` must be a non-negative integer that fits in usize")))
-        })
-        .transpose()
+params! {
+    /// `mask.update`
+    struct UpdateShape {
+        id: Option<u32>,
+        component: Option<usize>,
+        shape: MaskShape,
+    }
+}
+
+params! {
+    /// `mask.sampleColor`
+    struct SampleColor {
+        x: f64,
+        y: f64,
+        #[serde(default)]
+        add: bool,
+        id: Option<u32>,
+        component: Option<usize>,
+    }
+}
+
+params! {
+    /// `mask.objectPoint`
+    struct ObjectPoint {
+        x: f64,
+        y: f64,
+        #[serde(default)]
+        exclude: bool,
+        id: Option<u32>,
+    }
+}
+
+params! {
+    /// `mask.refineDetail`
+    struct RefineDetail {
+        id: Option<u32>,
+        component: Option<usize>,
+    }
+}
+
+params! {
+    /// `segment.model.download`
+    struct Acknowledged {
+        acknowledged: Option<bool>,
+    }
+}
+
+params! {
+    /// `mask.refine`
+    struct Refine {
+        id: Option<u32>,
+        value: Option<f64>,
+    }
+}
+
+params! {
+    /// `mask.adjust`: `values` are `LocalAdjustments` fields, checked when merged.
+    struct Adjust {
+        id: Option<u32>,
+        values: Option<Value>,
+    }
+}
+
+params! {
+    /// `mask.rename`
+    struct RenameMask {
+        id: Option<u32>,
+        name: Option<String>,
+    }
+}
+
+params! {
+    /// `mask.visible`
+    struct Visible {
+        id: Option<u32>,
+        visible: Option<bool>,
+    }
+}
+
+params! {
+    /// `mask.duplicate`
+    struct Duplicate {
+        id: Option<u32>,
+        #[serde(default)]
+        invert: bool,
+    }
+}
+
+params! {
+    /// `mask.component`
+    struct Component {
+        id: Option<u32>,
+        component: Option<usize>,
+        action: Option<String>,
+        name: Option<String>,
+        op: Option<MaskOp>,
+    }
+}
+
+params! {
+    /// `mask.move`
+    struct MoveMask {
+        id: Option<u32>,
+        to: Option<i64>,
+        delta: Option<i64>,
+    }
+}
+
+params! {
+    /// `spot.findDust`, `spot.findBlemishes`
+    struct FindSpots {
+        sensitivity: Option<f64>,
+        add: Option<bool>,
+        max_per_face: Option<f64>,
+    }
+}
+
+params! {
+    /// `spot.add`
+    struct AddSpot {
+        mode: Option<SpotMode>,
+        #[serde(default)]
+        points: Vec<[f64; 2]>,
+        size: Option<f64>,
+        feather: Option<f64>,
+        opacity: Option<f64>,
+        source: Option<[f64; 2]>,
+    }
+}
+
+params! {
+    /// Spot commands on one spot (default: the selected one).
+    struct SpotRef {
+        index: Option<usize>,
+    }
+}
+
+params! {
+    /// `spot.update`
+    struct UpdateSpot {
+        index: Option<usize>,
+        #[serde(rename = "move")]
+        shift: Option<[f64; 2]>,
+        source: Option<[f64; 2]>,
+        move_source: Option<[f64; 2]>,
+        size: Option<f64>,
+        feather: Option<f64>,
+        opacity: Option<f64>,
+        mode: Option<SpotMode>,
+    }
+}
+
+params! {
+    /// `redeye.add`
+    struct AddRedEye {
+        center: Option<[f64; 2]>,
+        rx: Option<f64>,
+        ry: Option<f64>,
+        #[serde(default)]
+        pet: bool,
+        pupil_size: Option<f64>,
+        darken: Option<f64>,
+    }
+}
+
+params! {
+    /// `redeye.catchlight`
+    struct Catchlight {
+        #[serde(deserialize_with = "whole")]
+        index: usize,
+        on: Option<bool>,
+        offset: Option<[f64; 2]>,
+    }
+}
+
+params! {
+    /// `redeye.delete`
+    struct EyeRef {
+        #[serde(deserialize_with = "whole")]
+        index: usize,
+    }
 }
 
 fn find(masks: &mut [Mask], id: u32, c: &str) -> Result<usize> {
@@ -229,18 +441,22 @@ fn find(masks: &mut [Mask], id: u32, c: &str) -> Result<usize> {
 
 pub fn specs() -> Vec<CommandSpec> {
     vec![
-        raw_cmd!(
+        cmd!(
             "mask.add",
             "Create New Mask",
             [],
             None,
             "{kind: brush|linear|radial|sky|subject|background|luminanceRange|colorRange|object|prompt, ...shape params (start/end, center/rx/ry/angle/feather, lo/hi…; object: points/exclude [[x,y],…]; prompt: text; object/prompt: seg? a stored segmentation, no model needed), name?} — AI kinds need the SAM 3 model; in the app a prompt returns {pending} and the mask appears when found",
+            ShapeCall,
             has_active,
             |s, p| {
-                let kind = str_param(p, "kind").unwrap_or("radial").to_string();
-                let mut shape = shape_from(&kind, p, "mask.add")?;
+                if let Some(k) = [("id", p.id.is_some()), ("op", p.op.is_some())].iter().find(|(_, on)| *on).map(|(k, _)| k) {
+                    return Err(bad("mask.add", format!("unknown parameter `{k}` (mask.addComponent adds to a mask)")));
+                }
+                let kind = p.kind.clone().unwrap_or_else(|| "radial".into());
+                let mut shape = shape_from(&kind, &p, "mask.add")?;
                 let later = resolve_ai(s, &mut shape, "mask.add")?;
-                let name = str_param(p, "name").map(str::to_string);
+                let name = p.name;
                 if let Later::Text(text) = &later {
                     let id = s.active().ok_or_else(|| bad("mask.add", "no active photo"))?;
                     segment(s, |s| s.segment_text_later(id, None, "add", name, text))?;
@@ -263,71 +479,73 @@ pub fn specs() -> Vec<CommandSpec> {
                 queue_later(s, later, next, 0, out)
             }
         ),
-        raw_cmd!(
+        cmd!(
             "mask.addComponent",
             "Add/Subtract/Intersect Mask",
             [],
             None,
             "{id?: maskId, op: add|subtract|intersect, kind, ...shape params}",
+            ShapeCall,
             has_active,
             |s, p| {
-                let kind = str_param(p, "kind").unwrap_or("brush").to_string();
-                let op: MaskOp =
-                    serde_json::from_value(p.get("op").cloned().unwrap_or(json!("add"))).map_err(|e| bad("mask.addComponent", e.to_string()))?;
+                if p.name.is_some() {
+                    return Err(bad("mask.addComponent", "unknown parameter `name` (components take no name here; mask.component renames one)"));
+                }
+                let kind = p.kind.clone().unwrap_or_else(|| "brush".into());
+                let op = p.op.unwrap_or(MaskOp::Add);
                 let active = s.active_mask;
-                let mid = mask_id(p, active, "mask.addComponent")?;
+                let mid = mask_id(p.id, active, "mask.addComponent")?;
                 let id = s.active().ok_or_else(|| bad("mask.addComponent", "no active photo"))?;
                 if !s.develop_of(id).is_some_and(|d| d.masks.iter().any(|m| m.id == mid)) {
                     return Err(bad("mask.addComponent", format!("no mask {mid}")));
                 }
-                let mut shape = shape_from(&kind, p, "mask.addComponent")?;
+                let mut shape = shape_from(&kind, &p, "mask.addComponent")?;
                 let later = resolve_ai(s, &mut shape, "mask.addComponent")?;
                 if let Later::Text(text) = &later {
-                    let op = p.get("op").and_then(Value::as_str).unwrap_or("add");
+                    let op = match op {
+                        MaskOp::Add => "add",
+                        MaskOp::Subtract => "subtract",
+                        MaskOp::Intersect => "intersect",
+                    };
                     segment(s, |s| s.segment_text_later(id, Some(mid), op, None, text))?;
                     return Ok(json!({"pending": true}));
                 }
                 let mut comp = 0;
                 let out = masks_edit(s, "mask.addComponent", "Edit Mask", |masks, _| {
                     let i = find(masks, mid, "mask.addComponent")?;
-                    masks[i].components.push(MaskComponent { name: None, op, invert: bool_or(p, "invert", false), shape });
+                    masks[i].components.push(MaskComponent { name: None, op, invert: p.invert, shape });
                     comp = masks[i].components.len() - 1;
                     Ok(())
                 })?;
                 queue_later(s, later, mid, comp, out)
             }
         ),
-        raw_cmd!(
+        cmd!(
             "mask.brushStroke",
             "Brush Stroke",
             [],
             None,
             "{id?: maskId, points: [[x,y],…] normalized, size?: fraction of long edge (0.03), feather?, flow?, density?, erase?: bool, autoMask?: bool, pressure?: [p,…] pen pressure 0..1 per point (scales each dab's size and flow; omitted: full), connect?: bool — start from the last point of the mask's last stroke (⇧-click), size / feather / flow tapering from that stroke's to these} → {activeMask, connected}",
+            BrushStrokeParams,
             has_active,
             |s, p| {
-                let pts: Vec<Point> = p
-                    .get("points")
-                    .and_then(Value::as_array)
-                    .ok_or_else(|| bad("mask.brushStroke", "missing points"))?
-                    .iter()
-                    .filter_map(|q| Some(Point::new(q.get(0)?.as_f64()?, q.get(1)?.as_f64()?)))
-                    .collect();
+                let pts: Vec<Point> = p.points.iter().copied().map(pt).collect();
                 let pts_len = pts.len();
                 let d = BrushStroke::default();
                 let stroke = BrushStroke {
                     points: pts,
-                    size: f64_or(p, "size", d.size),
-                    feather: f64_or(p, "feather", d.feather),
-                    flow: f64_or(p, "flow", d.flow),
-                    density: f64_or(p, "density", d.density),
-                    erase: bool_or(p, "erase", false),
-                    auto_mask: bool_or(p, "autoMask", false),
-                    pressure: pressure_list(p.get("pressure"), pts_len)?,
+                    size: p.size.unwrap_or(d.size),
+                    feather: p.feather.unwrap_or(d.feather),
+                    flow: p.flow.unwrap_or(d.flow),
+                    density: p.density.unwrap_or(d.density),
+                    erase: p.erase,
+                    auto_mask: p.auto_mask,
+                    pressure: pressure_list(p.pressure.as_deref(), pts_len)?,
                 };
-                let connect = bool_or(p, "connect", false);
+                let connect = p.connect;
                 let mut connected = false;
                 let next = s.active().and_then(|id| s.develop_of(id)).map(|d| d.next_mask_id()).unwrap_or(1);
-                let want = optional_mask_id(p, "mask.brushStroke")?.or(s.active_mask);
+                let want = p.id.or(s.active_mask);
                 let adjust = super::mask_effects::new_mask_adjust(s, "brush");
                 let mut out = masks_edit(s, "mask.brushStroke", "Brush", |masks, active| {
                     let i = match want.and_then(|m| masks.iter().position(|x| x.id == m)) {
@@ -380,11 +598,10 @@ pub fn specs() -> Vec<CommandSpec> {
                 Ok(out)
             }
         ),
-        raw_cmd!("mask.update", "Update Mask Shape", [], None, "{id?, component?: index (0), shape: MaskShape JSON}", has_active, |s, p| {
-            let shape: MaskShape =
-                serde_json::from_value(p.get("shape").cloned().unwrap_or_default()).map_err(|e| bad("mask.update", e.to_string()))?;
-            let comp = optional_index(p, "component", "mask.update")?.unwrap_or(0);
-            let mid = mask_id(p, s.active_mask, "mask.update")?;
+        cmd!("mask.update", "Update Mask Shape", [], None, "{id?, component?: index (0), shape: MaskShape JSON}", UpdateShape, has_active, |s, p| {
+            let shape = p.shape;
+            let comp = p.component.unwrap_or(0);
+            let mid = mask_id(p.id, s.active_mask, "mask.update")?;
             masks_edit(s, "mask.update", "Edit Mask", |masks, _| {
                 let i = find(masks, mid, "mask.update")?;
                 let c = masks[i].components.get_mut(comp).ok_or_else(|| bad("mask.update", "no such component"))?;
@@ -392,19 +609,19 @@ pub fn specs() -> Vec<CommandSpec> {
                 Ok(())
             })
         }),
-        raw_cmd!(
+        cmd!(
             "mask.sampleColor",
             "Sample Mask Color",
             [],
             None,
             "{x, y: normalized image point, add?: bool (⇧: add to the samples, max 5), id?, component?} — the colour range of the selected mask (its first colour-range component) samples the colour there → {samples}",
+            SampleColor,
             has_active,
             |s, p| {
                 let c = "mask.sampleColor";
-                let mid = mask_id(p, s.active_mask, c)?;
-                let comp = optional_index(p, "component", c)?;
-                let (x, y) = (super::f64_req(p, "x", c)?, super::f64_req(p, "y", c)?);
-                let add = p.get("add").and_then(Value::as_bool).unwrap_or(false);
+                let mid = mask_id(p.id, s.active_mask, c)?;
+                let comp = p.component;
+                let (x, y, add) = (p.x, p.y, p.add);
                 let id = s.active().ok_or_else(|| bad(c, "no active photo"))?;
                 let src = s.source_now(id, crate::media::SourceLevel::Thumb).map_err(|e| bad(c, e))?;
                 let info = s.source_info(id);
@@ -433,22 +650,23 @@ pub fn specs() -> Vec<CommandSpec> {
                 Ok(json!({"samples": out}))
             }
         ),
-        raw_cmd!(
+        cmd!(
             "mask.objectPoint",
             "Add Object Click",
             [],
             None,
             "{x, y: normalized image point, exclude?: bool (⌥-click: leave this part out), id?: maskId} — a click on the selected mask's Object selection (its last Object component); SAM 3 re-segments the object → {include, exclude}",
+            ObjectPoint,
             has_active,
             |s, p| {
                 let c = "mask.objectPoint";
-                let at = Point::new(super::f64_req(p, "x", c)?, super::f64_req(p, "y", c)?);
+                let at = Point::new(p.x, p.y);
                 if !(0.0..=1.0).contains(&at.x) || !(0.0..=1.0).contains(&at.y) {
                     return Err(bad(c, "the point is outside the photo"));
                 }
-                let exclude = bool_or(p, "exclude", false);
+                let exclude = p.exclude;
                 let id = s.active().ok_or_else(|| bad(c, "no active photo"))?;
-                let mid = mask_id(p, s.active_mask, c)?;
+                let mid = mask_id(p.id, s.active_mask, c)?;
                 let d = s.develop_of(id).unwrap_or_default();
                 let m = d.masks.iter().find(|m| m.id == mid).ok_or_else(|| bad(c, format!("no mask {mid}")))?;
                 let k = m
@@ -489,20 +707,21 @@ pub fn specs() -> Vec<CommandSpec> {
                 Ok(out)
             }
         ),
-        raw_cmd!(
+        cmd!(
             "mask.refineDetail",
             "Refine AI Mask Detail",
             [],
             None,
             "{id?: maskId, component?} — a zoomed-in SAM 3 pass over an Object/Describe selection (default: the mask's last one): the photo around it is analyzed again at a higher resolution, in the background; the mask updates when it's done → {started}",
+            RefineDetail,
             has_active,
             |s, p| {
                 let c = "mask.refineDetail";
                 let id = s.active().ok_or_else(|| bad(c, "no active photo"))?;
-                let mid = mask_id(p, s.active_mask, c)?;
+                let mid = mask_id(p.id, s.active_mask, c)?;
                 let d = s.develop_of(id).unwrap_or_default();
                 let m = d.masks.iter().find(|m| m.id == mid).ok_or_else(|| bad(c, format!("no mask {mid}")))?;
-                let k = match optional_index(p, "component", c)? {
+                let k = match p.component {
                     Some(k) => k,
                     None => m
                         .components
@@ -514,12 +733,13 @@ pub fn specs() -> Vec<CommandSpec> {
                 Ok(json!({"started": started}))
             }
         ),
-        raw_cmd!(
+        cmd!(
             query "segment.prepare",
             "Prepare AI Masks",
             [],
             None,
             "{} — load SAM 3 and analyze the active photo in the background, so Object clicks are instant → {busy}",
+            NoParams,
             has_active,
             |s, _| {
                 let c = "segment.prepare";
@@ -528,12 +748,13 @@ pub fn specs() -> Vec<CommandSpec> {
                 Ok(json!({"busy": s.segmenter.busy()}))
             }
         ),
-        raw_cmd!(
+        cmd!(
             query "segment.model.status",
             "AI Mask Model Status",
             [],
             None,
             "{} — whether this build has AI masks, whether the SAM 3 model is installed (and where), loaded, busy, and the download's progress → {available, installed, dir, loaded, busy, analyzing, sizeBytes, license, licenseUrl, mirrors, download: {running, done, total, file, error, finished}}",
+            NoParams,
             super::always,
             |s, _| {
                 let g = &s.segmenter;
@@ -553,16 +774,17 @@ pub fn specs() -> Vec<CommandSpec> {
                 }))
             }
         ),
-        raw_cmd!(
+        cmd!(
             query "segment.model.download",
             "Download AI Mask Model",
             [],
             None,
             "{acknowledged: true} — download the SAM 3 model (about 3.4 GB, Meta's SAM License, not LightCraft's) in the background, from the configured mirrors; only after the user agreed to it. Watch segment.model.status; segment.model.cancel stops it (it resumes later) → {started, installed, downloading}",
+            Acknowledged,
             super::always,
             |s, p| {
                 let c = "segment.model.download";
-                if p.get("acknowledged").and_then(Value::as_bool) != Some(true) {
+                if p.acknowledged != Some(true) {
                     return Err(bad(
                         c,
                         format!(
@@ -577,25 +799,27 @@ pub fn specs() -> Vec<CommandSpec> {
                 Ok(json!({"started": started, "installed": s.segmenter.installed(), "downloading": s.segmenter.download_status().running}))
             }
         ),
-        raw_cmd!(
+        cmd!(
             query "segment.model.cancel",
             "Cancel AI Mask Model Download",
             [],
             None,
             "{} — stop the SAM 3 download (what has arrived is kept, and a new download resumes from it) → {cancelled}",
+            NoParams,
             super::always,
             |s, _| Ok(json!({"cancelled": s.segmenter.cancel_download()}))
         ),
-        raw_cmd!(
+        cmd!(
             "mask.refine",
             "Refine Mask Edges",
             [],
             None,
             "{id?, value: 0..100} — the mask's edges snap to the photo's (guided filter; rendered on the CPU)",
+            Refine,
             has_active,
             |s, p| {
-                let v = f64_or(p, "value", 0.0).clamp(0.0, 100.0);
-                let mid = mask_id(p, s.active_mask, "mask.refine")?;
+                let v = p.value.unwrap_or(0.0).clamp(0.0, 100.0);
+                let mid = mask_id(p.id, s.active_mask, "mask.refine")?;
                 masks_edit(s, "mask.refine", "Refine Edges", |masks, _| {
                     let i = find(masks, mid, "mask.refine")?;
                     masks[i].refine = v;
@@ -603,32 +827,33 @@ pub fn specs() -> Vec<CommandSpec> {
                 })
             }
         ),
-        raw_cmd!(
+        cmd!(
             "mask.adjust",
             "Set Mask Adjustments",
             [],
             None,
             "{id?, values: {exposure, contrast, highlights, shadows, whites, blacks, temp, tint, texture, clarity, dehaze, hue, saturation, sharpness, noise, moire, defringe, color_hue, color_sat, amount}}",
+            Adjust,
             has_active,
             |s, p| {
-                let vals = p.get("values").cloned().ok_or_else(|| bad("mask.adjust", "missing values"))?;
-                let mid = mask_id(p, s.active_mask, "mask.adjust")?;
+                let vals = p.values.ok_or_else(|| bad("mask.adjust", "missing values"))?;
+                let mid = mask_id(p.id, s.active_mask, "mask.adjust")?;
                 masks_edit(s, "mask.adjust", "Mask Adjustment", |masks, _| {
                     let i = find(masks, mid, "mask.adjust")?;
                     let mut v = serde_json::to_value(masks[i].adjust).unwrap_or_default();
                     lightcraft_develop::presets::deep_merge(&mut v, &vals);
-                    let a: LocalAdjustments = serde_json::from_value(v).map_err(|e| bad("mask.adjust", e.to_string()))?;
+                    let a: LocalAdjustments = super::params::from_value(&v)?;
                     masks[i].adjust = clamp_local(a);
                     Ok(())
                 })
             }
         ),
-        raw_cmd!("mask.select", "Select Mask", [], None, "{id|null}", has_active, |s, p| {
-            s.active_mask = optional_mask_id(p, "mask.select")?;
+        cmd!("mask.select", "Select Mask", [], None, "{id|null}", MaskRef, has_active, |s, p| {
+            s.active_mask = p.id;
             ok()
         }),
-        raw_cmd!("mask.delete", "Delete Mask", [], None, "{id?}", has_active, |s, p| {
-            let mid = mask_id(p, s.active_mask, "mask.delete")?;
+        cmd!("mask.delete", "Delete Mask", [], None, "{id?}", MaskRef, has_active, |s, p| {
+            let mid = mask_id(p.id, s.active_mask, "mask.delete")?;
             masks_edit(s, "mask.delete", "Delete Mask", |masks, active| {
                 let i = find(masks, mid, "mask.delete")?;
                 masks.remove(i);
@@ -636,48 +861,49 @@ pub fn specs() -> Vec<CommandSpec> {
                 Ok(())
             })
         }),
-        raw_cmd!("mask.deleteAll", "Delete All Masks", [], None, "{}", has_active, |s, _| {
+        cmd!("mask.deleteAll", "Delete All Masks", [], None, "{}", NoParams, has_active, |s, _| {
             masks_edit(s, "mask.deleteAll", "Delete All Masks", |masks, active| {
                 masks.clear();
                 *active = None;
                 Ok(())
             })
         }),
-        raw_cmd!("mask.rename", "Rename Mask", [], None, "{id?, name}", has_active, |s, p| {
-            let name = str_param(p, "name").ok_or_else(|| bad("mask.rename", "missing name"))?.to_string();
-            let mid = mask_id(p, s.active_mask, "mask.rename")?;
+        cmd!("mask.rename", "Rename Mask", [], None, "{id?, name}", RenameMask, has_active, |s, p| {
+            let name = p.name.ok_or_else(|| bad("mask.rename", "missing name"))?;
+            let mid = mask_id(p.id, s.active_mask, "mask.rename")?;
             masks_edit(s, "mask.rename", "Rename Mask", |masks, _| {
                 let i = find(masks, mid, "mask.rename")?;
                 masks[i].name = name;
                 Ok(())
             })
         }),
-        raw_cmd!("mask.invert", "Invert Mask", [], None, "{id?}", has_active, |s, p| {
-            let mid = mask_id(p, s.active_mask, "mask.invert")?;
+        cmd!("mask.invert", "Invert Mask", [], None, "{id?}", MaskRef, has_active, |s, p| {
+            let mid = mask_id(p.id, s.active_mask, "mask.invert")?;
             masks_edit(s, "mask.invert", "Invert Mask", |masks, _| {
                 let i = find(masks, mid, "mask.invert")?;
                 masks[i].invert = !masks[i].invert;
                 Ok(())
             })
         }),
-        raw_cmd!("mask.visible", "Show/Hide Mask", [], None, "{id?, visible?: bool}", has_active, |s, p| {
-            let mid = mask_id(p, s.active_mask, "mask.visible")?;
+        cmd!("mask.visible", "Show/Hide Mask", [], None, "{id?, visible?: bool}", Visible, has_active, |s, p| {
+            let mid = mask_id(p.id, s.active_mask, "mask.visible")?;
             masks_edit(s, "mask.visible", "Toggle Mask", |masks, _| {
                 let i = find(masks, mid, "mask.visible")?;
-                masks[i].visible = bool_or(p, "visible", !masks[i].visible);
+                masks[i].visible = p.visible.unwrap_or(!masks[i].visible);
                 Ok(())
             })
         }),
-        raw_cmd!(
+        cmd!(
             "mask.duplicate",
             "Duplicate Mask",
             [],
             None,
             "{id?, invert?: bool (Duplicate and Invert)} — the copy goes right after the original and is selected",
+            Duplicate,
             has_active,
             |s, p| {
-                let mid = mask_id(p, s.active_mask, "mask.duplicate")?;
-                let invert = bool_or(p, "invert", false);
+                let mid = mask_id(p.id, s.active_mask, "mask.duplicate")?;
+                let invert = p.invert;
                 let next = s.active().and_then(|id| s.develop_of(id)).map(|d| d.next_mask_id()).unwrap_or(1);
                 let label = if invert { "Duplicate and Invert Mask" } else { "Duplicate Mask" };
                 masks_edit(s, "mask.duplicate", label, |masks, active| {
@@ -694,22 +920,20 @@ pub fn specs() -> Vec<CommandSpec> {
                 })
             }
         ),
-        raw_cmd!(
+        cmd!(
             "mask.component",
             "Edit Mask Component",
             [],
             None,
             "{id?, component: index, action: invert|duplicate|delete|rename|op, name? (rename; empty clears), op?: add|subtract|intersect} — one component of a mask (deleting the last one deletes the mask)",
+            Component,
             has_active,
             |s, p| {
                 let c = "mask.component";
-                let mid = mask_id(p, s.active_mask, c)?;
-                let k = optional_index(p, "component", c)?.ok_or_else(|| bad(c, "missing component"))?;
-                let action = str_param(p, "action").ok_or_else(|| bad(c, "missing action"))?.to_string();
-                let op: Option<MaskOp> = match p.get("op") {
-                    Some(v) => Some(serde_json::from_value(v.clone()).map_err(|e| bad(c, e.to_string()))?),
-                    None => None,
-                };
+                let mid = mask_id(p.id, s.active_mask, c)?;
+                let k = p.component.ok_or_else(|| bad(c, "missing component"))?;
+                let action = p.action.clone().ok_or_else(|| bad(c, "missing action"))?;
+                let op = p.op;
                 let label = match action.as_str() {
                     "invert" => "Invert Component",
                     "duplicate" => "Duplicate Component",
@@ -724,7 +948,7 @@ pub fn specs() -> Vec<CommandSpec> {
                     let comp = comps.get_mut(k).ok_or_else(|| bad(c, "no such component"))?;
                     match action.as_str() {
                         "invert" => comp.invert = !comp.invert,
-                        "rename" => comp.name = str_param(p, "name").map(str::trim).filter(|n| !n.is_empty()).map(str::to_string),
+                        "rename" => comp.name = p.name.as_deref().map(str::trim).filter(|n| !n.is_empty()).map(str::to_string),
                         "op" => comp.op = op.ok_or_else(|| bad(c, "missing op"))?,
                         "duplicate" => {
                             let copy = comp.clone();
@@ -742,34 +966,44 @@ pub fn specs() -> Vec<CommandSpec> {
                 })
             }
         ),
-        raw_cmd!("mask.move", "Move Mask", [], None, "{id?, to?: index (0 = top), delta?: ±n} — reorder the masks list", has_active, |s, p| {
-            let mid = mask_id(p, s.active_mask, "mask.move")?;
-            let mut masks = s.active().and_then(|id| s.develop_of(id)).map(|d| d.masks.clone()).unwrap_or_default();
-            let i = find(&mut masks, mid, "mask.move")?;
-            let to = match (p.get("to").and_then(Value::as_i64), p.get("delta").and_then(Value::as_i64)) {
-                (Some(t), _) => t,
-                // (an agent's delta can be anything: saturate rather than overflow)
-                (None, Some(d)) => (i as i64).saturating_add(d),
-                (None, None) => return Err(bad("mask.move", "give `to` (index) or `delta`")),
+        cmd!(
+            "mask.move",
+            "Move Mask",
+            [],
+            None,
+            "{id?, to?: index (0 = top), delta?: ±n} — reorder the masks list",
+            MoveMask,
+            has_active,
+            |s, p| {
+                let mid = mask_id(p.id, s.active_mask, "mask.move")?;
+                let mut masks = s.active().and_then(|id| s.develop_of(id)).map(|d| d.masks.clone()).unwrap_or_default();
+                let i = find(&mut masks, mid, "mask.move")?;
+                let to = match (p.to, p.delta) {
+                    (Some(t), _) => t,
+                    // (an agent's delta can be anything: saturate rather than overflow)
+                    (None, Some(d)) => (i as i64).saturating_add(d),
+                    (None, None) => return Err(bad("mask.move", "give `to` (index) or `delta`")),
+                }
+                .clamp(0, masks.len() as i64 - 1) as usize;
+                if to == i {
+                    return Ok(json!({"activeMask": s.active_mask}));
+                }
+                masks_edit(s, "mask.move", "Reorder Masks", |masks, _| {
+                    let i = find(masks, mid, "mask.move")?;
+                    let m = masks.remove(i);
+                    masks.insert(to, m);
+                    Ok(())
+                })
             }
-            .clamp(0, masks.len() as i64 - 1) as usize;
-            if to == i {
-                return Ok(json!({"activeMask": s.active_mask}));
-            }
-            masks_edit(s, "mask.move", "Reorder Masks", |masks, _| {
-                let i = find(masks, mid, "mask.move")?;
-                let m = masks.remove(i);
-                masks.insert(to, m);
-                Ok(())
-            })
-        }),
+        ),
         // ---- Remove tool (spots)
-        raw_cmd!(
+        cmd!(
             "spot.findDust",
             "Find Dust Spots",
             [],
             None,
             "{sensitivity?: 0..100 (50), add?: bool (true)} — find sensor-dust spots (small soft dark spots on smooth areas) and add a heal spot on each (one undo step) → {spots: [{x, y, size}], added}",
+            FindSpots,
             has_active,
             |s, p| {
                 let c = "spot.findDust";
@@ -777,9 +1011,12 @@ pub fn specs() -> Vec<CommandSpec> {
                 // the uncropped photo, so positions are the spots' own coordinates
                 let job = s.render_job(id, 1600, 1600, false, false).ok_or_else(|| bad(c, "no photo"))?;
                 let img = job.run().rendered.map_err(|e| bad(c, e))?.image;
-                let found = lightcraft_pipeline::dust::detect(&img, f64_or(p, "sensitivity", 50.0) as f32);
+                if p.max_per_face.is_some() {
+                    return Err(bad(c, "unknown parameter `maxPerFace` (spot.findBlemishes takes it)"));
+                }
+                let found = lightcraft_pipeline::dust::detect(&img, p.sensitivity.unwrap_or(50.0) as f32);
                 let out: Vec<Value> = found.iter().map(|d| json!({"x": d.x, "y": d.y, "size": d.radius})).collect();
-                if !p.get("add").and_then(Value::as_bool).unwrap_or(true) || found.is_empty() {
+                if !p.add.unwrap_or(true) || found.is_empty() {
                     return Ok(json!({"spots": out, "added": 0}));
                 }
                 let mut dd = (*s.develop_of(id).unwrap_or_default()).clone();
@@ -800,12 +1037,13 @@ pub fn specs() -> Vec<CommandSpec> {
                 Ok(json!({"spots": out, "added": found.len()}))
             }
         ),
-        raw_cmd!(
+        cmd!(
             "spot.findBlemishes",
             "Find Blemishes",
             [],
             None,
             "{sensitivity?: 0..100 (50), add?: bool (true), maxPerFace?: 1..20 (6)} — find small blemishes (darker or redder round spots on skin) on the faces of the active photo and add a heal spot on each (one undo step); needs the YuNet face detector (`faces.models.download {id: \"yunet-2023mar\"}`). Faces narrower than 160 px at 1600 px, and faces with more than 12 candidates (stubble, freckles, pores), get none → {faces, spots: [{x, y, size, face}], added}",
+            FindSpots,
             has_active,
             |s, p| {
                 let c = "spot.findBlemishes";
@@ -827,8 +1065,8 @@ pub fn specs() -> Vec<CommandSpec> {
                         landmarks: f.landmarks.map(|(x, y)| (f64::from(x), f64::from(y))),
                     })
                     .collect();
-                let max_per_face = (f64_or(p, "maxPerFace", 6.0) as usize).clamp(1, 20);
-                let mut found = lightcraft_pipeline::blemish::detect(&img, &boxes, f64_or(p, "sensitivity", 50.0) as f32);
+                let max_per_face = (p.max_per_face.unwrap_or(6.0) as usize).clamp(1, 20);
+                let mut found = lightcraft_pipeline::blemish::detect(&img, &boxes, p.sensitivity.unwrap_or(50.0) as f32);
                 let mut per_face = std::collections::BTreeMap::new();
                 found.retain(|b| {
                     let n = per_face.entry(b.face).or_insert(0usize);
@@ -836,7 +1074,7 @@ pub fn specs() -> Vec<CommandSpec> {
                     *n <= max_per_face
                 });
                 let out: Vec<Value> = found.iter().map(|b| json!({"x": b.x, "y": b.y, "size": b.radius, "face": b.face})).collect();
-                if !p.get("add").and_then(Value::as_bool).unwrap_or(true) || found.is_empty() {
+                if !p.add.unwrap_or(true) || found.is_empty() {
                     return Ok(json!({"faces": boxes.len(), "spots": out, "added": 0}));
                 }
                 let mut dd = (*s.develop_of(id).unwrap_or_default()).clone();
@@ -857,21 +1095,17 @@ pub fn specs() -> Vec<CommandSpec> {
                 Ok(json!({"faces": boxes.len(), "spots": out, "added": found.len()}))
             }
         ),
-        raw_cmd!(
+        cmd!(
             "spot.add",
             "Add Remove Spot",
             [],
             None,
             "{mode?: remove|heal|clone|fill (content-aware), points: [[x,y],…], size?: fraction of long edge, feather?, opacity?, source?: [dx,dy] (default: the best match nearby)} — selects the new spot; returns {index}",
+            AddSpot,
             has_active,
             |s, p| {
-                let mode: SpotMode =
-                    serde_json::from_value(p.get("mode").cloned().unwrap_or(json!("remove"))).map_err(|e| bad("spot.add", e.to_string()))?;
-                let pts: Vec<Point> = p
-                    .get("points")
-                    .and_then(Value::as_array)
-                    .map(|a| a.iter().filter_map(|q| Some(Point::new(q.get(0)?.as_f64()?, q.get(1)?.as_f64()?))).collect())
-                    .unwrap_or_default();
+                let mode = p.mode.unwrap_or(SpotMode::Remove);
+                let pts: Vec<Point> = p.points.iter().copied().map(pt).collect();
                 if pts.is_empty() {
                     return Err(bad("spot.add", "missing points"));
                 }
@@ -879,10 +1113,10 @@ pub fn specs() -> Vec<CommandSpec> {
                 let mut spot = Spot {
                     mode,
                     points: pts,
-                    size: f64_or(p, "size", d.size).clamp(SPOT_SIZE.0, SPOT_SIZE.1),
-                    feather: f64_or(p, "feather", d.feather).clamp(0.0, 100.0),
-                    opacity: f64_or(p, "opacity", d.opacity).clamp(0.0, 100.0),
-                    source_offset: point(p, "source"),
+                    size: p.size.unwrap_or(d.size).clamp(SPOT_SIZE.0, SPOT_SIZE.1),
+                    feather: p.feather.unwrap_or(d.feather).clamp(0.0, 100.0),
+                    opacity: p.opacity.unwrap_or(d.opacity).clamp(0.0, 100.0),
+                    source_offset: p.source.map(pt),
                 };
                 let id = s.active().ok_or_else(|| bad("spot.add", "no active photo"))?;
                 let mut dd = (*s.develop_of(id).unwrap_or_default()).clone();
@@ -897,49 +1131,47 @@ pub fn specs() -> Vec<CommandSpec> {
                 Ok(json!({"index": n - 1}))
             }
         ),
-        raw_cmd!("spot.select", "Select Spot", [], None, "{index|null}", has_active, |s, p| {
+        cmd!("spot.select", "Select Spot", [], None, "{index|null}", SpotRef, has_active, |s, p| {
             let n = spots_len(s);
-            s.active_spot = match optional_index(p, "index", "spot.select")? {
+            s.active_spot = match p.index {
                 Some(i) if i < n => Some(i),
                 Some(_) => return Err(bad("spot.select", "no such spot")),
                 None => None,
             };
             Ok(json!({"activeSpot": s.active_spot}))
         }),
-        raw_cmd!(
+        cmd!(
             "spot.update",
             "Edit Spot",
             [],
             None,
             "{index? (the selected spot), move?: [dx,dy] (the target, normalized), source?: [dx,dy] (offset from the target), moveSource?: [dx,dy], size?, feather?, opacity?, mode?}",
+            UpdateSpot,
             has_active,
             |s, p| {
                 let c = "spot.update";
-                let i = spot_index(s, p, c)?;
-                let mode: Option<SpotMode> = match p.get("mode") {
-                    Some(m) => Some(serde_json::from_value(m.clone()).map_err(|e| bad(c, e.to_string()))?),
-                    None => None,
-                };
+                let i = spot_index(s, p.index, c)?;
+                let mode = p.mode;
                 spots_edit(s, c, "Edit Spot", |spots| {
                     let sp = &mut spots[i];
-                    if let Some(d) = point(p, "move") {
+                    if let Some(d) = p.shift.map(pt) {
                         sp.points.iter_mut().for_each(|q| *q = Point::new(q.x + d.x, q.y + d.y));
                         // the source moves along (its offset is relative to the target)
                     }
-                    if let Some(o) = point(p, "source") {
+                    if let Some(o) = p.source.map(pt) {
                         sp.source_offset = Some(o);
                     }
-                    if let Some(d) = point(p, "moveSource") {
+                    if let Some(d) = p.move_source.map(pt) {
                         let o = sp.source_offset.unwrap_or(Point::new(0.0, 0.0));
                         sp.source_offset = Some(Point::new(o.x + d.x, o.y + d.y));
                     }
-                    if let Some(v) = p.get("size").and_then(Value::as_f64) {
+                    if let Some(v) = p.size {
                         sp.size = v.clamp(SPOT_SIZE.0, SPOT_SIZE.1);
                     }
-                    if let Some(v) = p.get("feather").and_then(Value::as_f64) {
+                    if let Some(v) = p.feather {
                         sp.feather = v.clamp(0.0, 100.0);
                     }
-                    if let Some(v) = p.get("opacity").and_then(Value::as_f64) {
+                    if let Some(v) = p.opacity {
                         sp.opacity = v.clamp(0.0, 100.0);
                     }
                     if let Some(m) = mode {
@@ -950,16 +1182,17 @@ pub fn specs() -> Vec<CommandSpec> {
                 Ok(json!({"index": i}))
             }
         ),
-        raw_cmd!(
+        cmd!(
             "spot.refreshSource",
             "Refresh Source",
             [],
             None,
             "{index? (the selected spot)} — picks the next-best source away from the current one",
+            SpotRef,
             has_active,
             |s, p| {
                 let c = "spot.refreshSource";
-                let i = spot_index(s, p, c)?;
+                let i = spot_index(s, p.index, c)?;
                 let id = s.active().ok_or_else(|| bad(c, "no active photo"))?;
                 let dd = (*s.develop_of(id).unwrap_or_default()).clone();
                 let spot = dd.spots[i].clone();
@@ -971,9 +1204,9 @@ pub fn specs() -> Vec<CommandSpec> {
                 Ok(json!({"index": i, "source": [next.x, next.y]}))
             }
         ),
-        raw_cmd!("spot.delete", "Delete Spot", [], None, "{index? (the selected spot)}", has_active, |s, p| {
+        cmd!("spot.delete", "Delete Spot", [], None, "{index? (the selected spot)}", SpotRef, has_active, |s, p| {
             let c = "spot.delete";
-            let i = spot_index(s, p, c)?;
+            let i = spot_index(s, p.index, c)?;
             spots_edit(s, c, "Delete Spot", |spots| {
                 spots.remove(i);
                 Ok(())
@@ -986,24 +1219,25 @@ pub fn specs() -> Vec<CommandSpec> {
             ok()
         }),
         // ---- Red eye / pet eye
-        raw_cmd!(
+        cmd!(
             "redeye.add",
             "Add Red Eye Correction",
             [],
             None,
             "{center: [x,y] normalized, rx, ry: radii as fractions of the long edge, pet?: bool, pupilSize?: 0..100, darken?: 0..100} — the pupil inside is found automatically; returns {index}",
+            AddRedEye,
             has_active,
             |s, p| {
                 let c = "redeye.add";
-                let center = point(p, "center").ok_or_else(|| bad(c, "missing center"))?;
+                let center = p.center.map(pt).ok_or_else(|| bad(c, "missing center"))?;
                 let d = RedEye::default();
                 let eye = RedEye {
                     center,
-                    rx: f64_or(p, "rx", d.rx).clamp(1e-4, 0.5),
-                    ry: f64_or(p, "ry", d.ry).clamp(1e-4, 0.5),
-                    pupil_size: f64_or(p, "pupilSize", d.pupil_size).clamp(0.0, 100.0),
-                    darken: f64_or(p, "darken", d.darken).clamp(0.0, 100.0),
-                    pet: bool_or(p, "pet", false),
+                    rx: p.rx.unwrap_or(d.rx).clamp(1e-4, 0.5),
+                    ry: p.ry.unwrap_or(d.ry).clamp(1e-4, 0.5),
+                    pupil_size: p.pupil_size.unwrap_or(d.pupil_size).clamp(0.0, 100.0),
+                    darken: p.darken.unwrap_or(d.darken).clamp(0.0, 100.0),
+                    pet: p.pet,
                     catchlight: None,
                 };
                 let id = s.active().ok_or_else(|| bad(c, "no active photo"))?;
@@ -1014,31 +1248,32 @@ pub fn specs() -> Vec<CommandSpec> {
                 Ok(json!({"index": n - 1}))
             }
         ),
-        raw_cmd!(
+        cmd!(
             "redeye.catchlight",
             "Pet Eye Catchlight",
             [],
             None,
             "{index, on?: bool (default true), offset?: [dx, dy] from the pupil centre in pupil radii (default [-0.35, -0.35])}",
+            Catchlight,
             has_active,
             |s, p| {
                 let c = "redeye.catchlight";
-                let i = super::index_req(p, "index", c)?;
+                let i = p.index;
                 let id = s.active().ok_or_else(|| bad(c, "no active photo"))?;
                 let mut dd = (*s.develop_of(id).unwrap_or_default()).clone();
                 let eye = dd.red_eye.get_mut(i).ok_or_else(|| bad(c, "no such eye"))?;
                 if !eye.pet {
                     return Err(bad(c, "catchlights are for pet eyes"));
                 }
-                let off = point(p, "offset").or(eye.catchlight).unwrap_or(Point::new(-0.35, -0.35));
-                eye.catchlight = bool_or(p, "on", true).then(|| Point::new(off.x.clamp(-1.0, 1.0), off.y.clamp(-1.0, 1.0)));
+                let off = p.offset.map(pt).or(eye.catchlight).unwrap_or(Point::new(-0.35, -0.35));
+                eye.catchlight = p.on.unwrap_or(true).then(|| Point::new(off.x.clamp(-1.0, 1.0), off.y.clamp(-1.0, 1.0)));
                 s.set_develop(id, dd, "Catchlight")?;
                 ok()
             }
         ),
-        raw_cmd!("redeye.delete", "Delete Red Eye Correction", [], None, "{index}", has_active, |s, p| {
+        cmd!("redeye.delete", "Delete Red Eye Correction", [], None, "{index}", EyeRef, has_active, |s, p| {
             let c = "redeye.delete";
-            let i = super::index_req(p, "index", c)?;
+            let i = p.index;
             let id = s.active().ok_or_else(|| bad(c, "no active photo"))?;
             let mut dd = (*s.develop_of(id).unwrap_or_default()).clone();
             if i >= dd.red_eye.len() {
@@ -1059,8 +1294,8 @@ fn spots_len(s: &Session) -> usize {
 }
 
 /// `index` from the params, else the selected spot.
-fn spot_index(s: &Session, p: &Value, c: &str) -> Result<usize> {
-    let i = optional_index(p, "index", c)?.or(s.active_spot).ok_or_else(|| bad(c, "no spot selected (give `index`)"))?;
+fn spot_index(s: &Session, index: Option<usize>, c: &str) -> Result<usize> {
+    let i = index.or(s.active_spot).ok_or_else(|| bad(c, "no spot selected (give `index`)"))?;
     if i >= spots_len(s) {
         return Err(bad(c, "no such spot"));
     }
@@ -1112,14 +1347,10 @@ pub(crate) fn clamp_local(mut a: LocalAdjustments) -> LocalAdjustments {
 
 /// `mask.brushStroke`'s `pressure`: one number 0..1 per point (clamped), at most one per point; absent or `null`
 /// is no pressure data.
-fn pressure_list(v: Option<&Value>, points: usize) -> Result<Vec<f32>> {
-    let Some(v) = v.filter(|v| !v.is_null()) else { return Ok(Vec::new()) };
-    let list = v.as_array().ok_or_else(|| bad("mask.brushStroke", "pressure must be a list of numbers 0..1"))?;
+fn pressure_list(list: Option<&[f64]>, points: usize) -> Result<Vec<f32>> {
+    let Some(list) = list else { return Ok(Vec::new()) };
     if list.len() > points {
         return Err(bad("mask.brushStroke", "pressure has more values than points"));
     }
-    list.iter()
-        .map(|q| q.as_f64().filter(|f| f.is_finite()).map(|f| f.clamp(0.0, 1.0) as f32))
-        .collect::<Option<Vec<f32>>>()
-        .ok_or_else(|| bad("mask.brushStroke", "pressure must be a list of numbers 0..1"))
+    Ok(list.iter().map(|f| f.clamp(0.0, 1.0) as f32).collect())
 }

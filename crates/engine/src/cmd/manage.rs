@@ -4,13 +4,61 @@ use serde_json::{Value, json};
 
 use lightcraft_catalog::{ColorLabel, Op};
 
-use super::{CommandSpec, always, bad, bool_or, f64_or, has_selection, raw_cmd, str_param};
+use super::params::{NoParams, params};
+use super::{CommandSpec, always, bad, cmd, has_selection};
 use crate::Result;
 
-fn rename_args(s: &crate::Session, p: &Value, c: &str) -> Result<(Vec<lightcraft_catalog::PhotoId>, String, usize)> {
-    let template = str_param(p, "template").ok_or_else(|| bad(c, "missing `template`"))?.to_string();
-    let start = p.get("start").and_then(Value::as_u64).unwrap_or(1);
-    let ids = s.targets(p)?;
+params! {
+    /// `photo.rename`, `photo.renamePreview`
+    struct Rename with targets {
+        template: Option<String>,
+        start: Option<u64>,
+    }
+}
+
+params! {
+    /// `photo.setCaptureTime`
+    struct CaptureTime with targets {
+        time: Option<String>,
+        #[serde(default)]
+        each: bool,
+        shift: Option<f64>,
+        hours: Option<f64>,
+    }
+}
+
+params! {
+    /// `photo.autoTagTracklog`: `offset` is `"+02:00"` or a number of hours.
+    struct Tracklog with targets {
+        path: Option<String>,
+        gpx: Option<String>,
+        offset: Option<Value>,
+        max_gap: Option<f64>,
+        #[serde(default)]
+        replace: bool,
+        #[serde(default)]
+        dry_run: bool,
+    }
+}
+
+params! {
+    /// `label.setNames`: `null` or empty restores the colour's name.
+    struct LabelNames {
+        names: Option<std::collections::BTreeMap<String, Option<String>>>,
+    }
+}
+
+params! {
+    /// Label set commands.
+    struct SetName {
+        name: Option<String>,
+    }
+}
+
+fn rename_args(s: &crate::Session, p: Rename, c: &str) -> Result<(Vec<lightcraft_catalog::PhotoId>, String, usize)> {
+    let ids = p.targets(s);
+    let template = p.template.ok_or_else(|| bad(c, "missing `template`"))?;
+    let start = p.start.unwrap_or(1);
     // every number of the sequence `start..start + n` must fit
     let last = start.checked_add((ids.len() as u64).saturating_sub(1));
     let start = last.and_then(|l| usize::try_from(l).ok()).and_then(|_| usize::try_from(start).ok());
@@ -67,10 +115,10 @@ fn set_names_ops(s: &crate::Session, names: &[String; 5]) -> Vec<Op> {
 /// Geotag photos from a GPX track log by capture time (Lightroom Classic's Map ▸ Tracklog ▸
 /// Auto-Tag Photos). GPX times are UTC; capture times are the camera's local clock, so a photo's
 /// recorded zone (Exif `OffsetTimeOriginal`) or the `offset` parameter converts them.
-fn auto_tag_tracklog(s: &mut crate::Session, p: &Value) -> Result<Value> {
+fn auto_tag_tracklog(s: &mut crate::Session, p: Tracklog) -> Result<Value> {
     use lightcraft_meta::{DateTime, Match, parse_gpx};
     const C: &str = "photo.autoTagTracklog";
-    let text = match (str_param(p, "gpx"), str_param(p, "path")) {
+    let text = match (p.gpx.as_deref(), p.path.as_deref()) {
         (Some(t), _) => t.to_string(),
         (None, Some(path)) => std::fs::read_to_string(path).map_err(|e| bad(C, format!("can't read {path}: {e}")))?,
         (None, None) => return Err(bad(C, "missing `path` (a .gpx file) or `gpx` (its text)")),
@@ -78,7 +126,7 @@ fn auto_tag_tracklog(s: &mut crate::Session, p: &Value) -> Result<Value> {
     let log = parse_gpx(&text).map_err(|e| bad(C, e.to_string()))?;
     let (start, end) = log.span().ok_or_else(|| bad(C, "the track log has no timed track points"))?;
     // minutes east of UTC; `None` = not given (zone-less capture times are then read as UTC)
-    let offset: Option<i64> = match p.get("offset") {
+    let offset: Option<i64> = match &p.offset {
         None | Some(Value::Null) => None,
         Some(Value::String(o)) if o.trim().is_empty() => None,
         Some(Value::Number(h)) => {
@@ -93,15 +141,15 @@ fn auto_tag_tracklog(s: &mut crate::Session, p: &Value) -> Result<Value> {
         }
         Some(_) => return Err(bad(C, "offset is `+HH:MM` or a number of hours")),
     };
-    let max_gap = f64_or(p, "maxGap", 600.0);
+    let max_gap = p.max_gap.unwrap_or(600.0);
     if max_gap.is_nan() || max_gap < 0.0 {
         return Err(bad(C, "maxGap must be ≥ 0 seconds"));
     }
-    let replace = bool_or(p, "replace", false);
+    let replace = p.replace;
     let (mut no_time, mut outside, mut has_gps, mut assumed_utc, mut interpolated) = (0, 0, 0, 0, 0);
     let mut ops = Vec::new();
     let mut photos = Vec::new();
-    for id in s.targets(p)? {
+    for id in p.targets(s) {
         let Some(ph) = s.catalog.photo(id) else { continue };
         if ph.meta.gps.is_some() && !replace {
             has_gps += 1;
@@ -138,7 +186,7 @@ fn auto_tag_tracklog(s: &mut crate::Session, p: &Value) -> Result<Value> {
         }
     }
     let tagged = photos.len();
-    if !bool_or(p, "dryRun", false) && !ops.is_empty() {
+    if !p.dry_run && !ops.is_empty() {
         s.commit("Auto-Tag from Tracklog", Op::Batch { ops })?;
     }
     let iso = |t: f64| format!("{}Z", lightcraft_catalog::dates::civil(t.floor() as i64));
@@ -157,19 +205,20 @@ fn auto_tag_tracklog(s: &mut crate::Session, p: &Value) -> Result<Value> {
 
 pub fn specs() -> Vec<CommandSpec> {
     vec![
-        raw_cmd!(query "photo.renameTokens", "Rename Template Tags", [], None, "{} → {tokens: [{tag, aliases, meaning, example}], dateDirectives: [{directive, meaning}], notes: [..], sample} — the file-name template tags shared by photo.rename, library.import (rename) and app.export (naming); examples are for a sample photo", always, |_, _| {
+        cmd!(query "photo.renameTokens", "Rename Template Tags", [], None, "{} → {tokens: [{tag, aliases, meaning, example}], dateDirectives: [{directive, meaning}], notes: [..], sample} — the file-name template tags shared by photo.rename, library.import (rename) and app.export (naming); examples are for a sample photo", NoParams, always, |_, _| {
             Ok(crate::rename::token_help_json())
         }),
-        raw_cmd!(query "photo.renamePreview", "Rename Preview", [], None, "{template: e.g. `{date}_{name}`, `Trip-{seq:3}` (tokens: {name} {num} {seq} {seq:N} {date} {date:%Y%m%d} {folder} {camera} {lens} {iso} {rating} {title} {creator} {ext}; photo.renameTokens explains each), start?: first sequence number (1), ids?} — renames the files on disk (sidecars too, never overwriting: collisions get -1, -2…); undoable", has_selection, |s, p| {
+        cmd!(query "photo.renamePreview", "Rename Preview", [], None, "{template: e.g. `{date}_{name}`, `Trip-{seq:3}` (tokens: {name} {num} {seq} {seq:N} {date} {date:%Y%m%d} {folder} {camera} {lens} {iso} {rating} {title} {creator} {ext}; photo.renameTokens explains each), start?: first sequence number (1), ids?} — renames the files on disk (sidecars too, never overwriting: collisions get -1, -2…); undoable", Rename, has_selection, |s, p| {
             let (ids, template, start) = rename_args(s, p, "photo.renamePreview")?;
             Ok(serde_json::to_value(s.plan_rename(&ids, &template, start)).unwrap_or_default())
         }),
-        raw_cmd!(
+        cmd!(
             "photo.rename",
             "Rename Photos",
             [],
             None,
             "{template: e.g. `{date}_{name}`, `Trip-{seq:3}` (tokens: {name} {num} {seq} {seq:N} {date} {date:%Y%m%d} {folder} {camera} {lens} {iso} {rating} {title} {creator} {ext}; photo.renameTokens explains each), start?: first sequence number (1), ids?} — renames the files on disk (sidecars too, never overwriting: collisions get -1, -2…); undoable",
+            Rename,
             has_selection,
             |s, p| {
                 let (ids, template, start) = rename_args(s, p, "photo.rename")?;
@@ -178,17 +227,18 @@ pub fn specs() -> Vec<CommandSpec> {
                 Ok(json!({"renamed": n, "plans": plans}))
             }
         ),
-        raw_cmd!(
+        cmd!(
             "photo.setCaptureTime",
             "Edit Capture Time",
             [],
             None,
             "{ids?, time?: `2026-09-30T14:05:00` (the active photo gets it, the others shift by the same amount), each?: bool (every photo gets `time`), shift?: seconds, hours?: time-zone shift in hours} → {changed, captured: [..]}",
+            CaptureTime,
             has_selection,
             |s, p| {
                 use lightcraft_catalog::dates::{iso_seconds, normalize_iso, shift_iso};
                 let c = "photo.setCaptureTime";
-                let targets: Vec<_> = s.targets(p)?.into_iter().filter(|id| s.catalog.photo(*id).is_some()).collect();
+                let targets: Vec<_> = p.targets(s).into_iter().filter(|id| s.catalog.photo(*id).is_some()).collect();
                 if targets.is_empty() {
                     return Err(bad(c, "no photos"));
                 }
@@ -196,15 +246,15 @@ pub fn specs() -> Vec<CommandSpec> {
                 let base = |s: &crate::Session, id| s.catalog.photo(id).map(|p| p.date().to_string()).unwrap_or_default();
                 // seconds; a shift beyond 10,000 years is a mistake (and would overflow), not a date
                 const MAX_SHIFT: f64 = 10_000.0 * 365.25 * 86_400.0;
-                let shift = f64_or(p, "shift", 0.0) + f64_or(p, "hours", 0.0) * 3600.0;
+                let shift = p.shift.unwrap_or(0.0) + p.hours.unwrap_or(0.0) * 3600.0;
                 if shift.is_nan() || shift.abs() > MAX_SHIFT {
                     return Err(bad(c, "the shift is more than 10,000 years"));
                 }
                 let mut delta = shift.round() as i64;
                 let mut each: Option<String> = None;
-                if let Some(t) = str_param(p, "time") {
+                if let Some(t) = p.time.as_deref() {
                     let t = normalize_iso(t).ok_or_else(|| bad(c, format!("`{t}` is not a date (YYYY-MM-DDTHH:MM:SS)")))?;
-                    if bool_or(p, "each", false) {
+                    if p.each {
                         each = Some(t);
                     } else {
                         let anchor = s.active().filter(|a| targets.contains(a)).unwrap_or(targets[0]);
@@ -247,35 +297,37 @@ pub fn specs() -> Vec<CommandSpec> {
                 Ok(json!({"changed": n, "captured": out}))
             }
         ),
-        raw_cmd!(
+        cmd!(
             "photo.autoTagTracklog",
             "Auto-Tag Photos from Tracklog",
             [],
             None,
             "{path?: GPX file | gpx?: GPX text, ids?, offset?: camera clock's UTC offset for photos whose capture time has no zone (`+02:00`, or hours; default UTC), maxGap?: seconds (600), replace?: bool (also photos that already have GPS), dryRun?: bool} → {tagged, interpolated, nearest, skipped: {noTime, outside, hasGps}, assumedUtc, points, start, end, photos: [{id, gps, match}]} — positions from the track log by capture time; one undo step",
+            Tracklog,
             has_selection,
             auto_tag_tracklog
         ),
-        raw_cmd!(query "label.names", "Color Label Names", [], None, "{} → [{label, name, custom}]", always, |s, _| {
+        cmd!(query "label.names", "Color Label Names", [], None, "{} → [{label, name, custom}]", NoParams, always, |s, _| {
             Ok(json!(ColorLabel::ALL
                 .iter()
                 .map(|l| json!({"label": format!("{l:?}").to_lowercase(), "name": s.catalog.label_name(*l), "custom": s.catalog.custom_label_name(*l)}))
                 .collect::<Vec<_>>()))
         }),
-        raw_cmd!(
+        cmd!(
             "label.setNames",
             "Edit Color Label Names",
             [],
             None,
             "{names: {red?: name|null, yellow?, green?, blue?, purple?}} — null or empty restores the colour's name",
+            LabelNames,
             always,
             |s, p| {
-                let names = p.get("names").and_then(Value::as_object).ok_or_else(|| bad("label.setNames", "missing `names`"))?;
+                let names = p.names.ok_or_else(|| bad("label.setNames", "missing `names`"))?;
                 let mut ops = Vec::new();
-                for (k, v) in names {
+                for (k, v) in &names {
                     let label = ColorLabel::parse(k).ok_or_else(|| bad("label.setNames", format!("unknown label `{k}`")))?;
                     let name =
-                        v.as_str().map(str::trim).filter(|n| !n.is_empty() && !n.eq_ignore_ascii_case(&format!("{label:?}"))).map(str::to_string);
+                        v.as_deref().map(str::trim).filter(|n| !n.is_empty() && !n.eq_ignore_ascii_case(&format!("{label:?}"))).map(str::to_string);
                     if s.catalog.custom_label_name(label) != name.as_deref() {
                         ops.push(Op::SetLabelName { label, name });
                     }
@@ -287,9 +339,9 @@ pub fn specs() -> Vec<CommandSpec> {
                 Ok(json!({"changed": n}))
             }
         ),
-        raw_cmd!(query "label.sets", "Color Label Sets", [], None, "{} → {sets: [{name, names: [red, yellow, green, blue, purple], builtin}], current: name|null}", always, |s, _| Ok(label_sets_json(s))),
-        raw_cmd!("label.applySet", "Apply Color Label Set", [], None, "{name} — use a set's label names (undoable)", always, |s, p| {
-            let name = str_param(p, "name").ok_or_else(|| bad("label.applySet", "missing `name`"))?;
+        cmd!(query "label.sets", "Color Label Sets", [], None, "{} → {sets: [{name, names: [red, yellow, green, blue, purple], builtin}], current: name|null}", NoParams, always, |s, _| Ok(label_sets_json(s))),
+        cmd!("label.applySet", "Apply Color Label Set", [], None, "{name} — use a set's label names (undoable)", SetName, always, |s, p| {
+            let name = p.name.as_deref().ok_or_else(|| bad("label.applySet", "missing `name`"))?;
             let set = all_label_sets(s)
                 .into_iter()
                 .find(|x| x.name.eq_ignore_ascii_case(name))
@@ -301,16 +353,17 @@ pub fn specs() -> Vec<CommandSpec> {
             }
             Ok(json!({"changed": n}))
         }),
-        raw_cmd!(
+        cmd!(
             "label.saveSet",
             "Save Color Label Set",
             [],
             None,
             "{name} — save the current label names as a set (replaces a user set of that name)",
+            SetName,
             always,
             |s, p| {
                 let name =
-                    str_param(p, "name").map(str::trim).filter(|n| !n.is_empty()).ok_or_else(|| bad("label.saveSet", "missing `name`"))?.to_string();
+                    p.name.as_deref().map(str::trim).filter(|n| !n.is_empty()).ok_or_else(|| bad("label.saveSet", "missing `name`"))?.to_string();
                 if builtin_label_sets().iter().any(|b| b.name.eq_ignore_ascii_case(&name)) {
                     return Err(bad("label.saveSet", format!("`{name}` is a built-in set")));
                 }
@@ -323,8 +376,8 @@ pub fn specs() -> Vec<CommandSpec> {
                 Ok(json!({"name": name}))
             }
         ),
-        raw_cmd!("label.deleteSet", "Delete Color Label Set", [], None, "{name} — user sets only", always, |s, p| {
-            let name = str_param(p, "name").ok_or_else(|| bad("label.deleteSet", "missing `name`"))?;
+        cmd!("label.deleteSet", "Delete Color Label Set", [], None, "{name} — user sets only", SetName, always, |s, p| {
+            let name = p.name.as_deref().ok_or_else(|| bad("label.deleteSet", "missing `name`"))?;
             let before = s.label_sets.len();
             s.label_sets.retain(|x| !x.name.eq_ignore_ascii_case(name));
             if s.label_sets.len() == before {

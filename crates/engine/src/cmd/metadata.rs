@@ -5,7 +5,8 @@ use lightcraft_catalog::{CopyrightStatus, Meta};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 
-use super::{CommandSpec, always, bad, raw_cmd, str_param};
+use super::params::{NoParams, params};
+use super::{CommandSpec, always, bad, cmd};
 use crate::{Result, Session};
 
 /// The fields a metadata preset can hold (photo.setMeta names).
@@ -70,10 +71,34 @@ fn list(s: &Session) -> Value {
     json!(s.metadata_presets)
 }
 
-fn save(s: &mut Session, p: &Value) -> Result<Value> {
+params! {
+    /// `metadata.savePreset`: `fields` holds photo.setMeta names ([`FIELDS`]).
+    struct SavePreset {
+        name: Option<String>,
+        fields: Option<Value>,
+        only: Option<Vec<String>>,
+    }
+}
+
+params! {
+    /// `metadata.deletePreset`
+    struct PresetName {
+        name: Option<String>,
+    }
+}
+
+params! {
+    /// `metadata.applyPreset`
+    struct ApplyPreset {
+        name: Option<String>,
+        ids: Option<Vec<lightcraft_catalog::PhotoId>>,
+    }
+}
+
+fn save(s: &mut Session, p: SavePreset) -> Result<Value> {
     const C: &str = "metadata.savePreset";
-    let name = str_param(p, "name").map(str::trim).filter(|n| !n.is_empty()).ok_or_else(|| bad(C, "missing `name`"))?.to_string();
-    let fields = match p.get("fields") {
+    let name = p.name.as_deref().map(str::trim).filter(|n| !n.is_empty()).ok_or_else(|| bad(C, "missing `name`"))?.to_string();
+    let fields = match &p.fields {
         Some(Value::Object(o)) => {
             if let Some(k) = o.keys().find(|k| !FIELDS.contains(&k.as_str())) {
                 return Err(bad(C, format!("unknown field `{k}` ({})", FIELDS.join(", "))));
@@ -88,14 +113,11 @@ fn save(s: &mut Session, p: &Value) -> Result<Value> {
         None => {
             let id = s.active().ok_or_else(|| bad(C, "no `fields` and no active photo"))?;
             let mut m = s.catalog.photo(id).ok_or_else(|| bad(C, "no photo"))?.meta.clone();
-            let only: Vec<String> =
-                p.get("only").and_then(Value::as_array).map(|a| a.iter().filter_map(Value::as_str).map(str::to_string).collect()).unwrap_or_else(
-                    || {
-                        ["copyright", "copyrightStatus", "usageTerms", "copyrightUrl", "creator", "location", "city", "state", "country"]
-                            .map(String::from)
-                            .to_vec()
-                    },
-                );
+            let only: Vec<String> = p.only.clone().unwrap_or_else(|| {
+                ["copyright", "copyrightStatus", "usageTerms", "copyrightUrl", "creator", "location", "city", "state", "country"]
+                    .map(String::from)
+                    .to_vec()
+            });
             let mut o = Map::new();
             for k in only.iter().filter(|k| FIELDS.contains(&k.as_str())) {
                 if k == "keywords" {
@@ -122,9 +144,9 @@ fn save(s: &mut Session, p: &Value) -> Result<Value> {
     Ok(list(s))
 }
 
-fn delete(s: &mut Session, p: &Value) -> Result<Value> {
+fn delete(s: &mut Session, p: PresetName) -> Result<Value> {
     const C: &str = "metadata.deletePreset";
-    let name = str_param(p, "name").ok_or_else(|| bad(C, "missing `name`"))?;
+    let name = p.name.as_deref().ok_or_else(|| bad(C, "missing `name`"))?;
     let n = s.metadata_presets.len();
     s.metadata_presets.retain(|m| !m.name.eq_ignore_ascii_case(name));
     if s.metadata_presets.len() == n {
@@ -138,9 +160,9 @@ fn delete(s: &mut Session, p: &Value) -> Result<Value> {
 }
 
 /// photo.setMeta with the preset's fields (keywords added) on `ids` / the selection.
-fn apply(s: &mut Session, p: &Value) -> Result<Value> {
+fn apply(s: &mut Session, p: ApplyPreset) -> Result<Value> {
     const C: &str = "metadata.applyPreset";
-    let name = str_param(p, "name").ok_or_else(|| bad(C, "missing `name`"))?;
+    let name = p.name.as_deref().ok_or_else(|| bad(C, "missing `name`"))?;
     let preset = s
         .metadata_presets
         .iter()
@@ -151,31 +173,33 @@ fn apply(s: &mut Session, p: &Value) -> Result<Value> {
     for (k, v) in preset.fields.as_object().into_iter().flatten() {
         params.insert(if k == "keywords" { "addKeywords".into() } else { k.clone() }, v.clone());
     }
-    if let Some(ids) = p.get("ids") {
-        params.insert("ids".into(), ids.clone());
+    if let Some(ids) = &p.ids {
+        params.insert("ids".into(), json!(ids));
     }
     s.execute("photo.setMeta", &Value::Object(params))
 }
 
 pub fn specs() -> Vec<CommandSpec> {
     vec![
-        raw_cmd!(query "metadata.presets", "Metadata Presets", [], None, "{} → [{name, fields}]", always, |s, _| Ok(list(s))),
-        raw_cmd!(
+        cmd!(query "metadata.presets", "Metadata Presets", [], None, "{} → [{name, fields}]", NoParams, always, |s, _| Ok(list(s))),
+        cmd!(
             "metadata.savePreset",
             "Save Metadata Preset",
             [],
             None,
             "{name, fields?: {copyright?, copyrightStatus?: unknown|copyrighted|publicDomain, usageTerms?, copyrightUrl?, creator?, title?, caption?, location?, city?, state?, country?, keywords?: [..]}, only?: [field] (from the active photo when `fields` is absent; default the copyright fields, creator, place)} — adds or replaces",
+            SavePreset,
             always,
             save
         ),
-        raw_cmd!("metadata.deletePreset", "Delete Metadata Preset", [], None, "{name}", always, delete),
-        raw_cmd!(
+        cmd!("metadata.deletePreset", "Delete Metadata Preset", [], None, "{name}", PresetName, always, delete),
+        cmd!(
             "metadata.applyPreset",
             "Apply Metadata Preset",
             [],
             None,
             "{name, ids?} — text fields replace, keywords are added; one undo step",
+            ApplyPreset,
             always,
             apply
         ),

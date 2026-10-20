@@ -11,7 +11,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 
 use super::mask_effect_files as files;
-use super::{CommandSpec, always, bad, has_active, raw_cmd, str_param};
+use super::params::{NoParams, params};
+use super::{CommandSpec, always, bad, cmd, has_active};
 use crate::{Result, Session};
 
 /// The local sliders an effect can set (`LocalAdjustments` field names; Amount aside).
@@ -260,23 +261,76 @@ pub(crate) fn upsert(s: &mut Session, e: MaskEffect) {
     }
 }
 
-fn name_param(p: &Value, c: &str) -> Result<String> {
-    name_of(p, "name", c)
-}
-
-fn name_of(p: &Value, key: &str, c: &str) -> Result<String> {
-    str_param(p, key).map(str::trim).filter(|n| !n.is_empty()).map(str::to_string).ok_or_else(|| bad(c, format!("missing `{key}`")))
-}
-
-fn strings(p: &Value, key: &str) -> Option<Vec<String>> {
-    p.get(key).and_then(Value::as_array).map(|a| a.iter().filter_map(Value::as_str).map(str::to_string).collect())
+/// `value` (the param `key`) trimmed, and not blank.
+fn name_of(value: Option<&str>, key: &str, c: &str) -> Result<String> {
+    value.map(str::trim).filter(|n| !n.is_empty()).map(str::to_string).ok_or_else(|| bad(c, format!("missing `{key}`")))
 }
 
 /// The names a command acts on: `names: [...]` or `name`.
-fn names_param(p: &Value, c: &str) -> Result<Vec<String>> {
-    match strings(p, "names").filter(|v| !v.is_empty()) {
+fn names_param(names: Option<Vec<String>>, name: Option<&str>, c: &str) -> Result<Vec<String>> {
+    match names.filter(|v| !v.is_empty()) {
         Some(v) => Ok(v),
-        None => name_param(p, c).map(|n| vec![n]),
+        None => name_of(name, "name", c).map(|n| vec![n]),
+    }
+}
+
+params! {
+    /// `mask.applyEffect`
+    struct ApplyEffect {
+        name: Option<String>,
+        id: Option<u32>,
+        ids: Option<Vec<u32>>,
+        #[serde(default)]
+        all: bool,
+        photos: Option<String>,
+        remember: Option<bool>,
+    }
+}
+
+params! {
+    /// `mask.saveEffect`, `mask.updateEffect`: `fields` is `"all"`, `"changed"` or a list of
+    /// sliders; `brush` is brush settings or `false`.
+    struct SaveEffect {
+        name: Option<String>,
+        id: Option<u32>,
+        group: Option<String>,
+        fields: Option<Value>,
+        amount: Option<bool>,
+        brush: Option<Value>,
+    }
+}
+
+params! {
+    /// `mask.renameEffect`, `mask.duplicateEffect`
+    struct RenameEffect {
+        name: Option<String>,
+        to: Option<String>,
+    }
+}
+
+params! {
+    /// `mask.deleteEffect`, `mask.favoriteEffect`, `mask.setEffectGroup`
+    struct Effects {
+        name: Option<String>,
+        names: Option<Vec<String>>,
+        favorite: Option<bool>,
+        group: Option<String>,
+    }
+}
+
+params! {
+    /// `mask.renameEffectGroup`
+    struct RenameGroup {
+        group: Option<String>,
+        to: Option<String>,
+    }
+}
+
+params! {
+    /// `mask.toolEffect`
+    struct ToolEffect {
+        tool: Option<String>,
+        name: Option<String>,
     }
 }
 
@@ -285,9 +339,9 @@ fn effect_index(s: &Session, name: &str, c: &str) -> Result<usize> {
 }
 
 /// The selected mask's adjustments on the active photo.
-fn selected_mask(s: &Session, p: &Value, c: &str) -> Result<Mask> {
+fn selected_mask(s: &Session, mask: Option<u32>, c: &str) -> Result<Mask> {
     let id = s.active().ok_or_else(|| bad(c, "no active photo"))?;
-    let mid = super::masks::mask_id(p, s.active_mask, c)?;
+    let mid = super::masks::mask_id(mask, s.active_mask, c)?;
     let d = s.develop_of(id).unwrap_or_default();
     d.masks.iter().find(|m| m.id == mid).cloned().ok_or_else(|| bad(c, format!("no mask {mid}")))
 }
@@ -327,20 +381,19 @@ fn masks_named(d: &DevelopSettings, names: &[String]) -> Vec<u32> {
     d.masks.iter().filter(|m| names.iter().any(|n| n.eq_ignore_ascii_case(&m.name))).map(|m| m.id).collect()
 }
 
-fn apply_effect(s: &mut Session, p: &Value) -> Result<Value> {
+fn apply_effect(s: &mut Session, p: ApplyEffect) -> Result<Value> {
     const C: &str = "mask.applyEffect";
-    let name = name_param(p, C)?;
+    let name = name_of(p.name.as_deref(), "name", C)?;
     let effect = s.mask_effects.get(effect_index(s, &name, C)?).cloned().ok_or_else(|| bad(C, format!("no effect `{name}`")))?;
     let id = s.active().ok_or_else(|| bad(C, "no active photo"))?;
     let d = s.develop_of(id).unwrap_or_default();
     // the masks: `ids`, `all`, else `id` or the selected one
-    let ids: Vec<u32> = if p.get("all").and_then(Value::as_bool).unwrap_or(false) {
+    let ids: Vec<u32> = if p.all {
         d.masks.iter().map(|m| m.id).collect()
     } else {
-        match p.get("ids") {
-            None | Some(Value::Null) => vec![selected_mask(s, p, C)?.id],
-            Some(Value::Array(a)) => a.iter().map(|v| super::masks::parse_mask_id(v, C)).collect::<Result<_>>()?,
-            Some(_) => return Err(bad(C, "`ids` must be a list of mask IDs")),
+        match p.ids.clone() {
+            None => vec![selected_mask(s, p.id, C)?.id],
+            Some(ids) => ids,
         }
     };
     if ids.is_empty() {
@@ -358,7 +411,7 @@ fn apply_effect(s: &mut Session, p: &Value) -> Result<Value> {
     };
     let label = format!("Mask Effect: {}", effect.name);
     // with `photos: "selected"`, the other selected photos' masks of the same names too
-    let others: Vec<(PhotoId, DevelopSettings)> = if str_param(p, "photos") == Some("selected") {
+    let others: Vec<(PhotoId, DevelopSettings)> = if p.photos.as_deref() == Some("selected") {
         let names: Vec<String> = d.masks.iter().filter(|m| ids.contains(&m.id)).map(|m| m.name.clone()).collect();
         s.selection
             .ids
@@ -384,7 +437,7 @@ fn apply_effect(s: &mut Session, p: &Value) -> Result<Value> {
         s.commit(&label, lightcraft_catalog::Op::Batch { ops })?;
     }
     // the next mask made with this tool starts with the effect
-    if p.get("remember").and_then(Value::as_bool).unwrap_or(true) {
+    if p.remember.unwrap_or(true) {
         for m in d.masks.iter().filter(|m| ids.contains(&m.id)) {
             if let Some(tool) = mask_tool(m) {
                 s.mask_tool_effects.insert(tool, effect.name.clone());
@@ -396,8 +449,8 @@ fn apply_effect(s: &mut Session, p: &Value) -> Result<Value> {
 }
 
 /// The fields a save keeps: `fields: [..]` | `"changed"` | `"all"` (default).
-fn fields_param(p: &Value, a: &LocalAdjustments, c: &str) -> Result<Vec<String>> {
-    match p.get("fields") {
+fn fields_param(fields: Option<&Value>, a: &LocalAdjustments, c: &str) -> Result<Vec<String>> {
+    match fields {
         None | Some(Value::Null) => Ok(Vec::new()),
         Some(Value::String(x)) if x == "all" => Ok(Vec::new()),
         Some(Value::String(x)) if x == "changed" => {
@@ -412,25 +465,25 @@ fn fields_param(p: &Value, a: &LocalAdjustments, c: &str) -> Result<Vec<String>>
     }
 }
 
-fn brush_param(p: &Value, c: &str) -> Result<Option<BrushSettings>> {
-    match p.get("brush") {
+fn brush_param(brush: Option<&Value>, c: &str) -> Result<Option<BrushSettings>> {
+    match brush {
         None | Some(Value::Null) | Some(Value::Bool(false)) => Ok(None),
-        Some(v) => serde_json::from_value::<BrushSettings>(v.clone()).map(|b| Some(b.clamped())).map_err(|e| bad(c, format!("`brush`: {e}"))),
+        Some(v) => super::params::from_value::<BrushSettings>(v).map(|b| Some(b.clamped())).map_err(|e| bad(c, format!("`brush`: {e}"))),
     }
 }
 
-fn save_effect(s: &mut Session, p: &Value) -> Result<Value> {
+fn save_effect(s: &mut Session, p: SaveEffect) -> Result<Value> {
     const C: &str = "mask.saveEffect";
-    let name = name_param(p, C)?;
-    let adjust = selected_mask(s, p, C)?.adjust;
-    let group = str_param(p, "group").map(|g| g.trim().to_string()).unwrap_or_default();
+    let name = name_of(p.name.as_deref(), "name", C)?;
+    let adjust = selected_mask(s, p.id, C)?.adjust;
+    let group = p.group.as_deref().map(|g| g.trim().to_string()).unwrap_or_default();
     let e = MaskEffect {
         name,
         adjust,
         group,
-        fields: fields_param(p, &adjust, C)?,
-        with_amount: p.get("amount").and_then(Value::as_bool).unwrap_or(false),
-        brush: brush_param(p, C)?,
+        fields: fields_param(p.fields.as_ref(), &adjust, C)?,
+        with_amount: p.amount.unwrap_or(false),
+        brush: brush_param(p.brush.as_ref(), C)?,
         ..Default::default()
     };
     upsert(s, e.normalized());
@@ -440,18 +493,21 @@ fn save_effect(s: &mut Session, p: &Value) -> Result<Value> {
 
 /// Overwrite an effect's sliders with the selected mask's (keeping which sliders and whether
 /// Amount it carries, its group and star).
-fn update_effect(s: &mut Session, p: &Value) -> Result<Value> {
+fn update_effect(s: &mut Session, p: SaveEffect) -> Result<Value> {
     const C: &str = "mask.updateEffect";
-    let name = name_param(p, C)?;
+    let name = name_of(p.name.as_deref(), "name", C)?;
+    if p.group.is_some() {
+        return Err(bad(C, "unknown parameter `group` (mask.setEffectGroup moves an effect)"));
+    }
     let i = effect_index(s, &name, C)?;
-    let adjust = selected_mask(s, p, C)?.adjust;
-    let brush = brush_param(p, C)?;
+    let adjust = selected_mask(s, p.id, C)?.adjust;
+    let brush = brush_param(p.brush.as_ref(), C)?;
     let e = s.mask_effects.get_mut(i).ok_or_else(|| bad(C, format!("no effect `{name}`")))?;
     let mut next = MaskEffect { adjust, extra: Map::new(), ..e.clone() };
-    if let Some(f) = p.get("fields").filter(|v| !v.is_null()) {
-        next.fields = fields_param(&json!({"fields": f}), &adjust, C)?;
+    if let Some(f) = p.fields.as_ref().filter(|v| !v.is_null()) {
+        next.fields = fields_param(Some(f), &adjust, C)?;
     }
-    if let Some(a) = p.get("amount").and_then(Value::as_bool) {
+    if let Some(a) = p.amount {
         next.with_amount = a;
     }
     if brush.is_some() {
@@ -462,10 +518,10 @@ fn update_effect(s: &mut Session, p: &Value) -> Result<Value> {
     Ok(list(s))
 }
 
-fn rename_effect(s: &mut Session, p: &Value) -> Result<Value> {
+fn rename_effect(s: &mut Session, p: RenameEffect) -> Result<Value> {
     const C: &str = "mask.renameEffect";
-    let name = name_param(p, C)?;
-    let to = name_of(p, "to", C)?;
+    let name = name_of(p.name.as_deref(), "name", C)?;
+    let to = name_of(p.to.as_deref(), "to", C)?;
     let i = effect_index(s, &name, C)?;
     if position(s, &to).is_some_and(|j| j != i) {
         return Err(bad(C, format!("an effect named `{to}` exists already")));
@@ -490,11 +546,11 @@ fn free_name(s: &Session, base: &str) -> String {
         .unwrap_or_else(|| base.into())
 }
 
-fn duplicate_effect(s: &mut Session, p: &Value) -> Result<Value> {
+fn duplicate_effect(s: &mut Session, p: RenameEffect) -> Result<Value> {
     const C: &str = "mask.duplicateEffect";
-    let name = name_param(p, C)?;
+    let name = name_of(p.name.as_deref(), "name", C)?;
     let e = s.mask_effects.get(effect_index(s, &name, C)?).cloned().ok_or_else(|| bad(C, format!("no effect `{name}`")))?;
-    let to = match str_param(p, "to").map(str::trim).filter(|t| !t.is_empty()) {
+    let to = match p.to.as_deref().map(str::trim).filter(|t| !t.is_empty()) {
         Some(t) if position(s, t).is_some() => return Err(bad(C, format!("an effect named `{t}` exists already"))),
         Some(t) => t.to_string(),
         None => free_name(s, &format!("{} copy", e.name)),
@@ -506,9 +562,12 @@ fn duplicate_effect(s: &mut Session, p: &Value) -> Result<Value> {
     Ok(out)
 }
 
-fn delete_effect(s: &mut Session, p: &Value) -> Result<Value> {
+fn delete_effect(s: &mut Session, p: Effects) -> Result<Value> {
     const C: &str = "mask.deleteEffect";
-    let names = names_param(p, C)?;
+    if let Some(k) = [("favorite", p.favorite.is_some()), ("group", p.group.is_some())].iter().find(|(_, on)| *on).map(|(k, _)| k) {
+        return Err(bad(C, format!("unknown parameter `{k}`")));
+    }
+    let names = names_param(p.names, p.name.as_deref(), C)?;
     if let Some(missing) = names.iter().find(|n| position(s, n).is_none()) {
         return Err(bad(C, format!("no effect `{missing}`")));
     }
@@ -518,14 +577,17 @@ fn delete_effect(s: &mut Session, p: &Value) -> Result<Value> {
     Ok(list(s))
 }
 
-fn favorite_effect(s: &mut Session, p: &Value) -> Result<Value> {
+fn favorite_effect(s: &mut Session, p: Effects) -> Result<Value> {
     const C: &str = "mask.favoriteEffect";
-    let names = names_param(p, C)?;
+    if p.group.is_some() {
+        return Err(bad(C, "unknown parameter `group`"));
+    }
+    let names = names_param(p.names, p.name.as_deref(), C)?;
     let mut idx = Vec::new();
     for n in &names {
         idx.push(effect_index(s, n, C)?);
     }
-    let want = p.get("favorite").and_then(Value::as_bool);
+    let want = p.favorite;
     for i in idx {
         if let Some(e) = s.mask_effects.get_mut(i) {
             e.favorite = want.unwrap_or(!e.favorite);
@@ -535,10 +597,13 @@ fn favorite_effect(s: &mut Session, p: &Value) -> Result<Value> {
     Ok(list(s))
 }
 
-fn set_group(s: &mut Session, p: &Value) -> Result<Value> {
+fn set_group(s: &mut Session, p: Effects) -> Result<Value> {
     const C: &str = "mask.setEffectGroup";
-    let names = names_param(p, C)?;
-    let group = str_param(p, "group").map(|g| g.trim().to_string()).ok_or_else(|| bad(C, "missing `group` (\"\" = none)"))?;
+    if p.favorite.is_some() {
+        return Err(bad(C, "unknown parameter `favorite`"));
+    }
+    let names = names_param(p.names, p.name.as_deref(), C)?;
+    let group = p.group.as_deref().map(|g| g.trim().to_string()).ok_or_else(|| bad(C, "missing `group` (\"\" = none)"))?;
     let mut idx = Vec::new();
     for n in &names {
         idx.push(effect_index(s, n, C)?);
@@ -554,10 +619,10 @@ fn set_group(s: &mut Session, p: &Value) -> Result<Value> {
     Ok(list(s))
 }
 
-fn rename_group(s: &mut Session, p: &Value) -> Result<Value> {
+fn rename_group(s: &mut Session, p: RenameGroup) -> Result<Value> {
     const C: &str = "mask.renameEffectGroup";
-    let group = name_of(p, "group", C)?;
-    let to = str_param(p, "to").map(|g| g.trim().to_string()).ok_or_else(|| bad(C, "missing `to` (\"\" = ungroup)"))?;
+    let group = name_of(p.group.as_deref(), "group", C)?;
+    let to = p.to.as_deref().map(|g| g.trim().to_string()).ok_or_else(|| bad(C, "missing `to` (\"\" = ungroup)"))?;
     let mut n = 0;
     for e in s.mask_effects.iter_mut().filter(|e| e.group.eq_ignore_ascii_case(&group)) {
         e.group = to.clone();
@@ -570,10 +635,10 @@ fn rename_group(s: &mut Session, p: &Value) -> Result<Value> {
     Ok(list(s))
 }
 
-fn tool_effect(s: &mut Session, p: &Value) -> Result<Value> {
+fn tool_effect(s: &mut Session, p: ToolEffect) -> Result<Value> {
     const C: &str = "mask.toolEffect";
-    let tool = name_of(p, "tool", C)?;
-    match str_param(p, "name").map(str::trim).filter(|n| !n.is_empty()) {
+    let tool = name_of(p.tool.as_deref(), "tool", C)?;
+    match p.name.as_deref().map(str::trim).filter(|n| !n.is_empty()) {
         Some(n) => {
             let i = effect_index(s, n, C)?;
             let name = s.mask_effects.get(i).map(|e| e.name.clone()).unwrap_or_default();
@@ -589,96 +654,106 @@ fn tool_effect(s: &mut Session, p: &Value) -> Result<Value> {
 
 pub fn specs() -> Vec<CommandSpec> {
     vec![
-        raw_cmd!(
+        cmd!(
             query "mask.effects",
             "Mask Effect Presets",
             [],
             None,
             "{} → {effects: [{name, adjust, group?, favorite?, fields?, with_amount?, brush?, extra?}], groups: [{name, effects: [name]}] (menu order), current: the effect the selected mask matches or null, toolEffects: {tool: effect a new mask of that kind starts with}}",
+            NoParams,
             always,
             |s, _| Ok(list(s))
         ),
-        raw_cmd!(
+        cmd!(
             "mask.applyEffect",
             "Apply Mask Effect",
             [],
             None,
             "{name, id? | ids?: [maskId] | all?: bool, photos?: \"selected\" (also the masks of the same names on the other selected photos, one undo step), remember?: bool (true: new masks of this kind start with it)} — sets the effect's sliders (all, or the ones it keeps; Amount only if it carries it) → {name, masks, photos, brush}",
+            ApplyEffect,
             has_active,
             apply_effect
         ),
-        raw_cmd!(
+        cmd!(
             "mask.saveEffect",
             "Save Mask Effect",
             [],
             None,
             "{name, id?, group?, fields?: \"all\" (default) | \"changed\" | [slider], amount?: bool (carry Amount), brush?: {size, feather, flow, density, auto_mask}} — the selected mask's sliders as an effect preset (replaces one of that name), saved with the library",
+            SaveEffect,
             has_active,
             save_effect
         ),
-        raw_cmd!(
+        cmd!(
             "mask.updateEffect",
             "Update Mask Effect",
             [],
             None,
             "{name, id?, fields?, amount?, brush?} — overwrite the effect with the selected mask's sliders (keeps its group, star and which sliders it carries unless given)",
+            SaveEffect,
             has_active,
             update_effect
         ),
-        raw_cmd!("mask.renameEffect", "Rename Mask Effect", [], None, "{name, to}", always, rename_effect),
-        raw_cmd!(
+        cmd!("mask.renameEffect", "Rename Mask Effect", [], None, "{name, to}", RenameEffect, always, rename_effect),
+        cmd!(
             "mask.duplicateEffect",
             "Duplicate Mask Effect",
             [],
             None,
             "{name, to?} (default \"<name> copy\") → list + {name}",
+            RenameEffect,
             always,
             duplicate_effect
         ),
-        raw_cmd!("mask.deleteEffect", "Delete Mask Effect", [], None, "{name | names: [name]} — removes effect presets", always, delete_effect),
-        raw_cmd!(
+        cmd!("mask.deleteEffect", "Delete Mask Effect", [], None, "{name | names: [name]} — removes effect presets", Effects, always, delete_effect),
+        cmd!(
             "mask.favoriteEffect",
             "Favorite Mask Effect",
             [],
             None,
             "{name | names, favorite?: bool (default: toggle)}",
+            Effects,
             always,
             favorite_effect
         ),
-        raw_cmd!("mask.setEffectGroup", "Move Mask Effect to Group", [], None, "{name | names, group: name (\"\" = none)}", always, set_group),
-        raw_cmd!(
+        cmd!("mask.setEffectGroup", "Move Mask Effect to Group", [], None, "{name | names, group: name (\"\" = none)}", Effects, always, set_group),
+        cmd!(
             "mask.renameEffectGroup",
             "Rename Mask Effect Group",
             [],
             None,
             "{group, to} (\"\" ungroups; an existing name merges)",
+            RenameGroup,
             always,
             rename_group
         ),
-        raw_cmd!(
+        cmd!(
             "mask.toolEffect",
             "Set Effect for New Masks",
             [],
             None,
             "{tool: brush|linear|radial|subject|…, name?} — the effect new masks of that kind start with (no name: none)",
+            ToolEffect,
             always,
             tool_effect
         ),
-        raw_cmd!(
+        cmd!(
             "mask.importEffects",
             "Import Mask Effects",
             [],
             None,
             "{path | paths: [file or folder], group?, dryRun?} — Lightroom Classic local adjustment presets (.lrtemplate), Camera Raw local correction presets (.xmp), .lceffect files and .zip bundles of these; folders and Lightroom's divider presets (\"10 ----- DETAIL ----- 10\") become groups; same-named effects are replaced → {imported: [{name, group, file, unmapped}], dividers: [{name, group, file}], failed: [[file, error]]}",
+            files::ImportEffects,
             always,
             files::import_effects
         ),
-        raw_cmd!(
+        cmd!(
             "mask.exportEffects",
             "Export Mask Effects",
             [],
             None,
             "{path, names?: [name], group?: name (default: all)} — writes an .lceffect JSON file (groups, stars and kept Lightroom settings included) → {path, count}",
+            files::ExportEffects,
             always,
             files::export_effects
         ),

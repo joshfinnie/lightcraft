@@ -11,7 +11,8 @@
 //! * `print.template.list|save|apply|delete`
 use serde_json::{Value, json};
 
-use super::{CommandSpec, always, bad, f64_req, raw_cmd};
+use super::params::{NoParams, params, present};
+use super::{CommandSpec, always, bad, cmd};
 use crate::print::layout::{Layout, MAX_PAGES, Rect, Snap, Stack, paper_names, paper_size};
 use crate::print::template::{MAX_TEMPLATES, PrintSettings, PrintTemplate, clean_name};
 use crate::{Result, Session};
@@ -43,7 +44,7 @@ fn state(s: &Session, photos: usize) -> Value {
 }
 
 fn reply(s: &Session) -> Result<Value> {
-    Ok(state(s, s.targets(&Value::Null)?.len()))
+    Ok(state(s, s.selected().len()))
 }
 
 /// Applies `patch` over `dst`: objects merge key by key, anything else replaces.
@@ -63,23 +64,45 @@ fn merge(dst: &mut Value, patch: &Value, depth: usize) {
     }
 }
 
-fn get(s: &mut Session, p: &Value) -> Result<Value> {
-    Ok(state(s, s.targets(p)?.len()))
+params! {
+    /// `print.get`
+    struct Get with targets {}
 }
 
-fn set(s: &mut Session, p: &Value) -> Result<Value> {
-    const ID: &str = "print.set";
-    let patch = p.as_object().ok_or_else(|| bad(ID, "params must be an object"))?;
-    if let Some(k) = patch.keys().find(|k| !matches!(k.as_str(), "layout" | "image" | "page" | "guides" | "job")) {
-        return Err(bad(ID, format!("unknown parameter `{k}` (one of layout, image, page, guides, job)")));
+params! {
+    /// `print.set`: each part given (`null` too, which is refused) is merged into the current
+    /// print, which checks its keys.
+    struct Set {
+        #[serde(default, deserialize_with = "present")]
+        layout: Option<Option<Value>>,
+        #[serde(default, deserialize_with = "present")]
+        image: Option<Option<Value>>,
+        #[serde(default, deserialize_with = "present")]
+        page: Option<Option<Value>>,
+        #[serde(default, deserialize_with = "present")]
+        guides: Option<Option<Value>>,
+        #[serde(default, deserialize_with = "present")]
+        job: Option<Option<Value>>,
     }
-    if let Some(l) = patch.get("layout").and_then(Value::as_object)
+}
+
+fn get(s: &mut Session, p: Get) -> Result<Value> {
+    Ok(state(s, p.targets(s).len()))
+}
+
+fn set(s: &mut Session, p: Set) -> Result<Value> {
+    const ID: &str = "print.set";
+    if let Some(l) = p.layout.as_ref().and_then(|l| l.as_ref()).and_then(Value::as_object)
         && let Some(k) = l.keys().find(|k| matches!(k.as_str(), "cells" | "pages" | "nextId"))
     {
         return Err(bad(ID, format!("`layout.{k}` is changed with the print.cell.* and print.layout.* commands")));
     }
+    let patch: serde_json::Map<String, Value> = [("layout", p.layout), ("image", p.image), ("page", p.page), ("guides", p.guides), ("job", p.job)]
+        .into_iter()
+        .filter_map(|(k, v)| Some((k.to_string(), v?.unwrap_or(Value::Null))))
+        .collect();
     let mut value = serde_json::to_value(&s.print).map_err(|e| bad(ID, e.to_string()))?;
-    merge(&mut value, p, 0);
+    merge(&mut value, &Value::Object(patch), 0);
     let mut next: PrintSettings = serde_json::from_value(value).map_err(|e| bad(ID, e.to_string()))?;
     // A new paper, orientation or margin may leave cells outside the page: pull them back.
     if next.layout.page.printable().is_ok() {
@@ -90,51 +113,121 @@ fn set(s: &mut Session, p: &Value) -> Result<Value> {
     reply(s)
 }
 
-fn reset(s: &mut Session, _: &Value) -> Result<Value> {
+fn reset(s: &mut Session, _: NoParams) -> Result<Value> {
     s.print = PrintSettings::default();
     reply(s)
 }
 
-fn cell_id(p: &Value, id: &str) -> Result<u32> {
-    p.get("id").and_then(Value::as_u64).and_then(|v| u32::try_from(v).ok()).ok_or_else(|| bad(id, "missing cell `id`"))
-}
-
-fn opt_f64(p: &Value, key: &str, id: &str) -> Result<Option<f64>> {
-    match p.get(key) {
-        None | Some(Value::Null) => Ok(None),
-        Some(v) => v.as_f64().map(Some).ok_or_else(|| bad(id, format!("`{key}` must be a number"))),
+params! {
+    /// `print.cell.add`
+    struct CellAdd {
+        width: f64,
+        height: f64,
+        x: Option<f64>,
+        y: Option<f64>,
+        page: Option<u32>,
+        photo: Option<u64>,
     }
 }
 
-/// Snaps `r` (a cell being moved or resized) when the call asks for it.
-fn snapped(l: &Layout, guides: &crate::print::layout::Guides, id: u32, r: Rect, p: &Value, resize: bool, cmd: &str) -> Result<Rect> {
-    let on = match p.get("snap") {
-        None | Some(Value::Null) => false,
-        Some(Value::Bool(b)) => *b,
-        Some(_) => return Err(bad(cmd, "`snap` must be true or false")),
-    };
-    if !on || guides.snap == Snap::Off {
+params! {
+    /// `print.cell.move`
+    struct CellMove {
+        id: u32,
+        x: f64,
+        y: f64,
+        snap: Option<bool>,
+        threshold: Option<f64>,
+    }
+}
+
+params! {
+    /// `print.cell.resize`
+    struct CellResize {
+        id: u32,
+        width: Option<f64>,
+        height: Option<f64>,
+        x: Option<f64>,
+        y: Option<f64>,
+        snap: Option<bool>,
+        threshold: Option<f64>,
+    }
+}
+
+params! {
+    /// `print.cell.delete`
+    struct CellRef {
+        id: u32,
+    }
+}
+
+params! {
+    /// `print.cell.stack`
+    struct CellStack {
+        id: u32,
+        order: Option<String>,
+    }
+}
+
+params! {
+    /// `print.cell.photo`
+    struct CellPhoto {
+        id: u32,
+        photo: Option<u64>,
+    }
+}
+
+params! {
+    /// `print.cell.page`
+    struct CellPage {
+        id: u32,
+        page: Option<u32>,
+    }
+}
+
+params! {
+    /// `print.exportPdf`
+    struct ExportPdf with targets {
+        path: Option<String>,
+    }
+}
+
+params! {
+    /// `print.template.*`
+    struct TemplateName {
+        name: Option<String>,
+    }
+}
+
+/// Snaps `r` (a cell being moved or resized) when the call asks for it: `(snap, threshold inches)`.
+fn snapped(
+    l: &Layout,
+    guides: &crate::print::layout::Guides,
+    id: u32,
+    r: Rect,
+    (snap, threshold): (Option<bool>, Option<f64>),
+    resize: bool,
+    cmd: &str,
+) -> Result<Rect> {
+    if !snap.unwrap_or(false) || guides.snap == Snap::Off {
         return Ok(r);
     }
-    let threshold = opt_f64(p, "threshold", cmd)?.unwrap_or(0.1);
+    let threshold = threshold.unwrap_or(0.1);
     let f = if resize { Layout::snap_resize } else { Layout::snap_move };
     f(l, id, r, guides.snap, guides.grid_size, threshold).map_err(|e| bad(cmd, e))
 }
 
-fn cell_add(s: &mut Session, p: &Value) -> Result<Value> {
+fn cell_add(s: &mut Session, p: CellAdd) -> Result<Value> {
     const ID: &str = "print.cell.add";
-    let (w, h) = (f64_req(p, "width", ID)?, f64_req(p, "height", ID)?);
     let mut next = s.print.layout.clone();
-    let id = next.add_cell(w, h).map_err(|e| bad(ID, e))?;
-    if let (Some(x), Some(y)) = (opt_f64(p, "x", ID)?, opt_f64(p, "y", ID)?) {
-        if let Some(page) = p.get("page").and_then(Value::as_u64) {
-            let page = u32::try_from(page).map_err(|_| bad(ID, "`page` is too large"))?;
+    let id = next.add_cell(p.width, p.height).map_err(|e| bad(ID, e))?;
+    if let (Some(x), Some(y)) = (p.x, p.y) {
+        if let Some(page) = p.page {
             next.set_cell_page(id, page).map_err(|e| bad(ID, e))?;
         }
         next.move_cell(id, x, y).map_err(|e| bad(ID, e))?;
     }
-    if let Some(v) = p.get("photo").filter(|v| !v.is_null()) {
-        let photo = v.as_u64().ok_or_else(|| bad(ID, "`photo` must be a photo id"))?;
+    if let Some(photo) = p.photo {
         next.set_cell_photo(id, Some(photo)).map_err(|e| bad(ID, e))?;
     }
     s.print.layout = next;
@@ -142,46 +235,40 @@ fn cell_add(s: &mut Session, p: &Value) -> Result<Value> {
     Ok(json!({"id": id, "cell": cell, "pages": s.print.layout.pages}))
 }
 
-fn cell_move(s: &mut Session, p: &Value) -> Result<Value> {
+fn cell_move(s: &mut Session, p: CellMove) -> Result<Value> {
     const ID: &str = "print.cell.move";
-    let id = cell_id(p, ID)?;
-    let (x, y) = (f64_req(p, "x", ID)?, f64_req(p, "y", ID)?);
+    let id = p.id;
     let mut next = s.print.layout.clone();
     let size = next.cell(id).map(|c| c.rect).ok_or_else(|| bad(ID, format!("no cell {id}")))?;
-    let target = snapped(&next, &s.print.guides, id, Rect::new(x, y, size.w, size.h), p, false, ID)?;
+    let target = snapped(&next, &s.print.guides, id, Rect::new(p.x, p.y, size.w, size.h), (p.snap, p.threshold), false, ID)?;
     let r = next.move_cell(id, target.x, target.y).map_err(|e| bad(ID, e))?;
     s.print.layout = next;
     Ok(json!({"id": id, "rect": r}))
 }
 
-fn cell_resize(s: &mut Session, p: &Value) -> Result<Value> {
+fn cell_resize(s: &mut Session, p: CellResize) -> Result<Value> {
     const ID: &str = "print.cell.resize";
-    let id = cell_id(p, ID)?;
+    let id = p.id;
     let mut next = s.print.layout.clone();
     let cur = next.cell(id).map(|c| c.rect).ok_or_else(|| bad(ID, format!("no cell {id}")))?;
-    let want = Rect::new(
-        opt_f64(p, "x", ID)?.unwrap_or(cur.x),
-        opt_f64(p, "y", ID)?.unwrap_or(cur.y),
-        opt_f64(p, "width", ID)?.unwrap_or(cur.w),
-        opt_f64(p, "height", ID)?.unwrap_or(cur.h),
-    );
-    let target = snapped(&next, &s.print.guides, id, want, p, true, ID)?;
+    let want = Rect::new(p.x.unwrap_or(cur.x), p.y.unwrap_or(cur.y), p.width.unwrap_or(cur.w), p.height.unwrap_or(cur.h));
+    let target = snapped(&next, &s.print.guides, id, want, (p.snap, p.threshold), true, ID)?;
     let r = next.resize_cell(id, target).map_err(|e| bad(ID, e))?;
     s.print.layout = next;
     Ok(json!({"id": id, "rect": r}))
 }
 
-fn cell_delete(s: &mut Session, p: &Value) -> Result<Value> {
+fn cell_delete(s: &mut Session, p: CellRef) -> Result<Value> {
     const ID: &str = "print.cell.delete";
-    let id = cell_id(p, ID)?;
+    let id = p.id;
     s.print.layout.delete_cell(id).map_err(|e| bad(ID, e))?;
     Ok(json!({"deleted": id, "cells": s.print.layout.cells.len()}))
 }
 
-fn cell_stack(s: &mut Session, p: &Value) -> Result<Value> {
+fn cell_stack(s: &mut Session, p: CellStack) -> Result<Value> {
     const ID: &str = "print.cell.stack";
-    let id = cell_id(p, ID)?;
-    let how = match p.get("order").and_then(Value::as_str) {
+    let id = p.id;
+    let how = match p.order.as_deref() {
         Some("toBack") => Stack::ToBack,
         Some("backward") => Stack::Backward,
         Some("forward") => Stack::Forward,
@@ -192,13 +279,12 @@ fn cell_stack(s: &mut Session, p: &Value) -> Result<Value> {
     Ok(json!({"order": s.print.layout.cells.iter().map(|c| c.id).collect::<Vec<_>>()}))
 }
 
-fn cell_photo(s: &mut Session, p: &Value) -> Result<Value> {
+fn cell_photo(s: &mut Session, p: CellPhoto) -> Result<Value> {
     const ID: &str = "print.cell.photo";
-    let id = cell_id(p, ID)?;
-    let photo = match p.get("photo") {
-        None | Some(Value::Null) => None,
-        Some(v) => {
-            let n = v.as_u64().ok_or_else(|| bad(ID, "`photo` must be a photo id or null"))?;
+    let id = p.id;
+    let photo = match p.photo {
+        None => None,
+        Some(n) => {
             if s.catalog.photo(lightcraft_catalog::PhotoId(n)).is_none() {
                 return Err(bad(ID, format!("no photo {n}")));
             }
@@ -209,43 +295,34 @@ fn cell_photo(s: &mut Session, p: &Value) -> Result<Value> {
     Ok(json!({"id": id, "photo": photo}))
 }
 
-fn cell_page(s: &mut Session, p: &Value) -> Result<Value> {
+fn cell_page(s: &mut Session, p: CellPage) -> Result<Value> {
     const ID: &str = "print.cell.page";
-    let id = cell_id(p, ID)?;
-    let page = p.get("page").and_then(Value::as_u64).and_then(|v| u32::try_from(v).ok()).ok_or_else(|| bad(ID, "missing zero-based `page`"))?;
+    let id = p.id;
+    let page = p.page.ok_or_else(|| bad(ID, "missing zero-based `page`"))?;
     s.print.layout.set_cell_page(id, page).map_err(|e| bad(ID, e))?;
     Ok(json!({"id": id, "page": page}))
 }
 
-fn auto_layout(s: &mut Session, _: &Value) -> Result<Value> {
+fn auto_layout(s: &mut Session, _: NoParams) -> Result<Value> {
     s.print.layout.auto_layout().map_err(|e| bad("print.layout.autoLayout", e))?;
     Ok(json!({"pages": s.print.layout.pages, "cells": s.print.layout.cells}))
 }
 
-fn new_page(s: &mut Session, _: &Value) -> Result<Value> {
+fn new_page(s: &mut Session, _: NoParams) -> Result<Value> {
     let page = s.print.layout.new_page().map_err(|e| bad("print.layout.newPage", e))?;
     Ok(json!({"page": page, "pages": s.print.layout.pages, "max": MAX_PAGES}))
 }
 
-fn clear(s: &mut Session, _: &Value) -> Result<Value> {
+fn clear(s: &mut Session, _: NoParams) -> Result<Value> {
     s.print.layout.clear();
     Ok(json!({"pages": 1, "cells": 0}))
 }
 
-fn export_pdf(s: &mut Session, p: &Value) -> Result<Value> {
+fn export_pdf(s: &mut Session, p: ExportPdf) -> Result<Value> {
     const ID: &str = "print.exportPdf";
-    let path = p.get("path").and_then(Value::as_str).filter(|s| !s.trim().is_empty()).ok_or_else(|| bad(ID, "missing path"))?;
-    if let Some(k) = p.as_object().and_then(|o| o.keys().find(|k| !matches!(k.as_str(), "path" | "ids" | "id"))) {
-        return Err(bad(ID, format!("unknown parameter `{k}` (one of path, ids; change the print with print.set)")));
-    }
-    if p.get("ids").is_some_and(|v| v.as_array().is_none_or(|a| a.iter().any(|v| v.as_u64().is_none()))) {
-        return Err(bad(ID, "ids must be an array of photo ids"));
-    }
-    if p.get("id").is_some_and(|v| v.as_u64().is_none()) {
-        return Err(bad(ID, "id must be a photo id"));
-    }
+    let ids = p.targets(s);
+    let path = p.path.as_deref().filter(|s| !s.trim().is_empty()).ok_or_else(|| bad(ID, "missing path"))?;
     s.check_write_target(path).map_err(|e| bad(ID, e))?;
-    let ids = s.targets(p)?;
     let settings = s.print.clone();
     // a printer profile that can't be used fails the print before anything renders
     crate::print_color::PrintColorJob::new(&settings.job.color).map_err(|e| bad(ID, e))?;
@@ -273,13 +350,13 @@ fn template_list(s: &Session) -> Value {
     json!({"templates": s.print_templates.iter().map(|t| json!({"name": t.name, "style": t.settings.pointer("/layout/style"), "settings": t.settings})).collect::<Vec<_>>()})
 }
 
-fn template_name(p: &Value, id: &str) -> Result<String> {
-    clean_name(p.get("name").and_then(Value::as_str).ok_or_else(|| bad(id, "missing `name`"))?).map_err(|e| bad(id, e))
+fn template_name(p: &TemplateName, id: &str) -> Result<String> {
+    clean_name(p.name.as_deref().ok_or_else(|| bad(id, "missing `name`"))?).map_err(|e| bad(id, e))
 }
 
-fn template_save(s: &mut Session, p: &Value) -> Result<Value> {
+fn template_save(s: &mut Session, p: TemplateName) -> Result<Value> {
     const ID: &str = "print.template.save";
-    let name = template_name(p, ID)?;
+    let name = template_name(&p, ID)?;
     let t = PrintTemplate::new(&name, &s.print).map_err(|e| bad(ID, e))?;
     match s.print_templates.iter_mut().find(|x| x.name.eq_ignore_ascii_case(&name)) {
         Some(x) => *x = t,
@@ -294,9 +371,9 @@ fn template_save(s: &mut Session, p: &Value) -> Result<Value> {
     Ok(template_list(s))
 }
 
-fn template_apply(s: &mut Session, p: &Value) -> Result<Value> {
+fn template_apply(s: &mut Session, p: TemplateName) -> Result<Value> {
     const ID: &str = "print.template.apply";
-    let name = template_name(p, ID)?;
+    let name = template_name(&p, ID)?;
     let t = s
         .print_templates
         .iter()
@@ -306,9 +383,9 @@ fn template_apply(s: &mut Session, p: &Value) -> Result<Value> {
     reply(s)
 }
 
-fn template_delete(s: &mut Session, p: &Value) -> Result<Value> {
+fn template_delete(s: &mut Session, p: TemplateName) -> Result<Value> {
     const ID: &str = "print.template.delete";
-    let name = template_name(p, ID)?;
+    let name = template_name(&p, ID)?;
     let before = s.print_templates.len();
     s.print_templates.retain(|x| !x.name.eq_ignore_ascii_case(&name));
     if s.print_templates.len() == before {
@@ -320,34 +397,34 @@ fn template_delete(s: &mut Session, p: &Value) -> Result<Value> {
 
 pub fn specs() -> Vec<CommandSpec> {
     vec![
-        raw_cmd!(query "print.get", "Print Settings", [], None,
+        cmd!(query "print.get", "Print Settings", [], None,
             "{ids?} → {settings: {layout, image, page, guides, job}, papers, pageWidth, pageHeight, printable, pageCount, cellsPerPage, gridCells?, overlaps}; lengths are inches",
-            always, get),
-        raw_cmd!(query "print.set", "Set Print Settings", [], None,
+            Get, always, get),
+        cmd!(query "print.set", "Set Print Settings", [], None,
             "{layout?: {style: singleImage|contactSheet|picturePackage|customPackage, page: {paper, customWidth, customHeight, orientation: portrait|landscape, margins: {top,right,bottom,left}}, grid: {columns, rows, spacingX, spacingY, keepSquare}, spacing}, image?: {zoomToFill, rotateToFit, borderEnabled, borderWidth, borderColor: [r,g,b], strokeEnabled, strokeWidthPt, strokeColor}, page?: {background: [r,g,b], pageNumbers, pageInfo, cropMarks} (Page Options: single image and contact sheet only), guides?: {showRulers, units: in|cm|mm|pt, snap: off|cells|grid, gridSize, showMargins, showBleed, showPageGrid, showCells, showDimensions}, job?: {ppi: 72..720, color?: {profile: {kind: managed, space: srgb|adobeRgb} | {kind: icc, path}, intent: perceptual|relative, blackPointCompensation, brightness: -100..100, contrast: -100..100, sharpen: off|low|standard|high, media: matte|glossy, sixteenBit}}} — merges into the current print; cells and pages change with print.cell.* / print.layout.*; → print.get",
-            always, set),
-        raw_cmd!(query "print.reset", "Reset Print Settings", [], None, "{} → print.get", always, reset),
-        raw_cmd!(query "print.cell.add", "Add Print Cell", [], None,
+            Set, always, set),
+        cmd!(query "print.reset", "Reset Print Settings", [], None, "{} → print.get", NoParams, always, reset),
+        cmd!(query "print.cell.add", "Add Print Cell", [], None,
             "{width, height, x?, y?, page?, photo?} inches; picture/custom package → {id, cell, pages}; the cell goes to the first free spot unless x and y are given",
-            always, cell_add),
-        raw_cmd!(query "print.cell.move", "Move Print Cell", [], None, "{id, x, y, snap?: bool, threshold?: inches} → {id, rect}; snap uses the guides' snap mode", always, cell_move),
-        raw_cmd!(query "print.cell.resize", "Resize Print Cell", [], None,
-            "{id, width?, height?, x?, y?, snap?: bool, threshold?} → {id, rect}", always, cell_resize),
-        raw_cmd!(query "print.cell.delete", "Delete Print Cell", [], None, "{id}", always, cell_delete),
-        raw_cmd!(query "print.cell.stack", "Arrange Print Cell", [], None, "{id, order: toBack|backward|forward|toFront} → {order: cell ids back to front}", always, cell_stack),
-        raw_cmd!(query "print.cell.photo", "Set Print Cell Photo", [], None, "{id, photo: photo id | null} (custom package: the photo printed in the cell)", always, cell_photo),
-        raw_cmd!(query "print.cell.page", "Move Print Cell to Page", [], None, "{id, page: zero-based}", always, cell_page),
-        raw_cmd!(query "print.layout.autoLayout", "Auto Layout", [], None, "{} — packs the package's cells onto as few pages as possible → {pages, cells}", always, auto_layout),
-        raw_cmd!(query "print.layout.newPage", "New Print Page", [], None, "{} → {page, pages}", always, new_page),
-        raw_cmd!(query "print.layout.clear", "Clear Print Layout", [], None, "{} — removes every cell and extra page", always, clear),
-        raw_cmd!(query "print.exportPdf", "Print to PDF", [], None,
+            CellAdd, always, cell_add),
+        cmd!(query "print.cell.move", "Move Print Cell", [], None, "{id, x, y, snap?: bool, threshold?: inches} → {id, rect}; snap uses the guides' snap mode", CellMove, always, cell_move),
+        cmd!(query "print.cell.resize", "Resize Print Cell", [], None,
+            "{id, width?, height?, x?, y?, snap?: bool, threshold?} → {id, rect}", CellResize, always, cell_resize),
+        cmd!(query "print.cell.delete", "Delete Print Cell", [], None, "{id}", CellRef, always, cell_delete),
+        cmd!(query "print.cell.stack", "Arrange Print Cell", [], None, "{id, order: toBack|backward|forward|toFront} → {order: cell ids back to front}", CellStack, always, cell_stack),
+        cmd!(query "print.cell.photo", "Set Print Cell Photo", [], None, "{id, photo: photo id | null} (custom package: the photo printed in the cell)", CellPhoto, always, cell_photo),
+        cmd!(query "print.cell.page", "Move Print Cell to Page", [], None, "{id, page: zero-based}", CellPage, always, cell_page),
+        cmd!(query "print.layout.autoLayout", "Auto Layout", [], None, "{} — packs the package's cells onto as few pages as possible → {pages, cells}", NoParams, always, auto_layout),
+        cmd!(query "print.layout.newPage", "New Print Page", [], None, "{} → {page, pages}", NoParams, always, new_page),
+        cmd!(query "print.layout.clear", "Clear Print Layout", [], None, "{} — removes every cell and extra page", NoParams, always, clear),
+        cmd!(query "print.exportPdf", "Print to PDF", [], None,
             "{path, ids?: photo ids (default selection)} → {path, pages, photos, bytes}; prints the current print.get settings; replaces an existing output, never an original",
-            always, export_pdf),
-        raw_cmd!(query "print.template.list", "Print Templates", [], None, "{} → {templates: [{name, style, settings}]}", always, |s, _| Ok(template_list(s))),
-        raw_cmd!(query "print.template.save", "Save Print Template", [], None,
+            ExportPdf, always, export_pdf),
+        cmd!(query "print.template.list", "Print Templates", [], None, "{} → {templates: [{name, style, settings}]}", NoParams, always, |s, _| Ok(template_list(s))),
+        cmd!(query "print.template.save", "Save Print Template", [], None,
             "{name} — saves the layout, image settings, page and job (not the cells' photos or the guides); an existing name (any case) is replaced → print.template.list",
-            always, template_save),
-        raw_cmd!(query "print.template.apply", "Apply Print Template", [], None, "{name} → print.get", always, template_apply),
-        raw_cmd!(query "print.template.delete", "Delete Print Template", [], None, "{name} → print.template.list", always, template_delete),
+            TemplateName, always, template_save),
+        cmd!(query "print.template.apply", "Apply Print Template", [], None, "{name} → print.get", TemplateName, always, template_apply),
+        cmd!(query "print.template.delete", "Delete Print Template", [], None, "{name} → print.template.list", TemplateName, always, template_delete),
     ]
 }

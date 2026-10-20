@@ -6,7 +6,8 @@
 use lightcraft_catalog::{Analysis, Flag, Op, PhotoId};
 use serde_json::{Value, json};
 
-use super::{CommandSpec, always, raw_cmd};
+use super::params::params;
+use super::{CommandSpec, always, cmd};
 use crate::{Result, Session};
 
 /// Seconds between shots of the same burst at most.
@@ -19,10 +20,28 @@ fn secs(iso: &str) -> Option<i64> {
     Some(d.unix_seconds())
 }
 
-fn analyze(s: &mut Session, p: &Value) -> Result<Value> {
-    let ids: Vec<PhotoId> = if p.get("ids").is_some() || s.selection.ids.len() > 1 { s.targets(p)? } else { s.visible_cloned() };
-    let reject_below = p.get("rejectBelow").and_then(Value::as_f64).map(|v| v as f32);
-    let pick_best = p.get("pickBest").and_then(Value::as_bool).unwrap_or(false);
+params! {
+    /// `photo.analyze`
+    struct Analyze with targets {
+        reject_below: Option<f64>,
+        #[serde(default)]
+        pick_best: bool,
+    }
+}
+
+params! {
+    /// `library.findSimilar`
+    struct FindSimilar {
+        id: Option<PhotoId>,
+        similarity: Option<f64>,
+        filter: Option<bool>,
+    }
+}
+
+fn analyze(s: &mut Session, p: Analyze) -> Result<Value> {
+    let ids: Vec<PhotoId> = if p.ids.is_some() || p.id.is_some() || s.selection.ids.len() > 1 { p.targets(s) } else { s.visible_cloned() };
+    let reject_below = p.reject_below.map(|v| v as f32);
+    let pick_best = p.pick_best;
     // measure (thumbnail-level sources: fast, and enough for focus at 512 px)
     let mut rows: Vec<(PhotoId, Option<i64>, f32, f32, [f32; 64])> = Vec::new();
     let mut failed = Vec::new();
@@ -85,10 +104,10 @@ fn analyze(s: &mut Session, p: &Value) -> Result<Value> {
 
 /// Find Similar: photos that look like `id` (signatures from thumbnail-level sources, cached by
 /// content), most similar first; the view is filtered to them.
-fn find_similar(s: &mut Session, p: &Value) -> Result<Value> {
+fn find_similar(s: &mut Session, p: FindSimilar) -> Result<Value> {
     const C: &str = "library.findSimilar";
-    let id = p.get("id").and_then(Value::as_u64).map(PhotoId).or(s.active()).ok_or_else(|| super::bad(C, "no photo"))?;
-    let min = p.get("similarity").and_then(Value::as_f64).unwrap_or(0.8) as f32;
+    let id = p.id.or(s.active()).ok_or_else(|| super::bad(C, "no photo"))?;
+    let min = p.similarity.unwrap_or(0.8) as f32;
     let all: Vec<PhotoId> = s.catalog.photos().filter(|q| q.in_library()).map(|q| q.id).collect();
     let sig = |s: &mut Session, id: PhotoId| -> Option<[f32; 64]> {
         let key = s.catalog.photo(id).map(|p| crate::media::content_key(p))?;
@@ -111,7 +130,7 @@ fn find_similar(s: &mut Session, p: &Value) -> Result<Value> {
         }
     }
     hits.sort_by(|a, b| b.1.total_cmp(&a.1));
-    if p.get("filter").and_then(Value::as_bool).unwrap_or(true) {
+    if p.filter.unwrap_or(true) {
         s.filter.only = hits.iter().map(|h| h.0).collect();
     }
     Ok(json!({"photos": hits.iter().map(|(i, v)| json!({"id": i.0, "similarity": (v * 1000.0).round() / 1000.0})).collect::<Vec<_>>()}))
@@ -119,21 +138,23 @@ fn find_similar(s: &mut Session, p: &Value) -> Result<Value> {
 
 pub fn specs() -> Vec<CommandSpec> {
     vec![
-        raw_cmd!(
+        cmd!(
             "library.findSimilar",
             "Find Similar Photos",
             ["Photo"],
             None,
             "{id?, similarity?: 0..1 (0.8), filter?: bool (true)} — photos that look like the active one (composition and tones), most similar first; filters the view to them (Clear Filters to go back) → {photos: [{id, similarity}]}",
+            FindSimilar,
             always,
             find_similar
         ),
-        raw_cmd!(
+        cmd!(
             "photo.analyze",
             "Assisted Culling",
             [],
             None,
             "{ids?, rejectBelow?: sharpness 0..100, pickBest?: bool} — score the selected photos (else all in view) for focus (0..100) and clipping, group look-alike shots taken within 10 s and mark the sharpest of each; optionally reject blurry photos and pick each group's best; one undo step → {photos: [{id, sharpness, clipped, group, best}], groups, rejected, picked}",
+            Analyze,
             always,
             analyze
         ),

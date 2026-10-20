@@ -1,7 +1,8 @@
 //! Every call to an engine command written out in the repository (Rust `"photo.rate", json!({…})`,
 //! control scripts and docs `"command": "photo.rate", "params": {…}`) passes only keys the command
 //! takes: a key it doesn't is refused at run time, so a front end or doc example that sends one
-//! is broken.
+//! is broken. A test that sends an unknown key on purpose says so on that line:
+//! `// unknown on purpose`.
 
 use std::path::{Path, PathBuf};
 
@@ -115,6 +116,9 @@ fn calls(text: &str) -> Vec<(String, Vec<String>, usize)> {
         }
         if b.get(j) == Some(&b'{') {
             let line = text[..j].matches('\n').count() + 1;
+            if text.lines().nth(line - 1).is_some_and(|l| l.contains("// unknown on purpose")) {
+                continue;
+            }
             out.push((id, object_keys(b, j), line));
         }
     }

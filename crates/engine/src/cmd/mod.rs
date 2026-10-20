@@ -249,9 +249,6 @@ pub(crate) fn index_req(p: &Value, key: &str, cmd: &str) -> Result<usize> {
     }
     Ok(i as usize)
 }
-pub(crate) fn f64_or(p: &Value, key: &str, d: f64) -> f64 {
-    p.get(key).and_then(Value::as_f64).unwrap_or(d)
-}
 pub(crate) fn str_param<'a>(p: &'a Value, key: &str) -> Option<&'a str> {
     p.get(key).and_then(Value::as_str)
 }
@@ -260,10 +257,6 @@ pub(crate) fn bool_or(p: &Value, key: &str, d: bool) -> bool {
 }
 pub(crate) fn ok() -> Result<Value> {
     Ok(Value::Null)
-}
-pub(crate) fn point(p: &Value, key: &str) -> Option<lightcraft_geom::Point> {
-    let a = p.get(key)?.as_array()?;
-    Some(lightcraft_geom::Point::new(a.first()?.as_f64()?, a.get(1)?.as_f64()?))
 }
 
 #[cfg(test)]

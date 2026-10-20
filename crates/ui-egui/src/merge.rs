@@ -78,6 +78,25 @@ impl MergeDialog {
     pub fn params(&self) -> Value {
         serde_json::to_value(self).unwrap_or_default()
     }
+    /// The params of its `merge.*` command: the options its kind takes.
+    pub fn command_params(&self) -> Value {
+        let mut p = json!({"autoSettings": self.auto_settings, "stack": self.stack});
+        if self.is_hdr() {
+            p["align"] = json!(self.align);
+            p["deghost"] = json!(self.deghost);
+            p["showOverlay"] = json!(self.show_overlay);
+        }
+        if self.is_pano() {
+            p["projection"] = json!(self.projection);
+            p["boundaryWarp"] = json!(self.boundary_warp);
+            p["autoCrop"] = json!(self.auto_crop);
+            p["fillEdges"] = json!(self.fill_edges);
+        }
+        if self.command == "merge.hdrPanorama" {
+            p["bracket"] = json!(self.bracket);
+        }
+        p
+    }
 }
 
 /// A merge running on a worker thread.
@@ -120,7 +139,7 @@ impl MergeState {
 }
 
 fn spawn(app: &LightcraftApp, options: &MergeDialog, ids: &[PhotoId], preview: bool) -> Result<MergeTask, String> {
-    let (kind, finish) = lightcraft_engine::merge::parse(&options.command, &options.params()).map_err(|e| e.to_string())?;
+    let (kind, finish) = lightcraft_engine::merge::parse(&options.command, &options.command_params()).map_err(|e| e.to_string())?;
     let job = app.session.plan_merge(kind, finish, ids, preview).map_err(|e| e.to_string())?;
     let progress = Arc::new(Mutex::new((0.0, "Starting".to_string())));
     let cancel = Arc::new(AtomicBool::new(false));
