@@ -48,7 +48,7 @@ fn folder_command_opens_the_configured_directory_and_preserves_files() {
         Ok(())
     }));
     f.app.services.reveal = Some(Box::new(|_| panic!("revealing a file would open its parent")));
-    assert!(crate::menus::ui_commands().any(|c| c.0 == "app.openSamModelFolder"));
+    assert!(crate::menus::ui_commands().any(|c| c.id == "app.openSamModelFolder"));
     assert!(crate::menus::ui_enabled(&f.app, "app.openSamModelFolder"));
     let reply = f.app.run("app.openSamModelFolder", json!({})).unwrap();
     assert_eq!(reply["path"], dir.to_str().unwrap());

@@ -140,7 +140,7 @@ pub fn parse(md: &str) -> Doc {
     doc
 }
 
-/// Ids in the menu tables (`("view.detail", "Detail", Some("D"), "View"),` lines): the language
+/// Ids in the menu tables (`ui!("view.detail", "Detail", Some("D"), "View"…),` lines): the language
 /// commands live in their own table, which the Language menu builds from the i18n language list.
 pub fn ui_command_ids(menus_rs: &str) -> Vec<String> {
     let mut ids = Vec::new();
@@ -148,7 +148,8 @@ pub fn ui_command_ids(menus_rs: &str) -> Vec<String> {
         let Some(start) = menus_rs.find(table) else { continue };
         let body = &menus_rs[start..];
         let body = &body[..body.find("];").unwrap_or(body.len())];
-        ids.extend(body.lines().filter_map(|l| l.trim().strip_prefix("(\"")).filter_map(|l| l.split_once('"').map(|(id, _)| id.to_string())));
+        // the first string after each `ui!(`, on its line or the next (rustfmt splits long ones)
+        ids.extend(body.split("ui!(").skip(1).filter_map(|rest| rest.trim_start().strip_prefix('"')?.split_once('"').map(|(id, _)| id.to_string())));
     }
     ids
 }
@@ -500,10 +501,12 @@ old
 
     #[test]
     fn reads_ui_command_ids() {
-        let src = "pub const UI_COMMANDS: &[UiCommand] = &[\n    (\"view.detail\", \"Detail\", Some(\"D\"), \"View\"),\n    (\"app.about\", \"About\", None, \"\"),\n];\nfn x() { (\"not.this\", 1); }";
+        let src = "pub const UI_COMMANDS: &[UiCommand] = &[\n    ui!(\"view.detail\", \"Detail\", Some(\"D\"), \"View\"),\n    ui!(\"app.about\", \"About\", None, \"\"),\n];\nfn x() { (\"not.this\", 1); }";
         assert_eq!(ui_command_ids(src), ["view.detail", "app.about"]);
+        let split = "pub const UI_COMMANDS: &[UiCommand] = &[\n    ui!(\n        \"view.detail\",\n        \"Detail\",\n    ),\n];";
+        assert_eq!(ui_command_ids(split), ["view.detail"]);
         let languages =
-            "pub const LANGUAGE_COMMANDS: &[UiCommand] = &[\n    (\"app.language.english\", Locale::En.name(), None, \"Edit>Language\"),\n];\n";
+            "pub const LANGUAGE_COMMANDS: &[UiCommand] = &[\n    ui!(\"app.language.english\", Locale::En.name(), None, \"Edit>Language\"),\n];\n";
         assert_eq!(ui_command_ids(&format!("{languages}{src}")), ["view.detail", "app.about", "app.language.english"]);
     }
 

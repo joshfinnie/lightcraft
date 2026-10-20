@@ -8,26 +8,62 @@ use crate::LightcraftApp;
 use crate::pick::{PickRequest, Picked};
 use crate::state::{BeforeAfter, Dialog, RightPanel, ViewMode, Zoom};
 
-/// (id, label, shortcut, menu path)
-pub type UiCommand = (&'static str, &'static str, Option<&'static str>, &'static str);
+/// A UI command: its menu entry and shortcut, the params it takes and how it runs. The menu bar,
+/// the shortcuts, the control channel and `engine.commands` all read [`ui_commands`].
+pub struct UiCommand {
+    pub id: &'static str,
+    pub label: &'static str,
+    /// Default shortcut (`Cmd+Shift+D`), mapped per platform.
+    pub shortcut: Option<&'static str>,
+    /// Menu path (`Window>Tools`); empty = not in menus.
+    pub menu: &'static str,
+    /// The top-level keys `run` takes; `None` for any (a command not yet on typed params).
+    pub keys: fn() -> Option<&'static [&'static str]>,
+    pub run: Run,
+}
+
+/// How a UI command runs: the app, its id (one function can serve several) and its params.
+pub type Run = fn(&mut LightcraftApp, &str, &Value) -> Result<Value, String>;
+
+/// A UI command. `ui!(id, label, shortcut, menu, Params, run)` reads its params into `Params` (a
+/// `lightcraft_engine::params!` struct: an unknown key or a bad value is an error before `run`);
+/// without the last two it still runs from [`legacy`], reading raw JSON.
+macro_rules! ui {
+    ($id:literal, $label:expr, $sc:expr, $menu:literal) => {
+        UiCommand { id: $id, label: $label, shortcut: $sc, menu: $menu, keys: || None, run: legacy }
+    };
+    ($id:literal, $label:expr, $sc:expr, $menu:literal, $ty:ty, $run:expr) => {
+        UiCommand {
+            id: $id,
+            label: $label,
+            shortcut: $sc,
+            menu: $menu,
+            keys: lightcraft_engine::cmd::params::keys_of::<$ty>,
+            run: {
+                const RUN: fn(&mut LightcraftApp, &str, $ty) -> Result<Value, String> = $run;
+                |app, id, p| RUN(app, id, lightcraft_engine::cmd::params::parse_as::<$ty>(id, p).map_err(|e| e.to_string())?)
+            },
+        }
+    };
+}
 
 /// The "Edit → Language" entries, one per language in [`crate::i18n::Locale::ALL`], so a language
 /// has a matching menu command (also listed through the control channel). Tests check coverage.
 pub const LANGUAGE_COMMANDS: &[UiCommand] = &[
-    ("app.language.english", crate::i18n::Locale::En.name(), None, "Edit>Language"),
-    ("app.language.simplifiedChinese", crate::i18n::Locale::ZhHans.name(), None, "Edit>Language"),
-    ("app.language.traditionalChinese", crate::i18n::Locale::ZhHant.name(), None, "Edit>Language"),
-    ("app.language.japanese", crate::i18n::Locale::Ja.name(), None, "Edit>Language"),
-    ("app.language.portuguese", crate::i18n::Locale::PtBr.name(), None, "Edit>Language"),
-    ("app.language.french", crate::i18n::Locale::Fr.name(), None, "Edit>Language"),
-    ("app.language.spanish", crate::i18n::Locale::Es.name(), None, "Edit>Language"),
-    ("app.language.german", crate::i18n::Locale::De.name(), None, "Edit>Language"),
-    ("app.language.russian", crate::i18n::Locale::Ru.name(), None, "Edit>Language"),
-    ("app.language.ukrainian", crate::i18n::Locale::Uk.name(), None, "Edit>Language"),
-    ("app.language.polish", crate::i18n::Locale::Pl.name(), None, "Edit>Language"),
-    ("app.language.czech", crate::i18n::Locale::Cs.name(), None, "Edit>Language"),
-    ("app.language.italian", crate::i18n::Locale::It.name(), None, "Edit>Language"),
-    ("app.language.georgian", crate::i18n::Locale::Ka.name(), None, "Edit>Language"),
+    ui!("app.language.english", crate::i18n::Locale::En.name(), None, "Edit>Language"),
+    ui!("app.language.simplifiedChinese", crate::i18n::Locale::ZhHans.name(), None, "Edit>Language"),
+    ui!("app.language.traditionalChinese", crate::i18n::Locale::ZhHant.name(), None, "Edit>Language"),
+    ui!("app.language.japanese", crate::i18n::Locale::Ja.name(), None, "Edit>Language"),
+    ui!("app.language.portuguese", crate::i18n::Locale::PtBr.name(), None, "Edit>Language"),
+    ui!("app.language.french", crate::i18n::Locale::Fr.name(), None, "Edit>Language"),
+    ui!("app.language.spanish", crate::i18n::Locale::Es.name(), None, "Edit>Language"),
+    ui!("app.language.german", crate::i18n::Locale::De.name(), None, "Edit>Language"),
+    ui!("app.language.russian", crate::i18n::Locale::Ru.name(), None, "Edit>Language"),
+    ui!("app.language.ukrainian", crate::i18n::Locale::Uk.name(), None, "Edit>Language"),
+    ui!("app.language.polish", crate::i18n::Locale::Pl.name(), None, "Edit>Language"),
+    ui!("app.language.czech", crate::i18n::Locale::Cs.name(), None, "Edit>Language"),
+    ui!("app.language.italian", crate::i18n::Locale::It.name(), None, "Edit>Language"),
+    ui!("app.language.georgian", crate::i18n::Locale::Ka.name(), None, "Edit>Language"),
 ];
 
 /// Every UI command: the languages, then everything else. `xtask parity` reads both tables from
@@ -59,210 +95,210 @@ pub fn language_from_command(id: &str) -> Option<crate::i18n::Locale> {
 }
 
 pub const UI_COMMANDS: &[UiCommand] = &[
-    ("ui.dock", "Arrange Panel", None, ""),
-    ("ui.dock.reset", "Reset Panel Layout", None, "Window"),
-    ("modelSetup.cancel", "Cancel Pending Photo Action", None, ""),
-    ("view.photoGrid", "Photo Grid", None, "View"),
-    ("view.squareGrid", "Square Grid", None, "View"),
+    ui!("ui.dock", "Arrange Panel", None, ""),
+    ui!("ui.dock.reset", "Reset Panel Layout", None, "Window"),
+    ui!("modelSetup.cancel", "Cancel Pending Photo Action", None, ""),
+    ui!("view.photoGrid", "Photo Grid", None, "View"),
+    ui!("view.squareGrid", "Square Grid", None, "View"),
     // G: Photo Grid ↔ Square Grid (from other views: the photo grid)
-    ("view.gridToggle", "Grid", Some("G"), ""),
-    ("library.selectOnlyActive", "Select Only Active Photo", Some("Cmd+Shift+D"), "Edit"),
-    ("tool.guidedUpright", "Guided Upright", Some("Shift+G"), "Window>Tools"),
-    ("view.detail", "Detail", Some("D"), "View"),
-    ("view.compare", "Compare", Some("Shift+C"), "View"),
-    ("view.survey", "Survey", Some("N"), "View"),
-    ("view.people", "People", None, "View"),
-    ("view.person", "Show Person", None, ""),
-    ("view.faceBoxes", "Face Boxes", None, "View"),
-    ("view.focusPoint", "Show Focus Point", Some("Alt+F"), "View"),
-    ("view.zoomToFocus", "Zoom to Focus Point", None, "View"),
-    ("view.reference", "Reference View", Some("Shift+R"), "View"),
-    ("photo.setReference", "Set as Reference Photo", None, ""),
-    ("compare.swap", "Swap Compare Photos", None, "View"),
-    ("compare.set", "Show in Compare", None, ""),
-    ("compare.makeSelect", "Make Candidate the Select", None, "View"),
-    ("view.autoAdvance", "Auto Advance", None, "Photo"),
-    ("view.filmstrip", "Filmstrip", Some("/"), "View"),
-    ("view.leftPanel", "My Photos Panel", Some("Cmd+Shift+L"), "View"),
-    ("view.beforeAfter", "Compare Before and After", Some("Y"), "View"),
-    ("view.beforeAfterSplit", "Before/After Split", Some("Shift+Y"), "View"),
-    ("view.beforeAfterTopBottom", "Before/After Top/Bottom", Some("Alt+Y"), "View"),
-    ("view.beforeAfterSplitTopBottom", "Before/After Split Top/Bottom", Some("Alt+Shift+Y"), "View"),
-    ("view.showOriginal", "Show Original", Some("\\"), "View"),
-    ("view.zoomFit", "Zoom to Fit", Some("Cmd+0"), "View"),
-    ("view.zoom100", "Zoom 100%", Some("Cmd+Alt+0"), "View"),
-    ("view.zoomToggle", "Toggle Zoom", Some("Z"), "View"),
+    ui!("view.gridToggle", "Grid", Some("G"), ""),
+    ui!("library.selectOnlyActive", "Select Only Active Photo", Some("Cmd+Shift+D"), "Edit"),
+    ui!("tool.guidedUpright", "Guided Upright", Some("Shift+G"), "Window>Tools"),
+    ui!("view.detail", "Detail", Some("D"), "View"),
+    ui!("view.compare", "Compare", Some("Shift+C"), "View"),
+    ui!("view.survey", "Survey", Some("N"), "View"),
+    ui!("view.people", "People", None, "View"),
+    ui!("view.person", "Show Person", None, ""),
+    ui!("view.faceBoxes", "Face Boxes", None, "View"),
+    ui!("view.focusPoint", "Show Focus Point", Some("Alt+F"), "View"),
+    ui!("view.zoomToFocus", "Zoom to Focus Point", None, "View"),
+    ui!("view.reference", "Reference View", Some("Shift+R"), "View"),
+    ui!("photo.setReference", "Set as Reference Photo", None, ""),
+    ui!("compare.swap", "Swap Compare Photos", None, "View"),
+    ui!("compare.set", "Show in Compare", None, ""),
+    ui!("compare.makeSelect", "Make Candidate the Select", None, "View"),
+    ui!("view.autoAdvance", "Auto Advance", None, "Photo"),
+    ui!("view.filmstrip", "Filmstrip", Some("/"), "View"),
+    ui!("view.leftPanel", "My Photos Panel", Some("Cmd+Shift+L"), "View"),
+    ui!("view.beforeAfter", "Compare Before and After", Some("Y"), "View"),
+    ui!("view.beforeAfterSplit", "Before/After Split", Some("Shift+Y"), "View"),
+    ui!("view.beforeAfterTopBottom", "Before/After Top/Bottom", Some("Alt+Y"), "View"),
+    ui!("view.beforeAfterSplitTopBottom", "Before/After Split Top/Bottom", Some("Alt+Shift+Y"), "View"),
+    ui!("view.showOriginal", "Show Original", Some("\\"), "View"),
+    ui!("view.zoomFit", "Zoom to Fit", Some("Cmd+0"), "View"),
+    ui!("view.zoom100", "Zoom 100%", Some("Cmd+Alt+0"), "View"),
+    ui!("view.zoomToggle", "Toggle Zoom", Some("Z"), "View"),
     // the ratio a click (and Z / Space) zooms to
-    ("view.clickZoom", "Click Zoom Ratio", None, ""),
-    ("view.navigate", "Set Image Zoom and Pan", None, ""),
-    ("view.zoomIn", "Zoom In", Some("Cmd+="), "View"),
-    ("view.zoomOut", "Zoom Out", Some("Cmd+-"), "View"),
+    ui!("view.clickZoom", "Click Zoom Ratio", None, ""),
+    ui!("view.navigate", "Set Image Zoom and Pan", None, ""),
+    ui!("view.zoomIn", "Zoom In", Some("Cmd+="), "View"),
+    ui!("view.zoomOut", "Zoom Out", Some("Cmd+-"), "View"),
     // Library grids only (Photo Grid, Square Grid, People): the bottom-bar slider's step by key
-    ("view.thumbSizeUp", "Increase Grid Thumbnail Size", Some("="), "View"),
-    ("view.thumbSizeDown", "Decrease Grid Thumbnail Size", Some("-"), "View"),
-    ("view.clipping", "Show Clipping", Some("J"), "View"),
-    ("view.visualizeHdr", "Visualize HDR", None, "View"),
+    ui!("view.thumbSizeUp", "Increase Grid Thumbnail Size", Some("="), "View"),
+    ui!("view.thumbSizeDown", "Decrease Grid Thumbnail Size", Some("-"), "View"),
+    ui!("view.clipping", "Show Clipping", Some("J"), "View"),
+    ui!("view.visualizeHdr", "Visualize HDR", None, "View"),
     // in grids S expands/collapses stacks (the engine command it shadows)
-    ("view.softProof", "Soft Proofing", Some("S"), "View"),
-    ("view.histogram", "Histogram", Some("Cmd+Shift+H"), "View"),
-    ("view.maskOverlay", "Show Mask Overlay", Some("O"), "View"),
+    ui!("view.softProof", "Soft Proofing", Some("S"), "View"),
+    ui!("view.histogram", "Histogram", Some("Cmd+Shift+H"), "View"),
+    ui!("view.maskOverlay", "Show Mask Overlay", Some("O"), "View"),
     // Ctrl+Shift+O / Cmd+Shift+O: every mask's region at once, not just the selected one
-    ("view.maskOverlayAll", "Show All Mask Overlays", Some("Cmd+Shift+O"), "View"),
+    ui!("view.maskOverlayAll", "Show All Mask Overlays", Some("Cmd+Shift+O"), "View"),
     // Shift+O in the Masking panel (elsewhere it cycles the crop overlay)
-    ("view.maskOverlayMode", "Cycle Mask Overlay Mode", None, "View"),
-    ("view.maskOverlayColor", "Cycle Mask Overlay Color", None, "View"),
-    ("view.maskPins", "Show Mask Pins", None, "View"),
+    ui!("view.maskOverlayMode", "Cycle Mask Overlay Mode", None, "View"),
+    ui!("view.maskOverlayColor", "Cycle Mask Overlay Color", None, "View"),
+    ui!("view.maskPins", "Show Mask Pins", None, "View"),
     // {mode?: auto | always | selected | never}: when spot and mask pins show (steps to the next
     // mode when omitted; Shift+H, like Classic's H for pins, since H opens Remove). View ▸ Tool
     // Overlay and the Remove panel list the modes.
-    ("view.toolOverlay", "Cycle Tool Overlay", Some("Shift+H"), ""),
-    ("view.visualizeSpots", "Visualize Spots", Some("A"), "View"),
-    ("view.cropOverlay", "Cycle Crop Overlay", Some("Shift+O"), "View"),
-    ("view.cropOverlayOrientation", "Cycle Crop Overlay Orientation", None, "View"),
-    ("view.back", "Back to Grid", Some("Escape"), ""),
-    ("tool.done", "Done", Some("Enter"), ""),
-    ("view.filterBar", "Filter Bar", Some("Shift+F"), "View"),
-    ("local.addRoot", "Add Folder to Local", None, ""),
-    ("local.hide", "Remove from Local", None, ""),
-    ("local.restoreHidden", "Show Hidden Local Locations", None, ""),
-    ("view.fullScreenPreview", "Full Screen Preview", Some("F"), "View"),
-    ("view.lightsOut", "Lights Out", Some("Shift+L"), "View"),
-    ("view.enterFullScreen", "Enter Full Screen", Some("Cmd+Shift+F"), "View"),
-    ("view.infoOverlay", "Cycle Info Overlay", Some("Cmd+I"), "View"),
-    ("view.chooseLayoutImage", "Choose Layout Image…", None, "View"),
-    ("view.layoutImage", "Show Layout Image", Some("Cmd+Alt+O"), "View"),
-    ("view.layoutImageOpacity", "Layout Image Opacity", None, ""),
-    ("view.layoutImageMatte", "Layout Image Matte", None, ""),
-    ("view.navigator", "Navigator", None, "View"),
-    ("panel.edit", "Edit", Some("E"), "Window"),
-    ("panel.profiles", "Profile Browser", None, "Window"),
-    ("panel.crop", "Crop & Rotate", Some("C"), "Window"),
-    ("panel.remove", "Remove", Some("H"), "Window"),
-    ("panel.masking", "Masking", Some("M"), "Window"),
-    ("panel.redeye", "Red Eye", None, "Window"),
-    ("panel.presets", "Presets", Some("Shift+P"), "Window"),
-    ("panel.info", "Info", Some("I"), "Window"),
-    ("panel.keywords", "Keywords", Some("K"), "Window"),
-    ("panel.versions", "Versions", Some("Shift+V"), "Window"),
-    ("panel.activity", "History", None, "Window"),
-    ("panel.close", "Close Panel", None, ""),
+    ui!("view.toolOverlay", "Cycle Tool Overlay", Some("Shift+H"), ""),
+    ui!("view.visualizeSpots", "Visualize Spots", Some("A"), "View"),
+    ui!("view.cropOverlay", "Cycle Crop Overlay", Some("Shift+O"), "View"),
+    ui!("view.cropOverlayOrientation", "Cycle Crop Overlay Orientation", None, "View"),
+    ui!("view.back", "Back to Grid", Some("Escape"), ""),
+    ui!("tool.done", "Done", Some("Enter"), ""),
+    ui!("view.filterBar", "Filter Bar", Some("Shift+F"), "View"),
+    ui!("local.addRoot", "Add Folder to Local", None, ""),
+    ui!("local.hide", "Remove from Local", None, ""),
+    ui!("local.restoreHidden", "Show Hidden Local Locations", None, ""),
+    ui!("view.fullScreenPreview", "Full Screen Preview", Some("F"), "View"),
+    ui!("view.lightsOut", "Lights Out", Some("Shift+L"), "View"),
+    ui!("view.enterFullScreen", "Enter Full Screen", Some("Cmd+Shift+F"), "View"),
+    ui!("view.infoOverlay", "Cycle Info Overlay", Some("Cmd+I"), "View"),
+    ui!("view.chooseLayoutImage", "Choose Layout Image…", None, "View"),
+    ui!("view.layoutImage", "Show Layout Image", Some("Cmd+Alt+O"), "View"),
+    ui!("view.layoutImageOpacity", "Layout Image Opacity", None, ""),
+    ui!("view.layoutImageMatte", "Layout Image Matte", None, ""),
+    ui!("view.navigator", "Navigator", None, "View"),
+    ui!("panel.edit", "Edit", Some("E"), "Window"),
+    ui!("panel.profiles", "Profile Browser", None, "Window"),
+    ui!("panel.crop", "Crop & Rotate", Some("C"), "Window"),
+    ui!("panel.remove", "Remove", Some("H"), "Window"),
+    ui!("panel.masking", "Masking", Some("M"), "Window"),
+    ui!("panel.redeye", "Red Eye", None, "Window"),
+    ui!("panel.presets", "Presets", Some("Shift+P"), "Window"),
+    ui!("panel.info", "Info", Some("I"), "Window"),
+    ui!("panel.keywords", "Keywords", Some("K"), "Window"),
+    ui!("panel.versions", "Versions", Some("Shift+V"), "Window"),
+    ui!("panel.activity", "History", None, "Window"),
+    ui!("panel.close", "Close Panel", None, ""),
     // {solo?}: true opens just that section (⌥-click on its header); otherwise opens or closes it
-    ("section.light", "Light", Some("Cmd+1"), "Window>Edit Sections"),
-    ("section.color", "Color", Some("Cmd+2"), "Window>Edit Sections"),
-    ("section.effects", "Effects", Some("Cmd+3"), "Window>Edit Sections"),
-    ("section.detail", "Detail", Some("Cmd+4"), "Window>Edit Sections"),
-    ("section.optics", "Optics", Some("Cmd+5"), "Window>Edit Sections"),
-    ("section.calibration", "Calibration", None, ""),
+    ui!("section.light", "Light", Some("Cmd+1"), "Window>Edit Sections"),
+    ui!("section.color", "Color", Some("Cmd+2"), "Window>Edit Sections"),
+    ui!("section.effects", "Effects", Some("Cmd+3"), "Window>Edit Sections"),
+    ui!("section.detail", "Detail", Some("Cmd+4"), "Window>Edit Sections"),
+    ui!("section.optics", "Optics", Some("Cmd+5"), "Window>Edit Sections"),
+    ui!("section.calibration", "Calibration", None, ""),
     // {on?}; no params toggles. Opening one Edit section closes the others.
-    ("view.soloSections", "Solo Mode", None, "Window>Edit Sections"),
-    ("tool.brush", "Brush", Some("B"), "Window>Tools"),
-    ("tool.linear", "Linear Gradient", Some("L"), "Window>Tools"),
-    ("tool.radial", "Radial Gradient", Some("R"), "Window>Tools"),
-    ("tool.wbPicker", "White Balance Selector", Some("W"), "Window>Tools"),
-    ("tool.none", "No Tool", None, ""),
+    ui!("view.soloSections", "Solo Mode", None, "Window>Edit Sections"),
+    ui!("tool.brush", "Brush", Some("B"), "Window>Tools"),
+    ui!("tool.linear", "Linear Gradient", Some("L"), "Window>Tools"),
+    ui!("tool.radial", "Radial Gradient", Some("R"), "Window>Tools"),
+    ui!("tool.wbPicker", "White Balance Selector", Some("W"), "Window>Tools"),
+    ui!("tool.none", "No Tool", None, ""),
     // brush size / feather of the active brush (Masking brush, Remove tool and its selected spot)
-    ("brush.smaller", "Decrease Brush Size", Some("["), "Window>Tools"),
-    ("brush.larger", "Increase Brush Size", Some("]"), "Window>Tools"),
-    ("brush.featherLess", "Decrease Brush Feather", Some("Shift+["), "Window>Tools"),
-    ("brush.featherMore", "Increase Brush Feather", Some("Shift+]"), "Window>Tools"),
-    ("dialog.newAlbum", "New Album…", Some("Cmd+N"), "File"),
-    ("dialog.newFolder", "New Folder…", Some("Cmd+Shift+N"), "File"),
-    ("dialog.smartAlbum", "New Smart Album…", None, "File"),
-    ("view.photoCounts", "Show Photo Counts", None, "View"),
-    ("view.sidebarSection", "Show Sidebar Section", None, ""),
-    ("view.sidebarMoveSection", "Move Sidebar Section", None, ""),
-    ("view.sidebarReset", "Reset Sidebar Sections", None, ""),
-    ("view.slideshow", "Slideshow", Some("Cmd+Alt+Enter"), "View"),
-    ("view.slideshowOptions", "Slideshow Options…", None, "View"),
-    ("dialog.slideshowExport", "Export Slideshow…", None, "View"),
-    ("app.slideshowExport", "Export Slideshow", None, ""),
+    ui!("brush.smaller", "Decrease Brush Size", Some("["), "Window>Tools"),
+    ui!("brush.larger", "Increase Brush Size", Some("]"), "Window>Tools"),
+    ui!("brush.featherLess", "Decrease Brush Feather", Some("Shift+["), "Window>Tools"),
+    ui!("brush.featherMore", "Increase Brush Feather", Some("Shift+]"), "Window>Tools"),
+    ui!("dialog.newAlbum", "New Album…", Some("Cmd+N"), "File"),
+    ui!("dialog.newFolder", "New Folder…", Some("Cmd+Shift+N"), "File"),
+    ui!("dialog.smartAlbum", "New Smart Album…", None, "File"),
+    ui!("view.photoCounts", "Show Photo Counts", None, "View"),
+    ui!("view.sidebarSection", "Show Sidebar Section", None, ""),
+    ui!("view.sidebarMoveSection", "Move Sidebar Section", None, ""),
+    ui!("view.sidebarReset", "Reset Sidebar Sections", None, ""),
+    ui!("view.slideshow", "Slideshow", Some("Cmd+Alt+Enter"), "View"),
+    ui!("view.slideshowOptions", "Slideshow Options…", None, "View"),
+    ui!("dialog.slideshowExport", "Export Slideshow…", None, "View"),
+    ui!("app.slideshowExport", "Export Slideshow", None, ""),
     // the slideshow's playback controls (Space, ←/→ and Esc while it plays)
-    ("slideshow.togglePause", "Pause / Resume Slideshow", None, ""),
-    ("slideshow.next", "Next Slide", None, ""),
-    ("slideshow.previous", "Previous Slide", None, ""),
-    ("slideshow.end", "End Slideshow", None, ""),
-    ("view.secondWindow", "Second Window", Some("Cmd+F11"), "Window"),
-    ("tool.keywordPainter", "Keyword Painter", None, ""),
-    ("view.gridInfo", "Grid Info", None, ""),
+    ui!("slideshow.togglePause", "Pause / Resume Slideshow", None, ""),
+    ui!("slideshow.next", "Next Slide", None, ""),
+    ui!("slideshow.previous", "Previous Slide", None, ""),
+    ui!("slideshow.end", "End Slideshow", None, ""),
+    ui!("view.secondWindow", "Second Window", Some("Cmd+F11"), "Window"),
+    ui!("tool.keywordPainter", "Keyword Painter", None, ""),
+    ui!("view.gridInfo", "Grid Info", None, ""),
     // {mode?: auto | light | dark}: Appearance Mode (cycles Auto, Light, Dark when omitted; the
     // top bar's appearance button). View ▸ Appearance lists the modes.
-    ("view.appearance", "Next Appearance Mode", None, ""),
+    ui!("view.appearance", "Next Appearance Mode", None, ""),
     // {theme: charcoal | midnight | silver | paper}: pick a theme and fix the mode to its family.
-    ("view.theme", "Theme", None, ""),
-    ("dialog.allMetadata", "All Metadata…", None, "Photo"),
-    ("dialog.faceModel", "Add Face Model…", None, ""),
-    ("dialog.newSmartAlbum", "New Smart Album from Filter…", Some("Cmd+Alt+N"), "File"),
-    ("dialog.createPreset", "Create Preset…", Some("Cmd+Shift+P"), "Photo"),
-    ("dialog.autoStack", "Auto-Stack by Capture Time…", None, "Photo>Stack"),
-    ("dialog.copySettings", "Choose Edit Settings to Copy…", Some("Cmd+Shift+C"), "Edit"),
-    ("dialog.pasteSettings", "Paste Selected Settings…", Some("Cmd+Shift+V"), "Edit"),
-    ("view.focusSearch", "Find…", Some("Cmd+F"), "Edit"),
-    ("dialog.export", "Export…", None, "File"),
-    ("dialog.print", "Print…", Some("Cmd+P"), "File"),
-    ("app.print", "Print to PDF", None, ""),
-    ("dialog.contactSheet", "Contact Sheet PDF…", None, "File"),
-    ("app.contactSheet", "Export Contact Sheet PDF", None, ""),
-    ("photo.editInPhotoCraft", "Edit in PhotoCraft", Some("Cmd+Shift+E"), "Photo>Edit In"),
-    ("photo.editInExternal", "Edit in Other Editor", Some("Cmd+Alt+E"), "Photo>Edit In"),
+    ui!("view.theme", "Theme", None, ""),
+    ui!("dialog.allMetadata", "All Metadata…", None, "Photo"),
+    ui!("dialog.faceModel", "Add Face Model…", None, ""),
+    ui!("dialog.newSmartAlbum", "New Smart Album from Filter…", Some("Cmd+Alt+N"), "File"),
+    ui!("dialog.createPreset", "Create Preset…", Some("Cmd+Shift+P"), "Photo"),
+    ui!("dialog.autoStack", "Auto-Stack by Capture Time…", None, "Photo>Stack"),
+    ui!("dialog.copySettings", "Choose Edit Settings to Copy…", Some("Cmd+Shift+C"), "Edit"),
+    ui!("dialog.pasteSettings", "Paste Selected Settings…", Some("Cmd+Shift+V"), "Edit"),
+    ui!("view.focusSearch", "Find…", Some("Cmd+F"), "Edit"),
+    ui!("dialog.export", "Export…", None, "File"),
+    ui!("dialog.print", "Print…", Some("Cmd+P"), "File"),
+    ui!("app.print", "Print to PDF", None, ""),
+    ui!("dialog.contactSheet", "Contact Sheet PDF…", None, "File"),
+    ui!("app.contactSheet", "Export Contact Sheet PDF", None, ""),
+    ui!("photo.editInPhotoCraft", "Edit in PhotoCraft", Some("Cmd+Shift+E"), "Photo>Edit In"),
+    ui!("photo.editInExternal", "Edit in Other Editor", Some("Cmd+Alt+E"), "Photo>Edit In"),
     // {ids?, app?}: the original files themselves (a raw stays a raw: no render, no copy), opened
     // in the other editor, e.g. a raw developer
-    ("photo.openOriginalInExternal", "Open Original in Other Editor (RAW, no copy)", None, "Photo>Edit In"),
-    ("dialog.mergeHdr", "HDR…", Some("Ctrl+H"), "Photo>Photo Merge"),
-    ("dialog.mergePanorama", "Panorama…", Some("Ctrl+M"), "Photo>Photo Merge"),
-    ("dialog.mergeHdrPanorama", "HDR Panorama…", None, "Photo>Photo Merge"),
-    ("merge.hdrLast", "HDR with Last Settings", Some("Ctrl+Shift+H"), "Photo>Photo Merge"),
-    ("merge.panoramaLast", "Panorama with Last Settings", Some("Ctrl+Shift+M"), "Photo>Photo Merge"),
-    ("merge.hdrPanoramaLast", "HDR Panorama with Last Settings", None, "Photo>Photo Merge"),
-    ("file.addPhotos", "Import Photos…", Some("Cmd+Shift+I"), "File"),
-    ("file.addFolder", "Import from Folder…", None, "File"),
-    ("file.importLightroom", "Import Lightroom Catalog…", None, "File"),
-    ("file.addFromDevice", "Import from Device", None, ""),
-    ("file.findMissing", "Find Missing Photos…", None, "File"),
-    ("file.backupLibrary", "Back Up Library…", None, "File"),
-    ("file.restoreLibrary", "Restore Library from Backup…", None, "File"),
-    ("photo.locate", "Locate Missing File…", None, ""),
-    ("dialog.saveMetadataPreset", "Save Metadata Preset…", None, ""),
-    ("app.quit", "Quit LightCraft", Some("Cmd+Q"), "File"),
-    ("file.importPresets", "Import Profiles & Presets…", None, "File"),
-    ("file.exportPresets", "Export Presets…", None, "File"),
+    ui!("photo.openOriginalInExternal", "Open Original in Other Editor (RAW, no copy)", None, "Photo>Edit In"),
+    ui!("dialog.mergeHdr", "HDR…", Some("Ctrl+H"), "Photo>Photo Merge"),
+    ui!("dialog.mergePanorama", "Panorama…", Some("Ctrl+M"), "Photo>Photo Merge"),
+    ui!("dialog.mergeHdrPanorama", "HDR Panorama…", None, "Photo>Photo Merge"),
+    ui!("merge.hdrLast", "HDR with Last Settings", Some("Ctrl+Shift+H"), "Photo>Photo Merge"),
+    ui!("merge.panoramaLast", "Panorama with Last Settings", Some("Ctrl+Shift+M"), "Photo>Photo Merge"),
+    ui!("merge.hdrPanoramaLast", "HDR Panorama with Last Settings", None, "Photo>Photo Merge"),
+    ui!("file.addPhotos", "Import Photos…", Some("Cmd+Shift+I"), "File"),
+    ui!("file.addFolder", "Import from Folder…", None, "File"),
+    ui!("file.importLightroom", "Import Lightroom Catalog…", None, "File"),
+    ui!("file.addFromDevice", "Import from Device", None, ""),
+    ui!("file.findMissing", "Find Missing Photos…", None, "File"),
+    ui!("file.backupLibrary", "Back Up Library…", None, "File"),
+    ui!("file.restoreLibrary", "Restore Library from Backup…", None, "File"),
+    ui!("photo.locate", "Locate Missing File…", None, ""),
+    ui!("dialog.saveMetadataPreset", "Save Metadata Preset…", None, ""),
+    ui!("app.quit", "Quit LightCraft", Some("Cmd+Q"), "File"),
+    ui!("file.importPresets", "Import Profiles & Presets…", None, "File"),
+    ui!("file.exportPresets", "Export Presets…", None, "File"),
     // Masking panel ▸ Effect menu
-    ("dialog.saveMaskEffect", "Save Current Settings as New Effect Preset…", None, ""),
-    ("dialog.manageMaskEffects", "Manage Effect Presets…", None, ""),
-    ("file.exportMaskEffects", "Export Effect Presets…", None, ""),
-    ("file.importKeywords", "Import Keywords…", None, "File"),
-    ("file.exportKeywords", "Export Keywords…", None, "File"),
+    ui!("dialog.saveMaskEffect", "Save Current Settings as New Effect Preset…", None, ""),
+    ui!("dialog.manageMaskEffects", "Manage Effect Presets…", None, ""),
+    ui!("file.exportMaskEffects", "Export Effect Presets…", None, ""),
+    ui!("file.importKeywords", "Import Keywords…", None, "File"),
+    ui!("file.exportKeywords", "Export Keywords…", None, "File"),
     // Edit panel ▸ Curve ▸ Point Curve dropdown
-    ("file.importCurvePresets", "Import Point Curve Presets…", None, ""),
-    ("file.exportCurvePresets", "Export Point Curve Presets…", None, ""),
-    ("app.settings", "Settings…", Some("Cmd+,"), "Edit"),
-    ("app.newLibrary", "New Library…", None, "File"),
-    ("app.openLibrary", "Open Library…", Some("Cmd+O"), "File"),
-    ("app.recentLibraries", "Recent Libraries", None, ""),
-    ("app.clearRecentLibraries", "Clear Recent Libraries", None, ""),
+    ui!("file.importCurvePresets", "Import Point Curve Presets…", None, ""),
+    ui!("file.exportCurvePresets", "Export Point Curve Presets…", None, ""),
+    ui!("app.settings", "Settings…", Some("Cmd+,"), "Edit"),
+    ui!("app.newLibrary", "New Library…", None, "File"),
+    ui!("app.openLibrary", "Open Library…", Some("Cmd+O"), "File"),
+    ui!("app.recentLibraries", "Recent Libraries", None, ""),
+    ui!("app.clearRecentLibraries", "Clear Recent Libraries", None, ""),
     // Settings ▸ Display
-    ("app.displayProfile", "Display Profile", None, ""),
-    ("app.about", "About LightCraft", None, "Help"),
-    ("app.systemInfo", "System Info…", None, "Help"),
-    ("app.openLogFolder", "Open Log Folder", None, "Help"),
-    ("app.whatsNew", "What's New", None, "Help"),
-    ("dialog.cull", "Assisted Culling…", None, "Photo"),
-    ("app.help", "LightCraft Help", Some("F1"), "Help"),
-    ("app.discord", "Join the ArtCraft Discord…", None, "Help"),
-    ("app.feedback", "Send Feedback…", None, "Help"),
-    ("app.website", "LightCraft Website", None, "Help"),
-    ("app.github", "LightCraft on GitHub", None, "Help"),
-    ("app.artcraft", "ArtCraft Website", None, "Help"),
-    ("app.shortcuts", "Keyboard Shortcuts", Some("Cmd+/"), "Help"),
-    ("app.setShortcut", "Set Keyboard Shortcut", None, ""),
-    ("app.resetShortcuts", "Reset All Keyboard Shortcuts", None, ""),
-    ("app.export", "Export Now", None, ""),
-    ("app.showInFinder", "Show in Finder", Some("Cmd+R"), "Photo"),
-    ("app.openSamModelFolder", "Show in File Manager", None, ""),
-    ("dialog.rename", "Rename Photos…", Some("F2"), "Photo"),
-    ("dialog.labelNames", "Edit Color Label Names…", None, ""),
-    ("dialog.captureTime", "Edit Capture Time…", None, "Photo"),
-    ("photo.tagFromTracklog", "Auto-Tag from Tracklog…", None, "Photo"),
-    ("app.exportPrevious", "Export with Previous", Some("Cmd+Alt+Shift+E"), "File"),
+    ui!("app.displayProfile", "Display Profile", None, ""),
+    ui!("app.about", "About LightCraft", None, "Help"),
+    ui!("app.systemInfo", "System Info…", None, "Help"),
+    ui!("app.openLogFolder", "Open Log Folder", None, "Help"),
+    ui!("app.whatsNew", "What's New", None, "Help"),
+    ui!("dialog.cull", "Assisted Culling…", None, "Photo"),
+    ui!("app.help", "LightCraft Help", Some("F1"), "Help"),
+    ui!("app.discord", "Join the ArtCraft Discord…", None, "Help"),
+    ui!("app.feedback", "Send Feedback…", None, "Help"),
+    ui!("app.website", "LightCraft Website", None, "Help"),
+    ui!("app.github", "LightCraft on GitHub", None, "Help"),
+    ui!("app.artcraft", "ArtCraft Website", None, "Help"),
+    ui!("app.shortcuts", "Keyboard Shortcuts", Some("Cmd+/"), "Help"),
+    ui!("app.setShortcut", "Set Keyboard Shortcut", None, ""),
+    ui!("app.resetShortcuts", "Reset All Keyboard Shortcuts", None, ""),
+    ui!("app.export", "Export Now", None, ""),
+    ui!("app.showInFinder", "Show in Finder", Some("Cmd+R"), "Photo"),
+    ui!("app.openSamModelFolder", "Show in File Manager", None, ""),
+    ui!("dialog.rename", "Rename Photos…", Some("F2"), "Photo"),
+    ui!("dialog.labelNames", "Edit Color Label Names…", None, ""),
+    ui!("dialog.captureTime", "Edit Capture Time…", None, "Photo"),
+    ui!("photo.tagFromTracklog", "Auto-Tag from Tracklog…", None, "Photo"),
+    ui!("app.exportPrevious", "Export with Previous", Some("Cmd+Alt+Shift+E"), "File"),
 ];
 
 fn panel(app: &mut LightcraftApp, ctx: &egui::Context, p: RightPanel, name: &str) {
@@ -407,8 +443,30 @@ fn theme_command(app: &mut LightcraftApp, p: &Value) -> Result<Value, String> {
     Ok(appearance_json(app))
 }
 
-/// Handle UI commands; `None` means "not a UI command — send it to the engine".
+/// Engine commands the app runs its own way (on a worker thread, with its dialogs): not listed
+/// again, run in place of the engine's.
+fn ui_override(id: &str) -> Option<Run> {
+    match id {
+        "library.inspectLightroom" | "library.importLightroom" | "merge.hdrBatch" => Some(legacy),
+        // listed and read in the background (the web build browses through the engine)
+        "library.browse" if !cfg!(target_arch = "wasm32") => Some(legacy),
+        _ => None,
+    }
+}
+
+/// Run a UI command (or the app's own way of running an engine command); `None` means "not a UI
+/// command — send it to the engine".
 pub fn run_ui_command(app: &mut LightcraftApp, id: &str, p: &Value) -> Option<Result<Value, String>> {
+    let run = ui_commands().find(|c| c.id == id).map(|c| c.run).or_else(|| ui_override(id))?;
+    Some(run(app, id, p))
+}
+
+/// The UI commands still reading raw JSON params, until they move to typed params.
+fn legacy(app: &mut LightcraftApp, id: &str, p: &Value) -> Result<Value, String> {
+    legacy_command(app, id, p).unwrap_or_else(|| Err(format!("`{id}` has no handler")))
+}
+
+fn legacy_command(app: &mut LightcraftApp, id: &str, p: &Value) -> Option<Result<Value, String>> {
     if matches!(id, "ui.dock" | "ui.dock.reset") {
         return Some(crate::docking::command(app, id == "ui.dock.reset", p));
     }
@@ -1181,7 +1239,7 @@ pub fn run_ui_command(app: &mut LightcraftApp, id: &str, p: &Value) -> Option<Re
         }
         s if s.starts_with("section.") => bool_param(s, p, "solo").and_then(|solo| {
             // only the Edit sections listed above: an unknown one would close the real ones
-            if !UI_COMMANDS.iter().any(|c| c.0 == s) {
+            if !UI_COMMANDS.iter().any(|c| c.id == s) {
                 return Err(format!("{s}: no such Edit section"));
             }
             let sec = &s["section.".len()..];
@@ -2194,8 +2252,8 @@ pub struct MenuEntry {
 /// The flattened menu model (UI commands + engine commands with menu paths).
 pub fn menu_entries(app: &LightcraftApp) -> Vec<MenuEntry> {
     let mut v: Vec<MenuEntry> = ui_commands()
-        .filter(|c| !c.3.is_empty())
-        .map(|(id, label, sc, m)| MenuEntry {
+        .filter(|c| !c.menu.is_empty())
+        .map(|UiCommand { id, label, shortcut: sc, menu: m, .. }| MenuEntry {
             id: id.to_string(),
             label: label.to_string(),
             menu: m.split('>').map(str::to_string).collect(),

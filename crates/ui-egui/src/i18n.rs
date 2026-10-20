@@ -472,7 +472,9 @@ mod tests {
             eprintln!("cs lacks {} catalog message(s) (shown in English): {lacking:?}", lacking.len());
         }
         let mut labels: Vec<&str> = lightcraft_engine::command_specs().iter().map(|spec| spec.label).collect();
-        labels.extend(crate::menus::ui_commands().map(|command| command.1).filter(|label| !Locale::ALL.iter().any(|locale| locale.name() == *label)));
+        labels.extend(
+            crate::menus::ui_commands().map(|command| command.label).filter(|label| !Locale::ALL.iter().any(|locale| locale.name() == *label)),
+        );
         labels.extend(lightcraft_develop::CONTROLS.iter().map(|control| control.label));
         labels.extend(crate::panels::settings::TABS.iter().map(|(_, label)| *label));
         labels.extend(lightcraft_catalog::rules::FIELD_GROUPS.iter().map(|group| group.0));
@@ -795,7 +797,7 @@ mod tests {
         assert_eq!(commands.len(), Locale::ALL.len());
         for (id, language) in commands {
             assert_eq!(crate::menus::language_from_command(id), Some(language), "{id}");
-            assert!(crate::menus::ui_commands().any(|command| command.0 == id), "{id} is not in the menu");
+            assert!(crate::menus::ui_commands().any(|command| command.id == id), "{id} is not in the menu");
         }
         assert_eq!(crate::menus::language_from_command("app.language.klingon"), None);
         assert_eq!(crate::menus::language_from_command("view.detail"), None);
@@ -955,7 +957,9 @@ mod tests {
             eprintln!("uk lacks {} catalog message(s) (shown in English): {lacking:?}", lacking.len());
         }
         let mut labels: Vec<&str> = lightcraft_engine::command_specs().iter().map(|spec| spec.label).collect();
-        labels.extend(crate::menus::ui_commands().map(|command| command.1).filter(|label| !Locale::ALL.iter().any(|locale| locale.name() == *label)));
+        labels.extend(
+            crate::menus::ui_commands().map(|command| command.label).filter(|label| !Locale::ALL.iter().any(|locale| locale.name() == *label)),
+        );
         labels.extend(lightcraft_develop::CONTROLS.iter().map(|control| control.label));
         labels.extend(crate::panels::settings::TABS.iter().map(|(_, label)| *label));
         for (_, label, kind) in lightcraft_catalog::rules::FIELDS {
@@ -1079,7 +1083,9 @@ mod tests {
             eprintln!("it lacks {} catalog message(s) (shown in English): {lacking:?}", lacking.len());
         }
         let mut labels: Vec<&str> = lightcraft_engine::command_specs().iter().map(|spec| spec.label).collect();
-        labels.extend(crate::menus::ui_commands().map(|command| command.1).filter(|label| !Locale::ALL.iter().any(|locale| locale.name() == *label)));
+        labels.extend(
+            crate::menus::ui_commands().map(|command| command.label).filter(|label| !Locale::ALL.iter().any(|locale| locale.name() == *label)),
+        );
         labels.extend(lightcraft_develop::CONTROLS.iter().map(|control| control.label));
         labels.extend(crate::panels::settings::TABS.iter().map(|(_, label)| *label));
         for (_, label, kind) in lightcraft_catalog::rules::FIELDS {
@@ -1179,7 +1185,9 @@ mod tests {
     #[test]
     fn display_label_gaps_are_reported() {
         let mut labels: Vec<&str> = lightcraft_engine::command_specs().iter().map(|spec| spec.label).collect();
-        labels.extend(crate::menus::ui_commands().map(|command| command.1).filter(|label| !Locale::ALL.iter().any(|locale| locale.name() == *label)));
+        labels.extend(
+            crate::menus::ui_commands().map(|command| command.label).filter(|label| !Locale::ALL.iter().any(|locale| locale.name() == *label)),
+        );
         labels.extend(lightcraft_develop::CONTROLS.iter().map(|control| control.label));
         for (_, label, kind) in lightcraft_catalog::rules::FIELDS {
             labels.push(label);

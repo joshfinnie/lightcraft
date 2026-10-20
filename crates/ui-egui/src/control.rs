@@ -89,7 +89,7 @@ pub fn all_commands(app: &LightcraftApp) -> Value {
             v
         })
         .collect();
-    for (id, label, sc, menu) in crate::menus::ui_commands() {
+    for crate::menus::UiCommand { id, label, shortcut: sc, menu, .. } in crate::menus::ui_commands() {
         let sc = crate::shortcuts::binding(keymap, id, *sc);
         v.push(json!({"id": id, "label": label, "shortcut": sc, "menu": [menu], "enabled": crate::menus::ui_enabled(app, id), "ui": true}));
     }

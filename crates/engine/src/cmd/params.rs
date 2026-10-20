@@ -63,7 +63,7 @@ impl Strings {
 
 /// Read `p` as `T`. Every key `T` would ignore is an error, and a value of the wrong type names
 /// its key. The error's command is filled in by [`crate::Session::execute`].
-pub(crate) fn parse<T: Params>(p: &Value) -> Result<T> {
+pub fn parse<T: Params>(p: &Value) -> Result<T> {
     if !p.is_object() {
         return Err(bad("", "params must be a JSON object"));
     }
@@ -81,7 +81,7 @@ pub fn parse_as<T: Params>(cmd: &str, p: &Value) -> Result<T> {
 
 /// `p` as `T`, checked like params: a key `T` would ignore (at any depth) is an error. For JSON a
 /// command merges before reading it (a partial filter or settings).
-pub(crate) fn from_value<T: DeserializeOwned>(p: &Value) -> Result<T> {
+pub fn from_value<T: DeserializeOwned>(p: &Value) -> Result<T> {
     let mut unknown = Vec::new();
     let mut note = |path: serde_ignored::Path| unknown.push(format!("`{}`", key_path(&path)));
     let de = serde_ignored::Deserializer::new(p, &mut note);
@@ -170,6 +170,7 @@ fn key_path(p: &serde_ignored::Path) -> String {
 /// `struct X with targets { … }` adds the photo targets `ids` and `id` (see [`Session::targets_of`]).
 ///
 /// [`Session::targets_of`]: crate::Session::targets_of
+#[macro_export]
 macro_rules! params {
     ($(#[$m:meta])* $vis:vis struct $name:ident { $($(#[$fm:meta])* $f:ident : $t:ty),* $(,)? }) => {
         $(#[$m])*
@@ -183,8 +184,8 @@ macro_rules! params {
         $crate::cmd::params::params! {
             $(#[$m])*
             $vis struct $name {
-                ids: Option<Vec<lightcraft_catalog::PhotoId>>,
-                id: Option<lightcraft_catalog::PhotoId>,
+                ids: Option<Vec<$crate::catalog::PhotoId>>,
+                id: Option<$crate::catalog::PhotoId>,
                 $($(#[$fm])* $f: $t),*
             }
         }
@@ -192,13 +193,13 @@ macro_rules! params {
         impl $name {
             /// The photos the call names (`ids`, else `id`), else the selection.
             #[allow(dead_code)]
-            pub fn targets(&self, s: &$crate::Session) -> Vec<lightcraft_catalog::PhotoId> {
+            pub fn targets(&self, s: &$crate::Session) -> Vec<$crate::catalog::PhotoId> {
                 s.targets_of(self.ids.as_deref(), self.id)
             }
         }
     };
 }
-pub(crate) use params;
+pub use crate::params;
 
 /// A whole number, also written as an integral float (`2.0`), as the float-reading params before
 /// typing accepted. Out of range for `T`, fractional or not a number is an error.
@@ -237,13 +238,13 @@ impl<'de, T: TryFrom<i128>> serde::Deserialize<'de> for Whole<T> {
 }
 
 /// `#[serde(deserialize_with = "whole")]`: see [`Whole`].
-pub(crate) fn whole<'de, D: Deserializer<'de>, T: TryFrom<i128>>(d: D) -> std::result::Result<T, D::Error> {
+pub fn whole<'de, D: Deserializer<'de>, T: TryFrom<i128>>(d: D) -> std::result::Result<T, D::Error> {
     <Whole<T> as serde::Deserialize>::deserialize(d).map(|w| w.0)
 }
 
 /// `#[serde(default, deserialize_with = "present")]` on an `Option<Option<T>>`: `None` when the key
 /// is left out, `Some(None)` for `null` (which then means "none", not "unchanged").
-pub(crate) fn present<'de, D: Deserializer<'de>, T: serde::Deserialize<'de>>(d: D) -> std::result::Result<Option<Option<T>>, D::Error> {
+pub fn present<'de, D: Deserializer<'de>, T: serde::Deserialize<'de>>(d: D) -> std::result::Result<Option<Option<T>>, D::Error> {
     Option::<T>::deserialize(d).map(Some)
 }
 

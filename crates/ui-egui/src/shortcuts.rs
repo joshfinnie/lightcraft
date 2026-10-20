@@ -31,7 +31,7 @@ pub fn bindable() -> &'static [Bindable] {
     static ALL: OnceLock<Vec<Bindable>> = OnceLock::new();
     ALL.get_or_init(|| {
         let mut v: Vec<Bindable> = Vec::new();
-        for (id, label, sc, _) in crate::menus::ui_commands() {
+        for crate::menus::UiCommand { id, label, shortcut: sc, .. } in crate::menus::ui_commands() {
             if !v.iter().any(|b| b.id == *id) {
                 v.push(Bindable { id, label, default: *sc });
             }
@@ -967,7 +967,7 @@ mod tests {
         assert_eq!(parse("Right").unwrap().1, Key::ArrowRight);
         assert_eq!(parse("\\").unwrap().1, Key::Backslash);
         // every declared shortcut parses
-        for (id, _, sc, _) in crate::menus::ui_commands() {
+        for crate::menus::UiCommand { id, shortcut: sc, .. } in crate::menus::ui_commands() {
             if let Some(sc) = sc {
                 assert!(parse(sc).is_some(), "{id}: {sc}");
             }
@@ -981,7 +981,7 @@ mod tests {
 
     #[test]
     fn aliases_parse_and_target_existing_commands() {
-        let ui: Vec<&str> = crate::menus::ui_commands().map(|c| c.0).collect();
+        let ui: Vec<&str> = crate::menus::ui_commands().map(|c| c.id).collect();
         for (sc, id, params) in ALIASES {
             assert!(parse(sc).is_some(), "{id}: {sc}");
             assert!(ui.contains(id) || lightcraft_engine::find_command(id).is_some(), "alias {sc} → unknown command {id}");
@@ -1061,7 +1061,7 @@ mod tests {
     #[test]
     fn no_conflicting_bindings() {
         let mut ui: Vec<((Modifiers, Key), String)> = Vec::new();
-        for (id, _, sc, _) in crate::menus::ui_commands() {
+        for crate::menus::UiCommand { id, shortcut: sc, .. } in crate::menus::ui_commands() {
             if let Some(k) = sc.and_then(parse) {
                 ui.push((k, id.to_string()));
             }

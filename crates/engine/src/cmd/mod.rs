@@ -32,7 +32,7 @@ mod merge;
 pub mod metadata;
 pub mod missing;
 mod organize;
-pub(crate) mod params;
+pub mod params;
 mod prefs;
 mod preset_files;
 pub mod previews;
