@@ -70,6 +70,9 @@ pub struct CommandSpec {
     pub explicit_targets: bool,
     /// The top-level keys `run` takes; `None` for any (a partial value it merges and checks).
     pub keys: fn() -> Option<&'static [&'static str]>,
+    /// Read the params as `run` would, without running: for a front end that runs the command its
+    /// own way (the app's background browse) and must refuse what the command refuses.
+    pub check: fn(&Value) -> Result<()>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -155,6 +158,7 @@ macro_rules! cmd {
             journal: $journal,
             explicit_targets: false,
             keys: $crate::cmd::params::keys_of::<$ty>,
+            check: |p| $crate::cmd::params::parse::<$ty>(p).map(|_| ()),
         }
     };
 }

@@ -17,7 +17,7 @@ pub struct UiCommand {
     pub shortcut: Option<&'static str>,
     /// Menu path (`Window>Tools`); empty = not in menus.
     pub menu: &'static str,
-    /// The top-level keys `run` takes; `None` for any (a command not yet on typed params).
+    /// The top-level keys `run` takes; `None` for any (a `Patch` its code checks itself).
     pub keys: fn() -> Option<&'static [&'static str]>,
     pub run: Run,
 }
@@ -33,12 +33,9 @@ pub struct Call<'a> {
 pub type Run = fn(&mut LightcraftApp, &Call) -> Result<Value, String>;
 
 /// A UI command. `ui!(id, label, shortcut, menu, Params, run)` reads its params into `Params` (a
-/// `lightcraft_engine::params!` struct: an unknown key or a bad value is an error before `run`);
-/// `ui!(…, raw run)` is one still reading raw JSON.
+/// `lightcraft_engine::params!` struct, or `Keys<…>` for one that hands its params on to code that
+/// reads them): an unknown key or a bad value is an error before `run`.
 macro_rules! ui {
-    ($id:literal, $label:expr, $sc:expr, $menu:literal, raw $run:path) => {
-        UiCommand { id: $id, label: $label, shortcut: $sc, menu: $menu, keys: || None, run: $run }
-    };
     ($id:literal, $label:expr, $sc:expr, $menu:literal, $ty:ty, $run:expr) => {
         UiCommand {
             id: $id,
@@ -111,7 +108,14 @@ pub const UI_COMMANDS: &[UiCommand] = &[
         lightcraft_engine::cmd::params::Keys<crate::commands::view::DockKeys>,
         crate::commands::view::dock
     ),
-    ui!("modelSetup.cancel", "Cancel Pending Photo Action", None, "", raw crate::commands::app::model_setup_cancel),
+    ui!(
+        "modelSetup.cancel",
+        "Cancel Pending Photo Action",
+        None,
+        "",
+        crate::commands::app::ModelSetupCancel,
+        crate::commands::app::model_setup_cancel
+    ),
     ui!("view.photoGrid", "Photo Grid", None, "View", NoParams, crate::commands::view::view_photo_grid),
     ui!("view.squareGrid", "Square Grid", None, "View", NoParams, crate::commands::view::view_square_grid),
     // G: Photo Grid ↔ Square Grid (from other views: the photo grid)
@@ -134,7 +138,7 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     ui!("view.focusPoint", "Show Focus Point", Some("Alt+F"), "View", crate::commands::view::On, crate::commands::view::view_focus_point),
     ui!("view.zoomToFocus", "Zoom to Focus Point", None, "View", crate::commands::view::On, crate::commands::view::view_zoom_to_focus),
     ui!("view.reference", "Reference View", Some("Shift+R"), "View", NoParams, crate::commands::view::view_reference),
-    ui!("photo.setReference", "Set as Reference Photo", None, "", raw crate::commands::app::photo_set_reference),
+    ui!("photo.setReference", "Set as Reference Photo", None, "", crate::commands::app::SetReference, crate::commands::app::photo_set_reference),
     ui!("compare.swap", "Swap Compare Photos", None, "View", NoParams, crate::commands::view::compare_swap),
     ui!("compare.set", "Show in Compare", None, "", crate::commands::view::CompareSet, crate::commands::view::compare_set),
     ui!("compare.makeSelect", "Make Candidate the Select", None, "View", NoParams, crate::commands::view::compare_make_select),
@@ -278,9 +282,16 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     ui!("brush.larger", "Increase Brush Size", Some("]"), "Window>Tools", NoParams, crate::commands::view::brush_smaller),
     ui!("brush.featherLess", "Decrease Brush Feather", Some("Shift+["), "Window>Tools", NoParams, crate::commands::view::brush_smaller),
     ui!("brush.featherMore", "Increase Brush Feather", Some("Shift+]"), "Window>Tools", NoParams, crate::commands::view::brush_smaller),
-    ui!("dialog.newAlbum", "New Album…", Some("Cmd+N"), "File", raw crate::commands::dialogs::dialog_new_album),
-    ui!("dialog.newFolder", "New Folder…", Some("Cmd+Shift+N"), "File", raw crate::commands::dialogs::dialog_new_folder),
-    ui!("dialog.smartAlbum", "New Smart Album…", None, "File", raw crate::commands::dialogs::dialog_smart_album),
+    ui!("dialog.newAlbum", "New Album…", Some("Cmd+N"), "File", crate::commands::dialogs::NewAlbum, crate::commands::dialogs::dialog_new_album),
+    ui!(
+        "dialog.newFolder",
+        "New Folder…",
+        Some("Cmd+Shift+N"),
+        "File",
+        crate::commands::dialogs::NewAlbum,
+        crate::commands::dialogs::dialog_new_folder
+    ),
+    ui!("dialog.smartAlbum", "New Smart Album…", None, "File", crate::commands::dialogs::SmartAlbum, crate::commands::dialogs::dialog_smart_album),
     ui!("view.photoCounts", "Show Photo Counts", None, "View", crate::commands::view::Show, crate::commands::view::view_photo_counts),
     ui!("view.sidebarSection", "Show Sidebar Section", None, "", crate::commands::view::SidebarSection, crate::commands::view::view_sidebar_section),
     ui!(
@@ -301,8 +312,15 @@ pub const UI_COMMANDS: &[UiCommand] = &[
         crate::commands::view::view_slideshow
     ),
     ui!("view.slideshowOptions", "Slideshow Options…", None, "View", NoParams, crate::commands::view::view_slideshow_options),
-    ui!("dialog.slideshowExport", "Export Slideshow…", None, "View", raw crate::commands::dialogs::dialog_slideshow_export),
-    ui!("app.slideshowExport", "Export Slideshow", None, "", raw crate::commands::app::app_slideshow_export),
+    ui!(
+        "dialog.slideshowExport",
+        "Export Slideshow…",
+        None,
+        "View",
+        crate::commands::dialogs::SlideshowExport,
+        crate::commands::dialogs::dialog_slideshow_export
+    ),
+    ui!("app.slideshowExport", "Export Slideshow", None, "", lightcraft_engine::cmd::params::Patch, crate::commands::app::app_slideshow_export),
     // the slideshow's playback controls (Space, ←/→ and Esc while it plays)
     ui!("slideshow.togglePause", "Pause / Resume Slideshow", None, "", NoParams, crate::commands::view::slideshow_toggle_pause),
     ui!("slideshow.next", "Next Slide", None, "", NoParams, crate::commands::view::slideshow_toggle_pause),
@@ -316,11 +334,25 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     ui!("view.appearance", "Next Appearance Mode", None, "", crate::commands::view::Mode, crate::commands::view::view_appearance),
     // {theme: charcoal | midnight | silver | paper}: pick a theme and fix the mode to its family.
     ui!("view.theme", "Theme", None, "", crate::commands::view::Theme, crate::commands::view::view_theme),
-    ui!("dialog.allMetadata", "All Metadata…", None, "Photo", raw crate::commands::dialogs::dialog_all_metadata),
-    ui!("dialog.faceModel", "Add Face Model…", None, "", raw crate::commands::dialogs::dialog_face_model),
-    ui!("dialog.newSmartAlbum", "New Smart Album from Filter…", Some("Cmd+Alt+N"), "File", raw crate::commands::dialogs::dialog_new_smart_album),
+    ui!("dialog.allMetadata", "All Metadata…", None, "Photo", crate::commands::dialogs::OnePhoto, crate::commands::dialogs::dialog_all_metadata),
+    ui!("dialog.faceModel", "Add Face Model…", None, "", crate::commands::dialogs::FaceModel, crate::commands::dialogs::dialog_face_model),
+    ui!(
+        "dialog.newSmartAlbum",
+        "New Smart Album from Filter…",
+        Some("Cmd+Alt+N"),
+        "File",
+        crate::commands::dialogs::NewSmartAlbum,
+        crate::commands::dialogs::dialog_new_smart_album
+    ),
     ui!("dialog.createPreset", "Create Preset…", Some("Cmd+Shift+P"), "Photo", NoParams, crate::commands::dialogs::dialog_create_preset),
-    ui!("dialog.autoStack", "Auto-Stack by Capture Time…", None, "Photo>Stack", raw crate::commands::dialogs::dialog_auto_stack),
+    ui!(
+        "dialog.autoStack",
+        "Auto-Stack by Capture Time…",
+        None,
+        "Photo>Stack",
+        crate::commands::dialogs::AutoStack,
+        crate::commands::dialogs::dialog_auto_stack
+    ),
     ui!(
         "dialog.copySettings",
         "Choose Edit Settings to Copy…",
@@ -333,14 +365,42 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     ui!("view.focusSearch", "Find…", Some("Cmd+F"), "Edit", NoParams, crate::commands::view::view_focus_search),
     ui!("dialog.export", "Export…", None, "File", NoParams, crate::commands::dialogs::dialog_export),
     ui!("dialog.print", "Print…", Some("Cmd+P"), "File", NoParams, crate::commands::dialogs::dialog_print),
-    ui!("app.print", "Print to PDF", None, "", raw crate::commands::app::app_print),
+    ui!(
+        "app.print",
+        "Print to PDF",
+        None,
+        "",
+        lightcraft_engine::cmd::params::Keys<crate::commands::app::PrintKeys>,
+        crate::commands::app::app_print
+    ),
     ui!("dialog.contactSheet", "Contact Sheet PDF…", None, "File", NoParams, crate::commands::dialogs::dialog_contact_sheet),
-    ui!("app.contactSheet", "Export Contact Sheet PDF", None, "", raw crate::commands::app::app_contact_sheet),
-    ui!("photo.editInPhotoCraft", "Edit in PhotoCraft", Some("Cmd+Shift+E"), "Photo>Edit In", raw crate::commands::app::photo_edit_in_photo_craft),
-    ui!("photo.editInExternal", "Edit in Other Editor", Some("Cmd+Alt+E"), "Photo>Edit In", raw crate::commands::app::photo_edit_in_external),
+    ui!("app.contactSheet", "Export Contact Sheet PDF", None, "", lightcraft_engine::cmd::params::Patch, crate::commands::app::app_contact_sheet),
+    ui!(
+        "photo.editInPhotoCraft",
+        "Edit in PhotoCraft",
+        Some("Cmd+Shift+E"),
+        "Photo>Edit In",
+        lightcraft_engine::cmd::params::Keys<crate::commands::app::EditInKeys>,
+        crate::commands::app::photo_edit_in_photo_craft
+    ),
+    ui!(
+        "photo.editInExternal",
+        "Edit in Other Editor",
+        Some("Cmd+Alt+E"),
+        "Photo>Edit In",
+        lightcraft_engine::cmd::params::Keys<crate::commands::app::EditInKeys>,
+        crate::commands::app::photo_edit_in_external
+    ),
     // {ids?, app?}: the original files themselves (a raw stays a raw: no render, no copy), opened
     // in the other editor, e.g. a raw developer
-    ui!("photo.openOriginalInExternal", "Open Original in Other Editor (RAW, no copy)", None, "Photo>Edit In", raw crate::commands::app::photo_open_original_in_external),
+    ui!(
+        "photo.openOriginalInExternal",
+        "Open Original in Other Editor (RAW, no copy)",
+        None,
+        "Photo>Edit In",
+        lightcraft_engine::cmd::params::Keys<crate::commands::app::OpenOriginalKeys>,
+        crate::commands::app::photo_open_original_in_external
+    ),
     ui!("dialog.mergeHdr", "HDR…", Some("Ctrl+H"), "Photo>Photo Merge", NoParams, crate::commands::dialogs::dialog_merge_hdr),
     ui!("dialog.mergePanorama", "Panorama…", Some("Ctrl+M"), "Photo>Photo Merge", NoParams, crate::commands::dialogs::dialog_merge_panorama),
     ui!("dialog.mergeHdrPanorama", "HDR Panorama…", None, "Photo>Photo Merge", NoParams, crate::commands::dialogs::dialog_merge_hdr_panorama),
@@ -361,18 +421,25 @@ pub const UI_COMMANDS: &[UiCommand] = &[
         NoParams,
         crate::commands::app::merge_hdr_panorama_last
     ),
-    ui!("file.addPhotos", "Import Photos…", Some("Cmd+Shift+I"), "File", raw crate::commands::app::file_add_photos),
-    ui!("file.addFolder", "Import from Folder…", None, "File", raw crate::commands::app::file_add_folder),
-    ui!("file.importLightroom", "Import Lightroom Catalog…", None, "File", raw crate::commands::app::file_import_lightroom),
-    ui!("file.addFromDevice", "Import from Device", None, "", raw crate::commands::app::file_add_from_device),
-    ui!("file.findMissing", "Find Missing Photos…", None, "File", raw crate::commands::app::file_find_missing),
+    ui!("file.addPhotos", "Import Photos…", Some("Cmd+Shift+I"), "File", crate::commands::app::AddPhotos, crate::commands::app::file_add_photos),
+    ui!("file.addFolder", "Import from Folder…", None, "File", crate::commands::app::AddPhotos, crate::commands::app::file_add_folder),
+    ui!(
+        "file.importLightroom",
+        "Import Lightroom Catalog…",
+        None,
+        "File",
+        crate::commands::app::PathParam,
+        crate::commands::app::file_import_lightroom
+    ),
+    ui!("file.addFromDevice", "Import from Device", None, "", crate::commands::app::AddPhotos, crate::commands::app::file_add_from_device),
+    ui!("file.findMissing", "Find Missing Photos…", None, "File", crate::commands::app::FindMissing, crate::commands::app::file_find_missing),
     ui!("file.backupLibrary", "Back Up Library…", None, "File", NoParams, crate::commands::app::file_backup_library),
     ui!("file.restoreLibrary", "Restore Library from Backup…", None, "File", NoParams, crate::commands::app::file_backup_library),
-    ui!("photo.locate", "Locate Missing File…", None, "", raw crate::commands::app::photo_locate),
+    ui!("photo.locate", "Locate Missing File…", None, "", crate::commands::app::PathParam, crate::commands::app::photo_locate),
     ui!("dialog.saveMetadataPreset", "Save Metadata Preset…", None, "", NoParams, crate::commands::dialogs::dialog_save_metadata_preset),
     ui!("app.quit", "Quit LightCraft", Some("Cmd+Q"), "File", NoParams, crate::commands::app::app_quit),
-    ui!("file.importPresets", "Import Profiles & Presets…", None, "File", raw crate::commands::app::file_import_presets),
-    ui!("file.exportPresets", "Export Presets…", None, "File", raw crate::commands::app::file_export_presets),
+    ui!("file.importPresets", "Import Profiles & Presets…", None, "File", crate::commands::app::Paths, crate::commands::app::file_import_presets),
+    ui!("file.exportPresets", "Export Presets…", None, "File", crate::commands::app::ExportPresets, crate::commands::app::file_export_presets),
     // Masking panel ▸ Effect menu
     ui!(
         "dialog.saveMaskEffect",
@@ -383,21 +450,70 @@ pub const UI_COMMANDS: &[UiCommand] = &[
         crate::commands::dialogs::dialog_save_mask_effect
     ),
     ui!("dialog.manageMaskEffects", "Manage Effect Presets…", None, "", NoParams, crate::commands::dialogs::dialog_manage_mask_effects),
-    ui!("file.exportMaskEffects", "Export Effect Presets…", None, "", raw crate::commands::app::file_export_mask_effects),
-    ui!("file.importKeywords", "Import Keywords…", None, "File", raw crate::commands::app::file_import_keywords),
-    ui!("file.exportKeywords", "Export Keywords…", None, "File", raw crate::commands::app::file_export_keywords),
+    ui!(
+        "file.exportMaskEffects",
+        "Export Effect Presets…",
+        None,
+        "",
+        crate::commands::app::ExportMaskEffects,
+        crate::commands::app::file_export_mask_effects
+    ),
+    ui!("file.importKeywords", "Import Keywords…", None, "File", crate::commands::app::PathParam, crate::commands::app::file_import_keywords),
+    ui!("file.exportKeywords", "Export Keywords…", None, "File", crate::commands::app::PathParam, crate::commands::app::file_export_keywords),
     // Edit panel ▸ Curve ▸ Point Curve dropdown
-    ui!("file.importCurvePresets", "Import Point Curve Presets…", None, "", raw crate::commands::app::file_import_curve_presets),
-    ui!("file.exportCurvePresets", "Export Point Curve Presets…", None, "", raw crate::commands::app::file_export_curve_presets),
-    ui!("app.settings", "Settings…", Some("Cmd+,"), "Edit", raw crate::commands::app::app_settings),
-    ui!("app.newLibrary", "New Library…", None, "File", raw crate::commands::app::app_new_library),
-    ui!("app.openLibrary", "Open Library…", Some("Cmd+O"), "File", raw crate::commands::app::app_open_library),
-    ui!("app.recentLibraries", "Recent Libraries", None, "", raw crate::commands::app::app_recent_libraries),
+    ui!(
+        "file.importCurvePresets",
+        "Import Point Curve Presets…",
+        None,
+        "",
+        crate::commands::app::Paths,
+        crate::commands::app::file_import_curve_presets
+    ),
+    ui!(
+        "file.exportCurvePresets",
+        "Export Point Curve Presets…",
+        None,
+        "",
+        crate::commands::app::ExportCurvePresets,
+        crate::commands::app::file_export_curve_presets
+    ),
+    ui!("app.settings", "Settings…", Some("Cmd+,"), "Edit", crate::commands::app::Settings, crate::commands::app::app_settings),
+    ui!(
+        "app.newLibrary",
+        "New Library…",
+        None,
+        "File",
+        lightcraft_engine::cmd::params::Keys<crate::commands::app::NewLibraryKeys>,
+        crate::commands::app::app_new_library
+    ),
+    ui!(
+        "app.openLibrary",
+        "Open Library…",
+        Some("Cmd+O"),
+        "File",
+        lightcraft_engine::cmd::params::Keys<crate::commands::app::PathKeys>,
+        crate::commands::app::app_open_library
+    ),
+    ui!(
+        "app.recentLibraries",
+        "Recent Libraries",
+        None,
+        "",
+        lightcraft_engine::cmd::params::Keys<crate::commands::app::RecentLibrariesKeys>,
+        crate::commands::app::app_recent_libraries
+    ),
     ui!("app.clearRecentLibraries", "Clear Recent Libraries", None, "", NoParams, crate::commands::app::app_clear_recent_libraries),
     // Settings ▸ Display
-    ui!("app.displayProfile", "Display Profile", None, "", raw crate::commands::app::app_display_profile),
+    ui!(
+        "app.displayProfile",
+        "Display Profile",
+        None,
+        "",
+        lightcraft_engine::cmd::params::Keys<crate::commands::app::PathKeys>,
+        crate::commands::app::app_display_profile
+    ),
     ui!("app.about", "About LightCraft", None, "Help", NoParams, crate::commands::app::app_about),
-    ui!("app.systemInfo", "System Info…", None, "Help", raw crate::commands::app::app_system_info),
+    ui!("app.systemInfo", "System Info…", None, "Help", crate::commands::app::SystemInfo, crate::commands::app::app_system_info),
     ui!("app.openLogFolder", "Open Log Folder", None, "Help", NoParams, crate::commands::app::app_open_log_folder),
     ui!("app.whatsNew", "What's New", None, "Help", NoParams, crate::commands::app::app_whats_new),
     ui!("dialog.cull", "Assisted Culling…", None, "Photo", NoParams, crate::commands::dialogs::dialog_cull),
@@ -408,15 +524,36 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     ui!("app.github", "LightCraft on GitHub", None, "Help", NoParams, crate::commands::app::app_discord),
     ui!("app.artcraft", "ArtCraft Website", None, "Help", NoParams, crate::commands::app::app_discord),
     ui!("app.shortcuts", "Keyboard Shortcuts", Some("Cmd+/"), "Help", NoParams, crate::commands::app::app_shortcuts),
-    ui!("app.setShortcut", "Set Keyboard Shortcut", None, "", raw crate::commands::app::app_set_shortcut),
+    ui!(
+        "app.setShortcut",
+        "Set Keyboard Shortcut",
+        None,
+        "",
+        lightcraft_engine::cmd::params::Keys<crate::commands::app::ShortcutKeys>,
+        crate::commands::app::app_set_shortcut
+    ),
     ui!("app.resetShortcuts", "Reset All Keyboard Shortcuts", None, "", NoParams, crate::commands::app::app_reset_shortcuts),
-    ui!("app.export", "Export Now", None, "", raw crate::commands::app::app_export),
+    ui!("app.export", "Export Now", None, "", lightcraft_engine::cmd::params::Patch, crate::commands::app::app_export),
     ui!("app.showInFinder", "Show in Finder", Some("Cmd+R"), "Photo", NoParams, crate::commands::app::app_show_in_finder),
     ui!("app.openSamModelFolder", "Show in File Manager", None, "", NoParams, crate::commands::app::app_open_sam_model_folder),
-    ui!("dialog.rename", "Rename Photos…", Some("F2"), "Photo", raw crate::commands::dialogs::dialog_rename),
+    ui!("dialog.rename", "Rename Photos…", Some("F2"), "Photo", crate::commands::dialogs::Rename, crate::commands::dialogs::dialog_rename),
     ui!("dialog.labelNames", "Edit Color Label Names…", None, "", NoParams, crate::commands::dialogs::dialog_label_names),
-    ui!("dialog.captureTime", "Edit Capture Time…", None, "Photo", raw crate::commands::dialogs::dialog_capture_time),
-    ui!("photo.tagFromTracklog", "Auto-Tag from Tracklog…", None, "Photo", raw crate::commands::app::photo_tag_from_tracklog),
+    ui!(
+        "dialog.captureTime",
+        "Edit Capture Time…",
+        None,
+        "Photo",
+        crate::commands::dialogs::CaptureTime,
+        crate::commands::dialogs::dialog_capture_time
+    ),
+    ui!(
+        "photo.tagFromTracklog",
+        "Auto-Tag from Tracklog…",
+        None,
+        "Photo",
+        lightcraft_engine::cmd::params::Keys<crate::commands::app::TracklogKeys>,
+        crate::commands::app::photo_tag_from_tracklog
+    ),
     ui!("app.exportPrevious", "Export with Previous", Some("Cmd+Alt+Shift+E"), "File", NoParams, crate::commands::app::app_export_previous),
 ];
 
@@ -462,18 +599,14 @@ pub(crate) fn adjust_brush(app: &mut LightcraftApp, k: f32, df: f32) -> Value {
 }
 
 /// The `parent` folder id of a `dialog.new*` command (none: the top level).
-pub(crate) fn parent_param(p: &Value) -> Option<u64> {
-    p.get("parent").and_then(Value::as_u64)
-}
-
 /// `file.addPhotos` / `file.addFolder` / `file.addFromDevice` `{album?}`: the review of the scan
 /// just started opens with that album chosen (an album's context menu ▸ Import ▸ …). An error
 /// means another scan is running.
-pub(crate) fn import_into_album(app: &mut LightcraftApp, p: &Value, r: Result<Value, String>) -> Result<Value, String> {
+pub(crate) fn import_into_album(app: &mut LightcraftApp, album: Option<u64>, r: Result<Value, String>) -> Result<Value, String> {
     if r.is_ok()
         && let Some(t) = &mut app.scan
     {
-        t.album = p.get("album").and_then(Value::as_u64);
+        t.album = album;
     }
     r
 }
@@ -554,8 +687,22 @@ fn ui_override(id: &str) -> Option<Run> {
 /// Run a UI command (or the app's own way of running an engine command); `None` means "not a UI
 /// command — send it to the engine".
 pub fn run_ui_command(app: &mut LightcraftApp, id: &str, p: &Value) -> Option<Result<Value, String>> {
-    let run = ui_commands().find(|c| c.id == id).map(|c| c.run).or_else(|| ui_override(id))?;
-    Some(run(app, &Call { id, params: p }))
+    let call = Call { id, params: p };
+    if let Some(command) = ui_commands().find(|c| c.id == id) {
+        return Some((command.run)(app, &call));
+    }
+    let run = ui_override(id)?;
+    // the engine's own command refuses these params: so does the app's way of running it
+    if let Some(spec) = lightcraft_engine::cmd::find_command(id)
+        && let Err(e) = (spec.check)(p)
+    {
+        let e = match e {
+            lightcraft_engine::EngineError::BadParams { msg, .. } => lightcraft_engine::EngineError::BadParams { cmd: id.into(), msg },
+            e => e,
+        };
+        return Some(Err(e.to_string()));
+    }
+    Some(run(app, &call))
 }
 
 /// Views whose bottom bar has the thumbnail-size slider and that draw tiles of that size.

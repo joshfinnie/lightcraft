@@ -115,8 +115,9 @@ of it. Full standard: `../craftrules/standards/never-crash.md`
   `ui.screenshot {"path": …, "headless": true}`; windowed screenshots fall back to headless after 2 s.
 - MCP: `lightcraft-cli mcp` (headless, `--demo` for the procedural library) or `lightcraft-cli mcp --connect` (drives
   the running app). See `docs/mcp.md`. Quick non-UI checks: `lightcraft-cli render in.jpg -o out.jpg --set light.exposure=1`.
-- Export goes through `lightcraft_engine::export` (one encoder for app, CLI, MCP and web); UI-only commands live in
-  `crates/ui-egui/src/menus.rs`.
+- Export goes through `lightcraft_engine::export` (one encoder for app, CLI, MCP and web). UI-only commands are rows of
+  `UI_COMMANDS` in `crates/ui-egui/src/menus.rs` (id, label, shortcut, menu, params type, function), run by
+  `crates/ui-egui/src/commands/*.rs`; their params are typed like the engine's.
 - Text boxes use `crates/ui-egui/src/text_field.rs` (`TextField`), not `egui::TextEdit`: it gives every field the
   Cut / Copy / Paste / Select All menu, Esc restoring the text, and reports how an edit ended. Give each a widget id
   that is unique on screen. Older fields still on `TextEdit` move over as they are touched.

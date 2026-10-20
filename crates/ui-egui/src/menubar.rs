@@ -1424,7 +1424,7 @@ mod tests {
         let err = run_item(&mut app, "file.findMissing", json!({"folder": dir.to_string_lossy(), "wait": true, "timeout": -1.0})).unwrap_err();
         assert!(err.contains("non-negative number of seconds"), "{err}");
         let err = run_item(&mut app, "file.findMissing", json!({"folder": dir.to_string_lossy(), "wait": true, "timeout": "invalid"})).unwrap_err();
-        assert!(err.contains("number of seconds"), "{err}");
+        assert!(err.contains("`timeout`: invalid type"), "{err}");
         let err = run_item(&mut app, "file.findMissing", json!({"folder": dir.to_string_lossy(), "wait": true, "timeout": 1e300})).unwrap_err();
         assert!(err.contains("too large"), "{err}");
 

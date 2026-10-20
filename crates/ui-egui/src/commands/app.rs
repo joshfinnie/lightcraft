@@ -6,23 +6,21 @@ use crate::LightcraftApp;
 use crate::menus::*;
 use crate::pick::{PickRequest, Picked};
 use crate::state::Dialog;
-use lightcraft_engine::cmd::params::NoParams;
+use lightcraft_engine::cmd::params::{Keys, NoParams, Patch};
 
 pub(crate) fn library_select_only_active(app: &mut LightcraftApp, _: &Call, _: NoParams) -> Result<Value, String> {
     let Some(active) = app.session.active() else { return Err("no active photo".into()) };
     app.run("library.select", json!({"ids": [active.0], "active": active.0}))
 }
 
-pub(crate) fn photo_set_reference(app: &mut LightcraftApp, c: &Call) -> Result<Value, String> {
-    let p = c.params;
-    let id = p.get("id").and_then(Value::as_u64).or_else(|| app.session.active().map(|a| a.0));
+pub(crate) fn photo_set_reference(app: &mut LightcraftApp, _: &Call, p: SetReference) -> Result<Value, String> {
+    let id = p.id.or_else(|| app.session.active()).map(|a| a.0);
     app.ui.reference = id;
     Ok(json!({"reference": id}))
 }
 
-pub(crate) fn app_settings(app: &mut LightcraftApp, c: &Call) -> Result<Value, String> {
-    let p = c.params;
-    let tab = p.get("tab").and_then(Value::as_str).unwrap_or("general");
+pub(crate) fn app_settings(app: &mut LightcraftApp, _: &Call, p: Settings) -> Result<Value, String> {
+    let tab = p.tab.as_deref().unwrap_or("general");
     if !crate::panels::settings::TABS.iter().any(|(id, _)| *id == tab) {
         let tabs: Vec<&str> = crate::panels::settings::TABS.iter().map(|(id, _)| *id).collect();
         return Err(format!("unknown settings tab `{tab}` ({})", tabs.join("|")));
@@ -31,28 +29,24 @@ pub(crate) fn app_settings(app: &mut LightcraftApp, c: &Call) -> Result<Value, S
     Ok(Value::Null)
 }
 
-pub(crate) fn app_open_library(app: &mut LightcraftApp, c: &Call) -> Result<Value, String> {
-    let p = c.params;
-    crate::panels::settings::open_library(app, p)
+pub(crate) fn app_open_library(app: &mut LightcraftApp, c: &Call, _: Keys<PathKeys>) -> Result<Value, String> {
+    crate::panels::settings::open_library(app, c.params)
 }
 
-pub(crate) fn app_new_library(app: &mut LightcraftApp, c: &Call) -> Result<Value, String> {
-    let p = c.params;
-    crate::panels::settings::new_library(app, p)
+pub(crate) fn app_new_library(app: &mut LightcraftApp, c: &Call, _: Keys<NewLibraryKeys>) -> Result<Value, String> {
+    crate::panels::settings::new_library(app, c.params)
 }
 
-pub(crate) fn app_recent_libraries(app: &mut LightcraftApp, c: &Call) -> Result<Value, String> {
-    let p = c.params;
-    crate::panels::settings::recent_libraries(app, p)
+pub(crate) fn app_recent_libraries(app: &mut LightcraftApp, c: &Call, _: Keys<RecentLibrariesKeys>) -> Result<Value, String> {
+    crate::panels::settings::recent_libraries(app, c.params)
 }
 
 pub(crate) fn app_clear_recent_libraries(app: &mut LightcraftApp, _: &Call, _: NoParams) -> Result<Value, String> {
     crate::panels::settings::recent_libraries(app, &json!({"clear": true}))
 }
 
-pub(crate) fn app_display_profile(app: &mut LightcraftApp, c: &Call) -> Result<Value, String> {
-    let p = c.params;
-    crate::panels::settings::display_profile(app, p)
+pub(crate) fn app_display_profile(app: &mut LightcraftApp, c: &Call, _: Keys<PathKeys>) -> Result<Value, String> {
+    crate::panels::settings::display_profile(app, c.params)
 }
 
 pub(crate) fn file_backup_library(app: &mut LightcraftApp, c: &Call, _: NoParams) -> Result<Value, String> {
@@ -64,22 +58,30 @@ pub(crate) fn file_backup_library(app: &mut LightcraftApp, c: &Call, _: NoParams
     }
 }
 
-pub(crate) fn app_slideshow_export(app: &mut LightcraftApp, c: &Call) -> Result<Value, String> {
-    let id = c.id;
-    let p = c.params;
-    crate::slideshow_export::start(app, id, p)
+/// (`slideshow_export::start` refuses keys it doesn't know)
+pub(crate) fn app_slideshow_export(app: &mut LightcraftApp, c: &Call, _: Patch) -> Result<Value, String> {
+    crate::slideshow_export::start(app, c.id, c.params)
 }
 
-pub(crate) fn app_print(app: &mut LightcraftApp, c: &Call) -> Result<Value, String> {
-    let id = c.id;
-    let p = c.params;
+pub(crate) fn app_print(app: &mut LightcraftApp, c: &Call, _: Keys<PrintKeys>) -> Result<Value, String> {
+    pdf_export(app, c, "Print to PDF", "Print.pdf", crate::export_task::start_print)
+}
+
+/// Print or a contact sheet as PDF, at `path` or a file the user picks (named `name` to start with).
+fn pdf_export(
+    app: &mut LightcraftApp,
+    c: &Call,
+    title: &str,
+    name: &str,
+    start: fn(&mut LightcraftApp, &Value) -> Result<Value, String>,
+) -> Result<Value, String> {
     if app.export.is_some() {
         return Err("an export is already running".into());
     }
-    let mut params = p.clone();
-    if p.get("path").is_none() {
-        let req = PickRequest::save("Print to PDF", "PDF", &["pdf"], "Print.pdf");
-        let paths = match crate::pick::ask(app, id, p, "path", req, |_| None) {
+    let mut params = c.params.clone();
+    if c.params.get("path").is_none() {
+        let req = PickRequest::save(title, "PDF", &["pdf"], name);
+        let paths = match crate::pick::ask(app, c.id, c.params, "path", req, |_| None) {
             Picked::Now(paths) => paths,
             Picked::Later => return Ok(Value::Null),
             Picked::Unavailable => return Err("no save dialog on this platform; supply path".into()),
@@ -87,27 +89,12 @@ pub(crate) fn app_print(app: &mut LightcraftApp, c: &Call) -> Result<Value, Stri
         let Some(path) = paths.first() else { return Ok(Value::Null) };
         params["path"] = json!(path);
     }
-    crate::export_task::start_print(app, &params)
+    start(app, &params)
 }
 
-pub(crate) fn app_contact_sheet(app: &mut LightcraftApp, c: &Call) -> Result<Value, String> {
-    let id = c.id;
-    let p = c.params;
-    if app.export.is_some() {
-        return Err("an export is already running".into());
-    }
-    let mut params = p.clone();
-    if p.get("path").is_none() {
-        let req = PickRequest::save("Contact Sheet PDF", "PDF", &["pdf"], "Contact Sheet.pdf");
-        let paths = match crate::pick::ask(app, id, p, "path", req, |_| None) {
-            Picked::Now(paths) => paths,
-            Picked::Later => return Ok(Value::Null),
-            Picked::Unavailable => return Err("no save dialog on this platform; supply path".into()),
-        };
-        let Some(path) = paths.first() else { return Ok(Value::Null) };
-        params["path"] = json!(path);
-    }
-    crate::export_task::start_contact_sheet(app, &params)
+/// (the contact sheet's options refuse keys they don't know)
+pub(crate) fn app_contact_sheet(app: &mut LightcraftApp, c: &Call, _: Patch) -> Result<Value, String> {
+    pdf_export(app, c, "Contact Sheet PDF", "Contact Sheet.pdf", crate::export_task::start_contact_sheet)
 }
 
 pub(crate) fn merge_hdr_last(app: &mut LightcraftApp, _: &Call, _: NoParams) -> Result<Value, String> {
@@ -136,22 +123,19 @@ pub(crate) fn app_about(app: &mut LightcraftApp, _: &Call, _: NoParams) -> Resul
     Ok(Value::Null)
 }
 
-pub(crate) fn photo_edit_in_photo_craft(app: &mut LightcraftApp, c: &Call) -> Result<Value, String> {
-    let p = c.params;
+pub(crate) fn photo_edit_in_photo_craft(app: &mut LightcraftApp, c: &Call, _: Keys<EditInKeys>) -> Result<Value, String> {
     let ctx = app.tasks.repaint.clone().unwrap_or_default();
-    edit_in(app, &ctx, p, true)
+    edit_in(app, &ctx, c.params, true)
 }
 
-pub(crate) fn photo_edit_in_external(app: &mut LightcraftApp, c: &Call) -> Result<Value, String> {
-    let p = c.params;
+pub(crate) fn photo_edit_in_external(app: &mut LightcraftApp, c: &Call, _: Keys<EditInKeys>) -> Result<Value, String> {
     let ctx = app.tasks.repaint.clone().unwrap_or_default();
-    edit_in(app, &ctx, p, false)
+    edit_in(app, &ctx, c.params, false)
 }
 
-pub(crate) fn photo_open_original_in_external(app: &mut LightcraftApp, c: &Call) -> Result<Value, String> {
-    let p = c.params;
+pub(crate) fn photo_open_original_in_external(app: &mut LightcraftApp, c: &Call, _: Keys<OpenOriginalKeys>) -> Result<Value, String> {
     let ctx = app.tasks.repaint.clone().unwrap_or_default();
-    open_original_in(app, &ctx, p)
+    open_original_in(app, &ctx, c.params)
 }
 
 pub(crate) fn app_whats_new(app: &mut LightcraftApp, _: &Call, _: NoParams) -> Result<Value, String> {
@@ -159,8 +143,7 @@ pub(crate) fn app_whats_new(app: &mut LightcraftApp, _: &Call, _: NoParams) -> R
     Ok(json!({"text": crate::panels::dialogs::WHATS_NEW}))
 }
 
-pub(crate) fn app_system_info(app: &mut LightcraftApp, c: &Call) -> Result<Value, String> {
-    let p = c.params;
+pub(crate) fn app_system_info(app: &mut LightcraftApp, _: &Call, p: SystemInfo) -> Result<Value, String> {
     let info = app.session.execute("library.info", &json!({})).unwrap_or_default();
     let gpu = (lightcraft_engine::gpu::ready() && lightcraft_engine::gpu::available()).then(lightcraft_engine::gpu::adapter_name).flatten();
     let mb = |b: u64| format!("{:.0} MB", b as f64 / (1u64 << 20) as f64);
@@ -200,7 +183,7 @@ pub(crate) fn app_system_info(app: &mut LightcraftApp, c: &Call) -> Result<Value
         rows.push(("Last GPU fallback".into(), f));
     }
     let r = json!(rows.iter().map(|(k, v)| json!({"label": k, "value": v})).collect::<Vec<_>>());
-    if p.get("open").and_then(Value::as_bool).unwrap_or(true) {
+    if p.open.unwrap_or(true) {
         app.ui.dialog = Some(Dialog::SystemInfo { rows });
     }
     Ok(r)
@@ -211,9 +194,8 @@ pub(crate) fn app_shortcuts(app: &mut LightcraftApp, _: &Call, _: NoParams) -> R
     Ok(Value::Null)
 }
 
-pub(crate) fn app_set_shortcut(app: &mut LightcraftApp, c: &Call) -> Result<Value, String> {
-    let p = c.params;
-    crate::shortcuts::set_shortcut(app, p)
+pub(crate) fn app_set_shortcut(app: &mut LightcraftApp, c: &Call, _: Keys<ShortcutKeys>) -> Result<Value, String> {
+    crate::shortcuts::set_shortcut(app, c.params)
 }
 
 pub(crate) fn app_reset_shortcuts(app: &mut LightcraftApp, _: &Call, _: NoParams) -> Result<Value, String> {
@@ -231,17 +213,18 @@ pub(crate) fn library_browse(app: &mut LightcraftApp, c: &Call) -> Result<Value,
     crate::import::browse(app, path, p.get("subfolders").and_then(Value::as_bool))
 }
 
-pub(crate) fn file_add_photos(app: &mut LightcraftApp, c: &Call) -> Result<Value, String> {
-    let id = c.id;
-    let p = c.params;
+pub(crate) fn file_add_photos(app: &mut LightcraftApp, c: &Call, p: AddPhotos) -> Result<Value, String> {
     if crate::lightroom_import::is_running(app) {
         return Err("finish Lightroom catalog import before adding photos".into());
     }
-    let paths = match p.get("paths").and_then(Value::as_array) {
-        Some(a) => a.iter().filter_map(Value::as_str).map(str::to_string).collect(),
+    if p.path.is_some() {
+        return Err("file.addPhotos: takes `paths` (file.addFolder takes a `path`)".into());
+    }
+    let paths = match p.paths {
+        Some(paths) => paths,
         None => {
             let req = PickRequest::files(None, crate::i18n::tr("Photos"), lightcraft_engine::import::EXTENSIONS);
-            match crate::pick::ask(app, id, p, "paths", req, |s| s.pick_files.as_mut().map(|f| f())) {
+            match crate::pick::ask(app, c.id, c.params, "paths", req, |s| s.pick_files.as_mut().map(|f| f())) {
                 Picked::Now(paths) => paths,
                 Picked::Later | Picked::Unavailable => return Ok(Value::Null),
             }
@@ -252,17 +235,15 @@ pub(crate) fn file_add_photos(app: &mut LightcraftApp, c: &Call) -> Result<Value
     }
     // review first: the import dialog lists what was found
     let r = crate::import::open(app, paths);
-    import_into_album(app, p, r)
+    import_into_album(app, p.album, r)
 }
 
-pub(crate) fn file_import_lightroom(app: &mut LightcraftApp, c: &Call) -> Result<Value, String> {
-    let id = c.id;
-    let p = c.params;
-    let path = match p.get("path").and_then(Value::as_str).map(str::to_string) {
+pub(crate) fn file_import_lightroom(app: &mut LightcraftApp, c: &Call, p: PathParam) -> Result<Value, String> {
+    let path = match p.path {
         Some(path) => Some(path),
         None => {
             let req = PickRequest::file(crate::i18n::tr("Import Lightroom Catalog"), crate::i18n::tr("Lightroom Classic Catalog"), &["lrcat"]);
-            match crate::pick::ask(app, id, p, "path", req, |s| s.pick_lightroom_catalog.as_mut().and_then(|f| f()).map(|x| vec![x])) {
+            match crate::pick::ask(app, c.id, c.params, "path", req, |s| s.pick_lightroom_catalog.as_mut().and_then(|f| f()).map(|x| vec![x])) {
                 Picked::Now(v) => v.into_iter().next(),
                 Picked::Later | Picked::Unavailable => None,
             }
@@ -279,38 +260,21 @@ pub(crate) fn app_quit(app: &mut LightcraftApp, _: &Call, _: NoParams) -> Result
     Ok(Value::Null)
 }
 
-pub(crate) fn file_find_missing(app: &mut LightcraftApp, c: &Call) -> Result<Value, String> {
-    let id = c.id;
-    let p = c.params;
-    let within = match p.get("within") {
-        None | Some(Value::Null) => None,
-        Some(Value::String(path)) if !path.is_empty() => Some(path.clone()),
-        Some(Value::String(_)) => return Err("file.findMissing: `within` must not be empty".into()),
-        Some(value) => return Err(format!("file.findMissing: `within` must be a folder path, not {value}")),
+pub(crate) fn file_find_missing(app: &mut LightcraftApp, c: &Call, p: FindMissing) -> Result<Value, String> {
+    let within = match p.within {
+        Some(path) if path.is_empty() => return Err("file.findMissing: `within` must not be empty".into()),
+        within => within,
     };
-    let wait = p.get("wait").and_then(Value::as_bool).unwrap_or(false);
-    let timeout = match p.get("timeout") {
-        None | Some(Value::Null) => std::time::Duration::from_secs(600),
-        Some(Value::Number(n)) => {
-            if let Some(s) = n.as_f64() {
-                if s.is_finite() && s >= 0.0 {
-                    match std::time::Duration::try_from_secs_f64(s) {
-                        Ok(d) => d,
-                        Err(_) => return Err("file.findMissing: `timeout` is too large".into()),
-                    }
-                } else {
-                    return Err("file.findMissing: `timeout` must be a non-negative number of seconds".into());
-                }
-            } else {
-                return Err("file.findMissing: `timeout` must be a number of seconds".into());
-            }
-        }
-        Some(other) => return Err(format!("file.findMissing: `timeout` must be a number of seconds, not {other}")),
+    let wait = p.wait;
+    let timeout = match p.timeout {
+        None => std::time::Duration::from_secs(600),
+        Some(s) if s.is_finite() && s >= 0.0 => std::time::Duration::try_from_secs_f64(s).map_err(|_| "file.findMissing: `timeout` is too large")?,
+        Some(_) => return Err("file.findMissing: `timeout` must be a non-negative number of seconds".into()),
     };
     let title = if within.is_some() { "Locate Missing Files…" } else { "Find Missing Photos…" };
-    let folder = match p.get("folder").and_then(Value::as_str) {
-        Some(f) => Some(f.to_string()),
-        None => match crate::pick::ask(app, id, p, "folder", PickRequest::folder(crate::i18n::tr(title)), |s| {
+    let folder = match p.folder {
+        Some(f) => Some(f),
+        None => match crate::pick::ask(app, c.id, c.params, "folder", PickRequest::folder(crate::i18n::tr(title)), |s| {
             s.pick_folder.as_mut().and_then(|f| f()).map(|x| vec![x])
         }) {
             Picked::Now(v) => v.into_iter().next(),
@@ -384,23 +348,27 @@ pub(crate) fn file_find_missing(app: &mut LightcraftApp, c: &Call) -> Result<Val
     Ok(json!({"background": true}))
 }
 
-pub(crate) fn photo_tag_from_tracklog(app: &mut LightcraftApp, c: &Call) -> Result<Value, String> {
-    let id = c.id;
+pub(crate) fn photo_tag_from_tracklog(app: &mut LightcraftApp, c: &Call, _: Keys<TracklogKeys>) -> Result<Value, String> {
     let p = c.params;
     // a GPX file → GPS for the selected photos by capture time (one undo step)
     let path = match p.get("path").and_then(Value::as_str) {
         Some(x) => Some(x.to_string()),
+        None if p.get("gpx").is_some() => None,
         None => {
             let req = PickRequest::file(crate::i18n::tr("Auto-Tag from Tracklog"), crate::i18n::tr("GPS Track Log"), &["gpx"]);
-            match crate::pick::ask(app, id, p, "path", req, |s| s.pick_tracklog.as_mut().map(|f| f())) {
-                Picked::Now(v) => v.into_iter().next(),
-                Picked::Later | Picked::Unavailable => None,
+            match crate::pick::ask(app, c.id, p, "path", req, |s| s.pick_tracklog.as_mut().map(|f| f())) {
+                Picked::Now(v) => match v.into_iter().next() {
+                    Some(path) => Some(path),
+                    None => return Ok(Value::Null),
+                },
+                Picked::Later | Picked::Unavailable => return Ok(Value::Null),
             }
         }
     };
-    let Some(path) = path else { return Ok(Value::Null) };
     let mut params = p.as_object().cloned().unwrap_or_default();
-    params.insert("path".into(), json!(path));
+    if let Some(path) = path {
+        params.insert("path".into(), json!(path));
+    }
     let ask_zone = !params.contains_key("offset");
     let params = Value::Object(params);
     if ask_zone {
@@ -435,14 +403,13 @@ pub(crate) fn photo_tag_from_tracklog(app: &mut LightcraftApp, c: &Call) -> Resu
     r
 }
 
-pub(crate) fn photo_locate(app: &mut LightcraftApp, c: &Call) -> Result<Value, String> {
-    let p = c.params;
+pub(crate) fn photo_locate(app: &mut LightcraftApp, c: &Call, p: PathParam) -> Result<Value, String> {
     let Some(id) = app.session.active() else { return Err("no photo selected".into()) };
-    let path = match p.get("path").and_then(Value::as_str) {
-        Some(x) => Some(x.to_string()),
+    let path = match p.path {
+        Some(x) => Some(x),
         None => {
             let req = PickRequest::file(crate::i18n::tr("Locate Missing File…"), crate::i18n::tr("Photos"), lightcraft_engine::import::EXTENSIONS);
-            match crate::pick::ask(app, "photo.locate", p, "path", req, |s| s.pick_files.as_mut().map(|f| f())) {
+            match crate::pick::ask(app, c.id, c.params, "path", req, |s| s.pick_files.as_mut().map(|f| f())) {
                 Picked::Now(v) => v.into_iter().next(),
                 Picked::Later | Picked::Unavailable => None,
             }
@@ -454,11 +421,13 @@ pub(crate) fn photo_locate(app: &mut LightcraftApp, c: &Call) -> Result<Value, S
     }
 }
 
-pub(crate) fn file_add_from_device(app: &mut LightcraftApp, c: &Call) -> Result<Value, String> {
-    let p = c.params;
+pub(crate) fn file_add_from_device(app: &mut LightcraftApp, c: &Call, p: AddPhotos) -> Result<Value, String> {
+    if p.paths.is_some() {
+        return Err(format!("{}: takes a `path` (a card's DCIM folder)", c.id));
+    }
     // a camera / card: review its DCIM folder, copying into the library by default
-    let path = match p.get("path").and_then(Value::as_str) {
-        Some(x) => x.to_string(),
+    let path = match p.path {
+        Some(x) => x,
         None => match lightcraft_engine::devices::devices_now().into_iter().next() {
             Some(d) => d.path,
             None => return Err("no camera or memory card found".into()),
@@ -471,16 +440,17 @@ pub(crate) fn file_add_from_device(app: &mut LightcraftApp, c: &Call) -> Result<
     {
         t.copy = true;
     }
-    import_into_album(app, p, r)
+    import_into_album(app, p.album, r)
 }
 
-pub(crate) fn file_add_folder(app: &mut LightcraftApp, c: &Call) -> Result<Value, String> {
-    let id = c.id;
-    let p = c.params;
+pub(crate) fn file_add_folder(app: &mut LightcraftApp, c: &Call, p: AddPhotos) -> Result<Value, String> {
+    if p.paths.is_some() {
+        return Err("file.addFolder: takes a `path` (file.addPhotos takes `paths`)".into());
+    }
     // a folder (searched recursively) into the import review
-    let path = match p.get("path").and_then(Value::as_str) {
-        Some(x) => Some(x.to_string()),
-        None => match crate::pick::ask(app, id, p, "path", PickRequest::folder(crate::i18n::tr("Import from Folder…")), |s| {
+    let path = match p.path {
+        Some(x) => Some(x),
+        None => match crate::pick::ask(app, c.id, c.params, "path", PickRequest::folder(crate::i18n::tr("Import from Folder…")), |s| {
             s.pick_folder.as_mut().and_then(|f| f()).map(|x| vec![x])
         }) {
             Picked::Now(v) => v.into_iter().next(),
@@ -490,25 +460,23 @@ pub(crate) fn file_add_folder(app: &mut LightcraftApp, c: &Call) -> Result<Value
     match path {
         Some(path) => {
             let r = crate::import::open(app, vec![path]);
-            import_into_album(app, p, r)
+            import_into_album(app, p.album, r)
         }
         None => Ok(Value::Null),
     }
 }
 
-pub(crate) fn file_import_presets(app: &mut LightcraftApp, c: &Call) -> Result<Value, String> {
-    let id = c.id;
-    let p = c.params;
+pub(crate) fn file_import_presets(app: &mut LightcraftApp, c: &Call, p: Paths) -> Result<Value, String> {
     let ctx = app.tasks.repaint.clone().unwrap_or_default();
-    let paths = match p.get("paths").and_then(Value::as_array) {
-        Some(a) => a.iter().filter_map(Value::as_str).map(str::to_string).collect(),
+    let paths = match p.paths {
+        Some(paths) => paths,
         None => {
             let req = PickRequest::files(
                 Some(crate::i18n::tr("Import Presets").into()),
                 crate::i18n::tr("Presets & Profiles"),
                 crate::pick::PRESET_EXTENSIONS,
             );
-            match crate::pick::ask(app, id, p, "paths", req, |s| s.pick_preset_files.as_mut().map(|f| f())) {
+            match crate::pick::ask(app, c.id, c.params, "paths", req, |s| s.pick_preset_files.as_mut().map(|f| f())) {
                 Picked::Now(paths) => paths,
                 Picked::Later => return Ok(Value::Null),
                 Picked::Unavailable => return Err("no file dialog on this platform".into()),
@@ -627,16 +595,14 @@ pub(crate) fn file_import_presets(app: &mut LightcraftApp, c: &Call) -> Result<V
     })
 }
 
-pub(crate) fn file_import_keywords(app: &mut LightcraftApp, c: &Call) -> Result<Value, String> {
-    let id = c.id;
-    let p = c.params;
+pub(crate) fn file_import_keywords(app: &mut LightcraftApp, c: &Call, p: PathParam) -> Result<Value, String> {
     let ctx = app.tasks.repaint.clone().unwrap_or_default();
     // a keyword list file: Lightroom Classic's, Capture One's, Photo Supreme's (.utf8)
-    let path = match p.get("path").and_then(Value::as_str) {
-        Some(x) => x.to_string(),
+    let path = match p.path {
+        Some(x) => x,
         None => {
             let req = PickRequest::file(crate::i18n::tr("Import Keywords"), crate::i18n::tr("Keyword Lists"), &["txt", "utf8"]);
-            match crate::pick::ask(app, id, p, "path", req, |s| s.pick_keyword_list.as_mut().map(|f| f())) {
+            match crate::pick::ask(app, c.id, c.params, "path", req, |s| s.pick_keyword_list.as_mut().map(|f| f())) {
                 Picked::Now(v) => match v.into_iter().next() {
                     Some(x) => x,
                     None => return Ok(Value::Null),
@@ -661,16 +627,14 @@ pub(crate) fn file_import_keywords(app: &mut LightcraftApp, c: &Call) -> Result<
     r
 }
 
-pub(crate) fn file_export_keywords(app: &mut LightcraftApp, c: &Call) -> Result<Value, String> {
-    let id = c.id;
-    let p = c.params;
+pub(crate) fn file_export_keywords(app: &mut LightcraftApp, c: &Call, p: PathParam) -> Result<Value, String> {
     let ctx = app.tasks.repaint.clone().unwrap_or_default();
-    let path = match p.get("path").and_then(Value::as_str) {
-        Some(x) => x.to_string(),
+    let path = match p.path {
+        Some(x) => x,
         None => {
             let name = "Keywords.txt";
             let req = PickRequest::save(crate::i18n::tr("Export Keywords"), crate::i18n::tr("Keyword Lists"), &["txt"], name);
-            match crate::pick::ask(app, id, p, "path", req, |s| s.save_keyword_list.as_mut().map(|f| f(name).into_iter().collect())) {
+            match crate::pick::ask(app, c.id, c.params, "path", req, |s| s.save_keyword_list.as_mut().map(|f| f(name).into_iter().collect())) {
                 Picked::Now(v) => match v.into_iter().next() {
                     Some(x) => x,
                     None => return Ok(Value::Null),
@@ -709,21 +673,19 @@ pub(crate) fn file_export_keywords(app: &mut LightcraftApp, c: &Call) -> Result<
     r
 }
 
-pub(crate) fn file_export_mask_effects(app: &mut LightcraftApp, c: &Call) -> Result<Value, String> {
-    let id = c.id;
-    let p = c.params;
+pub(crate) fn file_export_mask_effects(app: &mut LightcraftApp, c: &Call, p: ExportMaskEffects) -> Result<Value, String> {
     let ctx = app.tasks.repaint.clone().unwrap_or_default();
-    let path = match p.get("path").and_then(Value::as_str) {
-        Some(x) => Some(x.to_string()),
+    let path = match p.path {
+        Some(x) => Some(x),
         None => {
-            let name = format!("{}.lceffect", p.get("group").and_then(Value::as_str).unwrap_or("Effect Presets"));
+            let name = format!("{}.lceffect", p.group.as_deref().unwrap_or("Effect Presets"));
             let req = PickRequest::save(
                 crate::i18n::tr("Export Effect Presets"),
                 crate::i18n::tr("LightCraft Effect Presets"),
                 &["lceffect"],
                 name.clone(),
             );
-            match crate::pick::ask(app, id, p, "path", req, |s| s.save_preset_file.as_mut().map(|f| f(&name).into_iter().collect())) {
+            match crate::pick::ask(app, c.id, c.params, "path", req, |s| s.save_preset_file.as_mut().map(|f| f(&name).into_iter().collect())) {
                 Picked::Now(v) => v.into_iter().next(),
                 Picked::Later => return Ok(Value::Null),
                 Picked::Unavailable => return Err("no file dialog on this platform".into()),
@@ -731,12 +693,7 @@ pub(crate) fn file_export_mask_effects(app: &mut LightcraftApp, c: &Call) -> Res
         }
     };
     let Some(path) = path else { return Ok(Value::Null) };
-    let mut params = json!({"path": path});
-    for k in ["names", "group"] {
-        if let Some(v) = p.get(k) {
-            params[k] = v.clone();
-        }
-    }
+    let params = json!({"path": path, "names": p.names, "group": p.group});
     let r = app.session.execute("mask.exportEffects", &params).map_err(|e| e.to_string());
     match &r {
         Ok(v) => app.toast(&ctx, crate::i18n::tr_format!("Exported {} effect preset{}", v["count"], if v["count"] == 1 { "" } else { "s" })),
@@ -745,17 +702,15 @@ pub(crate) fn file_export_mask_effects(app: &mut LightcraftApp, c: &Call) -> Res
     r
 }
 
-pub(crate) fn file_export_presets(app: &mut LightcraftApp, c: &Call) -> Result<Value, String> {
-    let id = c.id;
-    let p = c.params;
+pub(crate) fn file_export_presets(app: &mut LightcraftApp, c: &Call, p: ExportPresets) -> Result<Value, String> {
     let ctx = app.tasks.repaint.clone().unwrap_or_default();
-    let group = p.get("group").and_then(Value::as_str).map(str::to_string);
-    let path = match p.get("path").and_then(Value::as_str) {
-        Some(x) => Some(x.to_string()),
+    let group = p.group;
+    let path = match p.path {
+        Some(x) => Some(x),
         None => {
             let name = format!("{}.lcpreset", group.as_deref().unwrap_or("LightCraft Presets"));
             let req = PickRequest::save(crate::i18n::tr("Export Presets"), crate::i18n::tr("LightCraft Preset"), &["lcpreset"], name.clone());
-            match crate::pick::ask(app, id, p, "path", req, |s| s.save_preset_file.as_mut().map(|f| f(&name).into_iter().collect())) {
+            match crate::pick::ask(app, c.id, c.params, "path", req, |s| s.save_preset_file.as_mut().map(|f| f(&name).into_iter().collect())) {
                 Picked::Now(v) => v.into_iter().next(),
                 Picked::Later => return Ok(Value::Null),
                 Picked::Unavailable => return Err("no file dialog on this platform".into()),
@@ -763,13 +718,7 @@ pub(crate) fn file_export_presets(app: &mut LightcraftApp, c: &Call) -> Result<V
         }
     };
     let Some(path) = path else { return Ok(Value::Null) };
-    let mut params = json!({"path": path});
-    if let Some(g) = group {
-        params["group"] = json!(g);
-    }
-    if let Some(ids) = p.get("ids") {
-        params["ids"] = ids.clone();
-    }
+    let params = json!({"path": path, "group": group, "ids": p.ids});
     let r = app.session.execute("preset.export", &params).map_err(|e| e.to_string());
     if let Ok(v) = &r {
         app.toast(&ctx, crate::i18n::tr_format!("Exported {} preset{}", v["count"], if v["count"] == 1 { "" } else { "s" }));
@@ -777,19 +726,17 @@ pub(crate) fn file_export_presets(app: &mut LightcraftApp, c: &Call) -> Result<V
     r
 }
 
-pub(crate) fn file_import_curve_presets(app: &mut LightcraftApp, c: &Call) -> Result<Value, String> {
-    let id = c.id;
-    let p = c.params;
+pub(crate) fn file_import_curve_presets(app: &mut LightcraftApp, c: &Call, p: Paths) -> Result<Value, String> {
     let ctx = app.tasks.repaint.clone().unwrap_or_default();
-    let paths: Vec<String> = match p.get("paths").and_then(Value::as_array) {
-        Some(a) => a.iter().filter_map(Value::as_str).map(str::to_string).collect(),
+    let paths: Vec<String> = match p.paths {
+        Some(paths) => paths,
         None => {
             let req = PickRequest::files(
                 Some(crate::i18n::tr("Import Point Curve Presets").into()),
                 crate::i18n::tr("Point Curve Presets"),
                 crate::pick::CURVE_PRESET_EXTENSIONS,
             );
-            match crate::pick::ask(app, id, p, "paths", req, |s| s.pick_curve_preset_files.as_mut().map(|f| f())) {
+            match crate::pick::ask(app, c.id, c.params, "paths", req, |s| s.pick_curve_preset_files.as_mut().map(|f| f())) {
                 Picked::Now(paths) => paths,
                 Picked::Later => return Ok(Value::Null),
                 Picked::Unavailable => return Err("no file dialog on this platform".into()),
@@ -812,12 +759,10 @@ pub(crate) fn file_import_curve_presets(app: &mut LightcraftApp, c: &Call) -> Re
     r
 }
 
-pub(crate) fn file_export_curve_presets(app: &mut LightcraftApp, c: &Call) -> Result<Value, String> {
-    let id = c.id;
-    let p = c.params;
+pub(crate) fn file_export_curve_presets(app: &mut LightcraftApp, c: &Call, p: ExportCurvePresets) -> Result<Value, String> {
     let ctx = app.tasks.repaint.clone().unwrap_or_default();
-    let path = match p.get("path").and_then(Value::as_str) {
-        Some(x) => Some(x.to_string()),
+    let path = match p.path {
+        Some(x) => Some(x),
         None => {
             let req = PickRequest::save(
                 crate::i18n::tr("Export Point Curve Presets"),
@@ -825,7 +770,7 @@ pub(crate) fn file_export_curve_presets(app: &mut LightcraftApp, c: &Call) -> Re
                 &["lccurve"],
                 "Point Curves.lccurve",
             );
-            match crate::pick::ask(app, id, p, "path", req, |s| {
+            match crate::pick::ask(app, c.id, c.params, "path", req, |s| {
                 s.save_curve_preset_file.as_mut().map(|f| f("Point Curves.lccurve").into_iter().collect())
             }) {
                 Picked::Now(v) => v.into_iter().next(),
@@ -835,10 +780,7 @@ pub(crate) fn file_export_curve_presets(app: &mut LightcraftApp, c: &Call) -> Re
         }
     };
     let Some(path) = path else { return Ok(Value::Null) };
-    let mut params = json!({"path": path});
-    if let Some(n) = p.get("names") {
-        params["names"] = n.clone();
-    }
+    let params = json!({"path": path, "names": p.names});
     let r = app.session.execute("curve.exportPresets", &params).map_err(|e| e.to_string());
     if let Ok(v) = &r {
         app.toast(&ctx, crate::i18n::tr_format!("Exported {} point curve preset{}", v["count"], if v["count"] == 1 { "" } else { "s" }));
@@ -846,9 +788,9 @@ pub(crate) fn file_export_curve_presets(app: &mut LightcraftApp, c: &Call) -> Re
     r
 }
 
-pub(crate) fn app_export(app: &mut LightcraftApp, c: &Call) -> Result<Value, String> {
-    let p = c.params;
-    crate::control::export_active(app, p)
+/// (the export options refuse keys they don't know)
+pub(crate) fn app_export(app: &mut LightcraftApp, c: &Call, _: Patch) -> Result<Value, String> {
+    crate::control::export_active(app, c.params)
 }
 
 pub(crate) fn app_show_in_finder(app: &mut LightcraftApp, _: &Call, _: NoParams) -> Result<Value, String> {
@@ -890,11 +832,141 @@ pub(crate) fn lightroom(app: &mut LightcraftApp, c: &Call) -> Result<Value, Stri
 }
 
 /// `modelSetup.cancel {kind: denoise}`: forget the photo action waiting for a model to be installed.
-pub(crate) fn model_setup_cancel(app: &mut LightcraftApp, c: &Call) -> Result<Value, String> {
-    if c.params.get("kind").and_then(Value::as_str) != Some("denoise") {
+pub(crate) fn model_setup_cancel(app: &mut LightcraftApp, _: &Call, p: ModelSetupCancel) -> Result<Value, String> {
+    if p.kind != "denoise" {
         return Err("modelSetup.cancel: use kind denoise".into());
     }
     app.model_setup.cancel_denoise();
     app.ui.status = crate::i18n::tr("Pending photo action cancelled").into();
     Ok(json!({"cancelled": true}))
+}
+
+lightcraft_engine::params! {
+    /// `{path?}`: a file or folder; asked for when left out.
+    pub(crate) struct PathParam {
+        path: Option<String>,
+    }
+}
+
+lightcraft_engine::params! {
+    /// `{paths?}`: files; asked for when left out.
+    pub(crate) struct Paths {
+        paths: Option<Vec<String>>,
+    }
+}
+
+lightcraft_engine::params! {
+    /// `file.addPhotos` / `file.addFolder` / `file.addFromDevice`: the files (asked for when left
+    /// out) and the album the import review starts with.
+    pub(crate) struct AddPhotos {
+        paths: Option<Vec<String>>,
+        path: Option<String>,
+        album: Option<u64>,
+    }
+}
+
+lightcraft_engine::params! {
+    /// `photo.setReference`
+    pub(crate) struct SetReference {
+        id: Option<lightcraft_catalog::PhotoId>,
+    }
+}
+
+lightcraft_engine::params! {
+    /// `app.settings`
+    pub(crate) struct Settings {
+        tab: Option<String>,
+    }
+}
+
+lightcraft_engine::params! {
+    /// `app.systemInfo`: `open: false` only returns the rows.
+    pub(crate) struct SystemInfo {
+        open: Option<bool>,
+    }
+}
+
+lightcraft_engine::params! {
+    /// `file.findMissing`: `within` limits the search to photos under that folder; `wait` returns
+    /// when it is done (at most `timeout` seconds, 600).
+    pub(crate) struct FindMissing {
+        folder: Option<String>,
+        within: Option<String>,
+        #[serde(default)]
+        wait: bool,
+        timeout: Option<f64>,
+    }
+}
+
+lightcraft_engine::params! {
+    /// `file.exportMaskEffects`
+    pub(crate) struct ExportMaskEffects {
+        path: Option<String>,
+        names: Option<Vec<String>>,
+        group: Option<String>,
+    }
+}
+
+lightcraft_engine::params! {
+    /// `file.exportPresets`
+    pub(crate) struct ExportPresets {
+        path: Option<String>,
+        ids: Option<Vec<String>>,
+        group: Option<String>,
+    }
+}
+
+lightcraft_engine::params! {
+    /// `file.exportCurvePresets`
+    pub(crate) struct ExportCurvePresets {
+        path: Option<String>,
+        names: Option<Vec<String>>,
+    }
+}
+
+lightcraft_engine::params! {
+    /// `modelSetup.cancel`
+    pub(crate) struct ModelSetupCancel {
+        kind: String,
+    }
+}
+
+lightcraft_engine::key_list! {
+    /// `app.openLibrary` / `app.displayProfile` (`panels::settings` reads them).
+    pub(crate) struct PathKeys = ["path"]
+}
+
+lightcraft_engine::key_list! {
+    /// `app.newLibrary`'s keys (`panels::settings::new_library` reads them).
+    pub(crate) struct NewLibraryKeys = ["name", "path"]
+}
+
+lightcraft_engine::key_list! {
+    /// `app.recentLibraries`'s keys (`panels::settings::recent_libraries` reads them).
+    pub(crate) struct RecentLibrariesKeys = ["clear"]
+}
+
+lightcraft_engine::key_list! {
+    /// `app.setShortcut`'s keys (`shortcuts::set_shortcut` reads them).
+    pub(crate) struct ShortcutKeys = ["id", "shortcut", "reset"]
+}
+
+lightcraft_engine::key_list! {
+    /// `app.print`'s keys: the PDF and the photos (`print.exportPdf`).
+    pub(crate) struct PrintKeys = ["path", "ids", "id"]
+}
+
+lightcraft_engine::key_list! {
+    /// `photo.editIn…`'s keys: the editor (`app`) and `photo.editExternal`'s, which it hands on.
+    pub(crate) struct EditInKeys = ["app", "ids", "id", "colorSpace", "format", "bitDepth", "dir"]
+}
+
+lightcraft_engine::key_list! {
+    /// `photo.openOriginalInExternal`'s keys: the editor (`app`) and the photos.
+    pub(crate) struct OpenOriginalKeys = ["app", "ids", "id"]
+}
+
+lightcraft_engine::key_list! {
+    /// `photo.tagFromTracklog`'s keys: `photo.autoTagTracklog`'s, which it hands on.
+    pub(crate) struct TracklogKeys = ["path", "gpx", "ids", "id", "offset", "maxGap", "replace", "dryRun"]
 }

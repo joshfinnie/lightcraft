@@ -7,53 +7,40 @@ use crate::menus::*;
 use crate::state::Dialog;
 use lightcraft_engine::cmd::params::NoParams;
 
-pub(crate) fn dialog_new_folder(app: &mut LightcraftApp, c: &Call) -> Result<Value, String> {
-    let p = c.params;
-    app.ui.dialog = Some(Dialog::NewAlbum {
-        name: p.get("name").and_then(Value::as_str).unwrap_or("").into(),
-        folder: true,
-        parent: parent_param(p),
-        include_selected: false,
-    });
+pub(crate) fn dialog_new_folder(app: &mut LightcraftApp, c: &Call, p: NewAlbum) -> Result<Value, String> {
+    if p.include_selected.is_some() {
+        return Err(format!("{}: a folder holds albums, not photos (`includeSelected` is for dialog.newAlbum)", c.id));
+    }
+    app.ui.dialog = Some(Dialog::NewAlbum { name: p.name.unwrap_or_default(), folder: true, parent: p.parent, include_selected: false });
     Ok(Value::Null)
 }
 
-pub(crate) fn dialog_new_album(app: &mut LightcraftApp, c: &Call) -> Result<Value, String> {
-    let p = c.params;
-    // {name?, parent?, includeSelected? (true)}
+pub(crate) fn dialog_new_album(app: &mut LightcraftApp, _: &Call, p: NewAlbum) -> Result<Value, String> {
     app.ui.dialog = Some(Dialog::NewAlbum {
-        name: p.get("name").and_then(Value::as_str).unwrap_or("").into(),
+        name: p.name.unwrap_or_default(),
         folder: false,
-        parent: parent_param(p),
-        include_selected: p.get("includeSelected").and_then(Value::as_bool).unwrap_or(true),
+        parent: p.parent,
+        include_selected: p.include_selected.unwrap_or(true),
     });
     Ok(Value::Null)
 }
 
-pub(crate) fn dialog_auto_stack(app: &mut LightcraftApp, c: &Call) -> Result<Value, String> {
-    let p = c.params;
-    app.ui.dialog = Some(Dialog::AutoStack { gap: p.get("gap").and_then(Value::as_f64).unwrap_or(60.0) as f32 });
+pub(crate) fn dialog_auto_stack(app: &mut LightcraftApp, _: &Call, p: AutoStack) -> Result<Value, String> {
+    app.ui.dialog = Some(Dialog::AutoStack { gap: p.gap.unwrap_or(60.0) as f32 });
     Ok(Value::Null)
 }
 
-pub(crate) fn dialog_all_metadata(app: &mut LightcraftApp, c: &Call) -> Result<Value, String> {
-    let p = c.params;
-    let r = match app.session.execute("photo.allMetadata", p) {
-        Ok(r) => r,
-        Err(e) => return Err(e.to_string()),
-    };
-    let title = app.session.active().and_then(|id| app.session.catalog.photo(id)).map(|p| p.file_name.clone()).unwrap_or_default();
-    app.ui.dialog = Some(Dialog::AllMetadata { title, rows: r, search: String::new() });
+pub(crate) fn dialog_all_metadata(app: &mut LightcraftApp, _: &Call, p: OnePhoto) -> Result<Value, String> {
+    let rows = app.session.execute("photo.allMetadata", &json!({"id": p.id})).map_err(|e| e.to_string())?;
+    let photo = p.id.or_else(|| app.session.active());
+    let title = photo.and_then(|id| app.session.catalog.photo(id)).map(|p| p.file_name.clone()).unwrap_or_default();
+    app.ui.dialog = Some(Dialog::AllMetadata { title, rows, search: String::new() });
     Ok(Value::Null)
 }
 
-pub(crate) fn dialog_smart_album(app: &mut LightcraftApp, c: &Call) -> Result<Value, String> {
-    let p = c.params;
+pub(crate) fn dialog_smart_album(app: &mut LightcraftApp, _: &Call, p: SmartAlbum) -> Result<Value, String> {
     // {id?}: edit that smart album's rules; without: a new one starting at Rating ≥ 3
-    let album = p
-        .get("id")
-        .and_then(Value::as_u64)
-        .and_then(|id| app.session.catalog.album(lightcraft_catalog::AlbumId(id)).filter(|a| a.is_smart()).cloned());
+    let album = p.id.and_then(|id| app.session.catalog.album(lightcraft_catalog::AlbumId(id)).filter(|a| a.is_smart()).cloned());
     app.ui.dialog = Some(match album {
         Some(a) => Dialog::SmartRules {
             id: Some(a.id.0),
@@ -72,24 +59,22 @@ pub(crate) fn dialog_smart_album(app: &mut LightcraftApp, c: &Call) -> Result<Va
         },
         None => Dialog::SmartRules {
             id: None,
-            name: p.get("name").and_then(Value::as_str).unwrap_or("").into(),
+            name: p.name.unwrap_or_default(),
             rules: lightcraft_catalog::RuleSet { rules: vec![crate::panels::rules_editor::new_rule()], ..Default::default() },
-            parent: parent_param(p),
+            parent: p.parent,
         },
     });
     Ok(Value::Null)
 }
 
-pub(crate) fn dialog_new_smart_album(app: &mut LightcraftApp, c: &Call) -> Result<Value, String> {
-    let p = c.params;
-    app.ui.dialog = Some(Dialog::NewSmartAlbum { name: p.get("name").and_then(Value::as_str).unwrap_or("").into(), parent: parent_param(p) });
+pub(crate) fn dialog_new_smart_album(app: &mut LightcraftApp, _: &Call, p: NewSmartAlbum) -> Result<Value, String> {
+    app.ui.dialog = Some(Dialog::NewSmartAlbum { name: p.name.unwrap_or_default(), parent: p.parent });
     Ok(Value::Null)
 }
 
-pub(crate) fn dialog_capture_time(app: &mut LightcraftApp, c: &Call) -> Result<Value, String> {
-    let p = c.params;
+pub(crate) fn dialog_capture_time(app: &mut LightcraftApp, _: &Call, p: CaptureTime) -> Result<Value, String> {
     let time = app.session.active().and_then(|id| app.session.catalog.photo(id)).map(|p| p.date().replace('T', " ")).unwrap_or_default();
-    let mode = p.get("mode").and_then(Value::as_str).unwrap_or("set").to_string();
+    let mode = p.mode.unwrap_or_else(|| "set".into());
     app.ui.dialog = Some(Dialog::CaptureTime { mode, time: time.get(..19).unwrap_or(&time).to_string(), days: 0, hours: 0, minutes: 0, zone: 0.0 });
     Ok(Value::Null)
 }
@@ -100,10 +85,9 @@ pub(crate) fn dialog_label_names(app: &mut LightcraftApp, _: &Call, _: NoParams)
     Ok(Value::Null)
 }
 
-pub(crate) fn dialog_rename(app: &mut LightcraftApp, c: &Call) -> Result<Value, String> {
-    let p = c.params;
-    let template = p.get("template").and_then(Value::as_str).unwrap_or("{name}").to_string();
-    app.ui.dialog = Some(Dialog::Rename { template, start: p.get("start").and_then(Value::as_u64).unwrap_or(1) as u32 });
+pub(crate) fn dialog_rename(app: &mut LightcraftApp, _: &Call, p: Rename) -> Result<Value, String> {
+    let template = p.template.unwrap_or_else(|| "{name}".into());
+    app.ui.dialog = Some(Dialog::Rename { template, start: p.start.unwrap_or(1) });
     Ok(Value::Null)
 }
 
@@ -124,14 +108,15 @@ pub(crate) fn dialog_copy_settings(app: &mut LightcraftApp, _: &Call, _: NoParam
     Ok(Value::Null)
 }
 
-pub(crate) fn dialog_slideshow_export(app: &mut LightcraftApp, c: &Call) -> Result<Value, String> {
-    let p = c.params;
-    let format = match p.get("format").and_then(Value::as_str) {
-        Some("jpeg") => lightcraft_engine::slideshow_export::Format::Jpeg,
-        Some("video") => lightcraft_engine::slideshow_export::Format::Video,
-        _ => lightcraft_engine::slideshow_export::Format::Pdf,
+pub(crate) fn dialog_slideshow_export(app: &mut LightcraftApp, _: &Call, p: SlideshowExport) -> Result<Value, String> {
+    use lightcraft_engine::slideshow_export::{ExportSettings, Format};
+    let format = match p.format.as_deref() {
+        Some("jpeg") => Format::Jpeg,
+        Some("video") => Format::Video,
+        None | Some("pdf") => Format::Pdf,
+        Some(f) => return Err(format!("dialog.slideshowExport: unknown format {f:?} (pdf|jpeg|video)")),
     };
-    app.ui.dialog = Some(Dialog::SlideshowExport { settings: lightcraft_engine::slideshow_export::ExportSettings::for_format(format) });
+    app.ui.dialog = Some(Dialog::SlideshowExport { settings: ExportSettings::for_format(format) });
     Ok(Value::Null)
 }
 
@@ -162,10 +147,9 @@ pub(crate) fn dialog_merge_hdr(app: &mut LightcraftApp, _: &Call, _: NoParams) -
     crate::merge::open(app, "merge.hdr")
 }
 
-pub(crate) fn dialog_face_model(app: &mut LightcraftApp, c: &Call) -> Result<Value, String> {
-    let p = c.params;
-    let path = match p.get("path").and_then(Value::as_str) {
-        Some(x) => Some(x.to_string()),
+pub(crate) fn dialog_face_model(app: &mut LightcraftApp, _: &Call, p: FaceModel) -> Result<Value, String> {
+    let path = match p.path {
+        Some(x) => Some(x),
         None => app.services.pick_model_file.as_mut().and_then(|f| f().into_iter().next()),
     };
     match path {
@@ -204,4 +188,73 @@ pub(crate) fn dialog_save_mask_effect(app: &mut LightcraftApp, _: &Call, _: NoPa
 pub(crate) fn dialog_manage_mask_effects(app: &mut LightcraftApp, _: &Call, _: NoParams) -> Result<Value, String> {
     crate::panels::mask_effects::open_manage(app);
     Ok(Value::Null)
+}
+
+lightcraft_engine::params! {
+    /// `dialog.newAlbum` (`includeSelected`, default true) / `dialog.newFolder`: the name and folder to start with.
+    pub(crate) struct NewAlbum {
+        name: Option<String>,
+        parent: Option<u64>,
+        include_selected: Option<bool>,
+    }
+}
+
+lightcraft_engine::params! {
+    /// `dialog.newSmartAlbum`
+    pub(crate) struct NewSmartAlbum {
+        name: Option<String>,
+        parent: Option<u64>,
+    }
+}
+
+lightcraft_engine::params! {
+    /// `dialog.smartAlbum`: `id` edits that smart album; without, a new one (`name`, `parent`).
+    pub(crate) struct SmartAlbum {
+        id: Option<u64>,
+        name: Option<String>,
+        parent: Option<u64>,
+    }
+}
+
+lightcraft_engine::params! {
+    /// `dialog.autoStack`
+    pub(crate) struct AutoStack {
+        gap: Option<f64>,
+    }
+}
+
+lightcraft_engine::params! {
+    /// `dialog.allMetadata`
+    pub(crate) struct OnePhoto {
+        id: Option<lightcraft_catalog::PhotoId>,
+    }
+}
+
+lightcraft_engine::params! {
+    /// `dialog.captureTime`
+    pub(crate) struct CaptureTime {
+        mode: Option<String>,
+    }
+}
+
+lightcraft_engine::params! {
+    /// `dialog.rename`
+    pub(crate) struct Rename {
+        template: Option<String>,
+        start: Option<u32>,
+    }
+}
+
+lightcraft_engine::params! {
+    /// `dialog.slideshowExport`
+    pub(crate) struct SlideshowExport {
+        format: Option<String>,
+    }
+}
+
+lightcraft_engine::params! {
+    /// `dialog.faceModel`
+    pub(crate) struct FaceModel {
+        path: Option<String>,
+    }
 }
