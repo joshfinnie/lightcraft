@@ -15,6 +15,7 @@
 //! (a, b, c) as documented by the PanoTools wiki, Adobe DNG specification 1.6 (opcodes `WarpRectilinear`,
 //! `FixVignetteRadial`). Interpolation and fitting: own design.
 #![forbid(unsafe_code)]
+#![cfg_attr(test, allow(clippy::disallowed_methods))]
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
 pub mod model;

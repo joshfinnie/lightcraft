@@ -4,6 +4,7 @@
 //! fatal faults stop GPU use on this thread until `reset_failures` (issue #675: on this thread
 //! only, so a test of the fallback can run beside tests that render on the GPU).
 //! Skips (passes with a note) when no GPU adapter exists.
+#![allow(clippy::disallowed_methods)]
 
 use std::sync::Arc;
 

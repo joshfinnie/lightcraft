@@ -9,6 +9,7 @@
 //! This is LightCraft's only crate allowed `unsafe` (one FFI call, in `macos`). Its API is safe,
 //! and on failure or on other platforms it simply releases nothing.
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
+#![cfg_attr(test, allow(clippy::disallowed_methods))]
 
 /// Return free allocator pages to the system. Returns the number of bytes released (always 0 on
 /// platforms where freed large blocks are already unmapped). Safe to call at any time, from any

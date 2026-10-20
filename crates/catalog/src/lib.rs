@@ -11,6 +11,7 @@
 //! (and upgrade it on open); older builds refuse a newer library with [`CatalogError::Newer`]
 //! instead of reading part of it.
 #![forbid(unsafe_code)]
+#![cfg_attr(test, allow(clippy::disallowed_methods))]
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
 pub mod dates;

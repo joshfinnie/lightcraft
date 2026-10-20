@@ -34,10 +34,7 @@ pub fn open(app: &mut LightcraftApp, path: &str, name: &str, disk: bool) -> Resu
     let job = move || {
         let _ = tx.send(scan_with(input, &p));
     };
-    #[cfg(not(target_arch = "wasm32"))]
-    std::thread::spawn(job);
-    #[cfg(target_arch = "wasm32")]
-    job();
+    crate::tasks::detached("lc-sync-scan", job)?;
     let guard = app.session.activity.start("sync", "Looking for changes", Cancel::Flag(progress.files.cancel.clone()));
     guard.detail(name);
     app.sync = Some(SyncTask { path: path.to_string(), progress, rx, guard });
@@ -220,10 +217,7 @@ pub fn confirm(app: &mut LightcraftApp, dlg: &Dialog) -> Result<Value, String> {
             c.store(true, Ordering::Relaxed);
         }
     };
-    #[cfg(not(target_arch = "wasm32"))]
-    std::thread::spawn(job);
-    #[cfg(target_arch = "wasm32")]
-    job();
+    crate::tasks::detached("lc-sync", job)?;
     let guard = app.session.activity.start("sync", "Synchronizing folder", Cancel::Flag(progress.files.cancel.clone()));
     guard.detail(name);
     app.sync_run = Some(SyncRun { name: name.clone(), progress, crashed, rx, commit: Some(commit), stopping: false, not_saved: Vec::new(), guard });

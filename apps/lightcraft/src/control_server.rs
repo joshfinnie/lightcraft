@@ -37,8 +37,10 @@ pub fn start(port: u16, token: String, ctx: egui::Context) -> Receiver<ControlRe
             return rx;
         }
     };
-    log::info!("control server listening on 127.0.0.1:{port}");
-    std::thread::spawn(move || accept_loop(listener, tx, ctx, token));
+    match std::thread::Builder::new().name("lc-control".into()).spawn(move || accept_loop(listener, tx, ctx, token)) {
+        Ok(_) => log::info!("control server listening on 127.0.0.1:{port}"),
+        Err(e) => log::error!("control server could not start on 127.0.0.1:{port}: {e}"),
+    }
     rx
 }
 
@@ -64,10 +66,19 @@ fn spawn_connection(
         let _ = writeln!(stream, "{}", json!({"ok": false, "error": "too many control connections"}));
         return None;
     }
-    Some(std::thread::spawn(move || {
+    let slot = Arc::clone(&open);
+    match std::thread::Builder::new().name("lc-control-conn".into()).spawn(move || {
         serve(stream, &tx, &ctx, &token, idle_timeout);
-        open.fetch_sub(1, Ordering::SeqCst);
-    }))
+        slot.fetch_sub(1, Ordering::SeqCst);
+    }) {
+        Ok(handle) => Some(handle),
+        Err(e) => {
+            // the connection (moved into the job) is closed as the job is dropped
+            log::warn!("control connection refused: no thread for it: {e}");
+            open.fetch_sub(1, Ordering::SeqCst);
+            None
+        }
+    }
 }
 
 /// Five minutes allows pauses between automation commands without retaining abandoned slots forever.

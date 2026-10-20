@@ -479,10 +479,7 @@ pub fn open(app: &mut LightcraftApp, paths: Vec<String>) -> Result<Value, String
     let job = move || {
         let _ = tx.send(scan_with(input, &paths, &p));
     };
-    #[cfg(not(target_arch = "wasm32"))]
-    std::thread::spawn(job);
-    #[cfg(target_arch = "wasm32")]
-    job();
+    crate::tasks::detached("lc-import-scan", job)?;
     let guard = scan_guard(app, &progress, false);
     app.scan = Some(ScanTask { progress, rx, copy: false, album: None, browse: false, sources, guard });
     Ok(json!({"scanning": true}))
@@ -544,10 +541,7 @@ pub fn browse(app: &mut LightcraftApp, path: &str, subfolders: Option<bool>) -> 
         };
         let _ = tx.send(scan_with(input, &files, &p));
     };
-    #[cfg(not(target_arch = "wasm32"))]
-    std::thread::spawn(job);
-    #[cfg(target_arch = "wasm32")]
-    job();
+    crate::tasks::detached("lc-browse-scan", job)?;
     let guard = scan_guard(app, &progress, true);
     app.scan = Some(ScanTask { progress, rx, copy: false, album: None, browse: true, sources: Vec::new(), guard });
     app.renderer.forget_imports();

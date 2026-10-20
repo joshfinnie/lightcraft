@@ -11,6 +11,7 @@
 //! Every algorithm here is our own implementation from published papers (cited in each module);
 //! no code from GPL projects was consulted.
 #![forbid(unsafe_code)]
+#![cfg_attr(test, allow(clippy::disallowed_methods))]
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
 pub mod align;

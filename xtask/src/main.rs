@@ -2,6 +2,7 @@
 //!
 //! Pure Rust (std + serde_json; flate2/brotli for the web bundle). External tools (`cargo`, `curl`, `tar`) are
 //! invoked through `std::process::Command`.
+#![allow(clippy::disallowed_methods)]
 
 mod assets;
 mod bench;

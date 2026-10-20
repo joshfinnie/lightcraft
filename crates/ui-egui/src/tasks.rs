@@ -60,12 +60,22 @@ pub fn spawn<T: Send + 'static>(
             c.request_repaint();
         }
     };
-    #[cfg(not(target_arch = "wasm32"))]
-    std::thread::Builder::new().name(format!("lc-task-{label}")).spawn(job).map_err(|e| format!("{label}: could not start: {e}"))?;
-    #[cfg(target_arch = "wasm32")]
-    job();
+    detached(&format!("lc-task-{label}"), job).map_err(|e| format!("{label}: {e}"))?;
     let guard = kind.map(|k| app.session.activity.start(k, label, lightcraft_engine::activity::Cancel::No));
     app.tasks.running.push(Task { label: label.to_string(), rx, _guard: guard });
+    Ok(())
+}
+
+/// Run `job` on a new thread named `name`, or at once in the browser build, which has no threads.
+/// An error when the system won't start the thread, instead of the panic `std::thread::spawn` gives.
+pub(crate) fn detached(name: &str, job: impl FnOnce() + Send + 'static) -> Result<(), String> {
+    #[cfg(not(target_arch = "wasm32"))]
+    std::thread::Builder::new().name(name.to_string()).spawn(job).map_err(|e| format!("could not start a worker thread: {e}"))?;
+    #[cfg(target_arch = "wasm32")]
+    {
+        let _ = name;
+        job();
+    }
     Ok(())
 }
 

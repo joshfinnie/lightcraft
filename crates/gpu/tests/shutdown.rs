@@ -3,6 +3,7 @@
 //! `wait_idle` returns when the renders in flight on other threads have ended.
 //! One test: the shutdown holds for the whole process. Without a GPU adapter only the CPU side of
 //! the contract is checked.
+#![allow(clippy::disallowed_methods)]
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};

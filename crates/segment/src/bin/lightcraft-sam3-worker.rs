@@ -1,6 +1,7 @@
 //! Serves SAM 3 on this Mac's Metal GPU to one LightCraft editor over a loopback socket (an SSH
 //! tunnel); see docs/ai-masks.md → Remote Metal inference.
 #![forbid(unsafe_code)]
+#![cfg_attr(test, allow(clippy::disallowed_methods))]
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
 #[cfg(not(target_arch = "wasm32"))]

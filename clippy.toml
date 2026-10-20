@@ -2,3 +2,8 @@ allow-unwrap-in-tests = true
 allow-expect-in-tests = true
 allow-panic-in-tests = true
 allow-indexing-slicing-in-tests = true
+# std::thread::spawn panics when the system refuses a thread; production code uses
+# std::thread::Builder and handles the error (never-crash rule). Tests may spawn freely.
+disallowed-methods = [
+    { path = "std::thread::spawn", reason = "panics if the OS refuses a thread: use std::thread::Builder::spawn and handle the error" },
+]

@@ -17,6 +17,7 @@
 //! Everything here treats model files, manifests and cache files as hostile input: sizes are capped, numbers must
 //! be finite, and a malformed file is an error, never a panic.
 #![forbid(unsafe_code)]
+#![cfg_attr(test, allow(clippy::disallowed_methods))]
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
 #[cfg(feature = "runtime")]

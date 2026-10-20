@@ -14,6 +14,7 @@
 //! and clamped by [`SlideSettings::sanitized`] (NaN, ±∞, negative and huge values land in range);
 //! [`compose`] accepts any size and any photo (an empty one draws the backdrop alone).
 #![forbid(unsafe_code)]
+#![cfg_attr(test, allow(clippy::disallowed_methods))]
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
 mod compose;

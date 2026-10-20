@@ -23,6 +23,7 @@
 //! colour matrix: [`spectral`] has matrices fitted to measured spectral sensitivities for 52 models, and
 //! otherwise [`color`] falls back to a documented neutral model. The decoders never panic on malformed input.
 #![forbid(unsafe_code)]
+#![cfg_attr(test, allow(clippy::disallowed_methods))]
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
 mod binned;

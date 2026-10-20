@@ -780,10 +780,10 @@ fn missing_count(app: &mut LightcraftApp, ui: &mut egui::Ui) -> usize {
             running.store(false, Relaxed);
             ctx.request_repaint();
         };
-        #[cfg(not(target_arch = "wasm32"))]
-        std::thread::spawn(work);
-        #[cfg(target_arch = "wasm32")]
-        work();
+        if let Err(e) = crate::tasks::detached("lc-missing-count", work) {
+            log::warn!("missing photo count: {e}");
+            job.running.store(false, Relaxed);
+        }
         ui.data_mut(|d| d.insert_temp(id, job.clone()));
     }
     job.n.load(Relaxed)
