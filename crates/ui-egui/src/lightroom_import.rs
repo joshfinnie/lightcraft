@@ -372,7 +372,7 @@ pub fn command(app: &mut LightcraftApp, id: &str, p: &Value, ctx: &egui::Context
     #[cfg(target_arch = "wasm32")]
     {
         let _ = (app, id, p, ctx);
-        return unsupported_wasm();
+        unsupported_wasm()
     }
     #[cfg(not(target_arch = "wasm32"))]
     {

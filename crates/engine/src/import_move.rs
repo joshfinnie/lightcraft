@@ -327,6 +327,7 @@ pub(crate) fn copy_verified(src: &Path, dst: &Path, expect: Option<lightcraft_pr
             None => Ok(()),
         }
     })();
+    #[cfg_attr(target_arch = "wasm32", allow(clippy::drop_non_drop))]
     drop(out);
     if r.is_err() {
         let _ = fs::remove_file(dst);

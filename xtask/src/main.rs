@@ -31,7 +31,7 @@ commands:
   parity [--write]
                   check docs/parity-checklist.md (every cmd:/ctl: id and path it cites exists) and print the
                   Lightroom parity summary; --write refreshes the summary table in the document
-  wasm            cargo check --target wasm32-unknown-unknown for the wasm-safe crates (+ the web app)
+  wasm            cargo clippy -D warnings --target wasm32-unknown-unknown for the wasm-safe crates (+ the web app)
   web [--serve [port]] [--dev]
                   build the browser app (apps/lightcraft-web) into <target>/web-site/;
                   --serve serves it on http://127.0.0.1:<port> (default 8080)
@@ -255,11 +255,12 @@ fn cmd_wasm() -> Result<(), String> {
     let mut results = Vec::new();
     for pkg in &set {
         let mut c = cargo();
-        c.args(["check", "--target", "wasm32-unknown-unknown", "-p", pkg]);
-        let ok = run(c, &format!("cargo check --target wasm32-unknown-unknown -p {pkg}")).is_ok();
+        // clippy, not check: code that only builds for wasm is linted too, warnings included
+        c.args(["clippy", "--target", "wasm32-unknown-unknown", "-p", pkg, "--", "-D", "warnings"]);
+        let ok = run(c, &format!("cargo clippy --target wasm32-unknown-unknown -p {pkg}")).is_ok();
         results.push((pkg.clone(), ok));
     }
-    println!("\nwasm32-unknown-unknown check:");
+    println!("\nwasm32-unknown-unknown clippy:");
     for (p, ok) in &results {
         println!("  {:<6} {p}", if *ok { "ok" } else { "FAIL" });
     }

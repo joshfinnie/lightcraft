@@ -678,6 +678,8 @@ impl Prepared {
         let file = file.into_inner().map_err(|e| format!("video: {}", e.error()))?;
         file.sync_all().map_err(|e| format!("video: {e}"))?;
         let bytes = file.metadata().map(|m| m.len()).unwrap_or(0);
+        // closed before the commit renames it (Windows)
+        #[cfg_attr(target_arch = "wasm32", allow(clippy::drop_non_drop))]
         drop(file);
         if cancel.load(Ordering::Relaxed) {
             return Err(CANCELLED.into());

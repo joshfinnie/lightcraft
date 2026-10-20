@@ -152,6 +152,7 @@ pub fn extract(archive: &Path, name: &str, dest: &Path, max_bytes: u64) -> Resul
         let mut out = std::fs::File::create(&tmp)?;
         out.write_all(&data)?;
         out.flush()?;
+        #[cfg_attr(target_arch = "wasm32", allow(clippy::drop_non_drop))]
         drop(out);
         std::fs::rename(&tmp, dest)
     })();
