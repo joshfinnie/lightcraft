@@ -601,13 +601,11 @@ impl LightcraftApp {
     /// (offer a model's download, treat a cancel as one) instead of reading the message.
     pub fn run_typed(&mut self, id: &str, params: Value) -> Result<Value, CommandError> {
         if let Some(result) = model_setup::intercept(self, id, &params) {
-            return result.map_err(CommandError::from);
+            return self.report(id, &params, result.map_err(CommandError::from));
         }
         if let Some(r) = menus::run_ui_command(self, id, &params) {
-            if r.is_ok() {
-                docking::reveal_command(self, id)?;
-            }
-            return r.map_err(CommandError::from);
+            let r = r.map_err(CommandError::from).and_then(|v| docking::reveal_command(self, id).map(|()| v).map_err(CommandError::from));
+            return self.report(id, &params, r);
         }
         let params = if id == "crop.aspect"
             && params.get("aspect").and_then(Value::as_str) == Some("toggle")
@@ -668,6 +666,12 @@ impl LightcraftApp {
             let now = self.tasks.repaint.as_ref().map(|ctx| ctx.input(|i| i.time)).unwrap_or(self.last_time);
             self.ui.toast = Some((text, now + TOAST_SECONDS, label));
         }
+        self.report(id, &params, r)
+    }
+
+    /// What every command's outcome does in the UI, a UI command's as an engine command's: an
+    /// error is logged and shown on the status line; some results update the UI.
+    fn report(&mut self, id: &str, params: &Value, r: Result<Value, CommandError>) -> Result<Value, CommandError> {
         match &r {
             Err(e) => {
                 log::warn!("{id}: {e}");

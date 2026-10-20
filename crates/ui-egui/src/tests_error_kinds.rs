@@ -55,6 +55,19 @@ fn run_typed_keeps_the_kind_and_run_the_message() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// A UI command's error is logged and shown on the status line like an engine command's (B5: the
+/// UI commands returned before either).
+#[test]
+fn a_ui_command_error_reaches_the_status_line() {
+    let mut h = demo();
+    h.app.ui.status.clear();
+    let e = h.app.run("app.exportPrevious", json!({})).unwrap_err();
+    assert_eq!(h.app.ui.status, e, "the UI command's error is on the status line");
+    h.app.ui.status.clear();
+    let e = h.app.run("photo.rate", json!({"rating": 9})).unwrap_err();
+    assert_eq!(h.app.ui.status, e);
+}
+
 /// A SAM 3 download that ended while its dialog was closed: a cancel is told by the status's
 /// `cancelled`, not by the error's words.
 #[test]
