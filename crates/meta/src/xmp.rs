@@ -264,9 +264,10 @@ fn parse_tree(s: &str) -> Result<Node, XmpError> {
                 }
             }
             Event::End(_) if stack.len() > 1 => {
-                let n = stack.pop().expect("len > 1");
                 scopes.pop();
-                if let Some(parent) = stack.last_mut() {
+                if let Some(n) = stack.pop()
+                    && let Some(parent) = stack.last_mut()
+                {
                     parent.children.push(n);
                 }
             }
@@ -298,11 +299,15 @@ fn parse_tree(s: &str) -> Result<Node, XmpError> {
         }
     }
     // close unterminated elements leniently
-    while stack.len() > 1 {
-        let n = stack.pop().expect("len > 1");
-        stack.last_mut().expect("root").children.push(n);
+    let mut root = stack.drain(..1).next().unwrap_or_default();
+    // (the rest are nested in order: each closes into the one before it)
+    while let Some(n) = stack.pop() {
+        match stack.last_mut() {
+            Some(parent) => parent.children.push(n),
+            None => root.children.push(n),
+        }
     }
-    Ok(stack.pop().expect("root"))
+    Ok(root)
 }
 
 fn is_rdf_meta_attr(k: &str) -> bool {
@@ -688,6 +693,17 @@ pub fn write_xmp_lc(meta: &Metadata, lc: &[(&str, &str)]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn unterminated_elements_close_into_their_parents() {
+        let root = parse_tree("<a><b>x<c/><d>y").unwrap();
+        let names = |n: &Node| n.children.iter().map(|c| c.name.clone()).collect::<Vec<_>>();
+        assert_eq!(names(&root), ["a"]);
+        let b = &root.children[0].children[0];
+        assert_eq!((b.name.as_str(), b.text.as_str()), ("b", "x"));
+        assert_eq!(names(b), ["c", "d"]);
+        assert_eq!(b.children[1].text, "y");
+    }
 
     fn full() -> Metadata {
         Metadata {
