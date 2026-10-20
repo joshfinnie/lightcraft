@@ -93,7 +93,3 @@ option. Copyright (c) 2026 ArtCraft Team and the LightCraft contributors; requir
 Bundled assets keep their own open licenses and are listed in
 [assets/ATTRIBUTION.md](assets/ATTRIBUTION.md). The showcase photograph is a public-domain work by
 Ansel Adams (1942, U.S. National Archives). UI font: Inter (SIL OFL 1.1).
-
-The ArtCraft name and logos are trademarks of the ArtCraft Team, not covered by the license
-above, and are not used to identify this fork (see
-[docs/brand/LICENSE-brand.txt](docs/brand/LICENSE-brand.txt)).
