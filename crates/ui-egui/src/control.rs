@@ -179,11 +179,24 @@ fn key_from(name: &str) -> Option<egui::Key> {
     })
 }
 
+/// Most clicks one `ui.click` / `ui.clickWidget` sends, and most moves one drag interpolates: the
+/// events replay one per frame, so a huge count would queue gigabytes and keep the app clicking for hours.
+const MAX_CLICKS: u64 = 10;
+const MAX_DRAG_STEPS: u64 = 1000;
+
+/// `key` as a whole number in `1..=max`, `default` when absent; anything else is refused.
+fn count_param(p: &Value, key: &str, default: u64, max: u64) -> Result<u64, String> {
+    match p.get(key) {
+        None | Some(Value::Null) => Ok(default),
+        Some(v) => v.as_u64().filter(|n| (1..=max).contains(n)).ok_or_else(|| format!("`{key}` must be a whole number from 1 to {max}, not {v}")),
+    }
+}
+
 fn push_drag(app: &mut LightcraftApp, a: egui::Pos2, b: egui::Pos2, steps: u64, m: egui::Modifiers) {
     app.synthetic.push(egui::Event::PointerMoved(a));
     app.synthetic.push(egui::Event::PointerButton { pos: a, button: egui::PointerButton::Primary, pressed: true, modifiers: m });
-    for i in 1..=steps.max(1) {
-        let t = i as f32 / steps.max(1) as f32;
+    for i in 1..=steps {
+        let t = i as f32 / steps as f32;
         app.synthetic.push(egui::Event::PointerMoved(a + (b - a) * t));
     }
     app.synthetic.push(egui::Event::PointerButton { pos: b, button: egui::PointerButton::Primary, pressed: false, modifiers: m });
@@ -219,6 +232,10 @@ pub fn handle(app: &mut LightcraftApp, ctx: &egui::Context, req: &ControlRequest
         }
         "ui.clickWidget" | "ui.dragWidget" | "ui.hoverWidget" => {
             let Some(id) = s("id") else { return err("missing `id`") };
+            let (clicks, steps) = match (count_param(p, "count", 1, MAX_CLICKS), count_param(p, "steps", 10, MAX_DRAG_STEPS)) {
+                (Ok(c), Ok(s)) => (c, s),
+                (Err(e), _) | (_, Err(e)) => return err(e),
+            };
             let Some(r) = widget_rect(app, id) else { return err(format!("no widget `{id}` on screen (see ui.widgets)")) };
             let m = modifiers(p);
             // optional relative position inside the widget (0..1)
@@ -226,10 +243,9 @@ pub fn handle(app: &mut LightcraftApp, ctx: &egui::Context, req: &ControlRequest
             if req.method == "ui.hoverWidget" {
                 app.synthetic.push(egui::Event::PointerMoved(at));
             } else if req.method == "ui.clickWidget" {
-                let n = p.get("count").and_then(Value::as_u64).unwrap_or(1);
                 let button = if s("button") == Some("right") { egui::PointerButton::Secondary } else { egui::PointerButton::Primary };
                 app.synthetic.push(egui::Event::PointerMoved(at));
-                for _ in 0..n {
+                for _ in 0..clicks {
                     app.synthetic.push(egui::Event::PointerButton { pos: at, button, pressed: true, modifiers: m });
                     app.synthetic.push(egui::Event::PointerButton { pos: at, button, pressed: false, modifiers: m });
                 }
@@ -238,7 +254,7 @@ pub fn handle(app: &mut LightcraftApp, ctx: &egui::Context, req: &ControlRequest
                     f("toX").map(|v| v as f32).unwrap_or(at.x + f("dx").unwrap_or(0.0) as f32),
                     f("toY").map(|v| v as f32).unwrap_or(at.y + f("dy").unwrap_or(0.0) as f32),
                 );
-                push_drag(app, at, to, p.get("steps").and_then(Value::as_u64).unwrap_or(10), m);
+                push_drag(app, at, to, steps, m);
             }
             ctx.request_repaint();
             ok(json!({"rect": rect_json(r)}))
@@ -249,15 +265,19 @@ pub fn handle(app: &mut LightcraftApp, ctx: &egui::Context, req: &ControlRequest
             ok(Value::Null)
         }
         "ui.click" | "ui.drag" => {
+            let (clicks, steps) = match (count_param(p, "count", 1, MAX_CLICKS), count_param(p, "steps", 10, MAX_DRAG_STEPS)) {
+                (Ok(c), Ok(s)) => (c, s),
+                (Err(e), _) | (_, Err(e)) => return err(e),
+            };
             let a = egui::pos2(f("x").unwrap_or(0.0) as f32, f("y").unwrap_or(0.0) as f32);
             let m = modifiers(p);
             let button = if s("button") == Some("right") { egui::PointerButton::Secondary } else { egui::PointerButton::Primary };
             if req.method == "ui.drag" {
                 let b = egui::pos2(f("toX").unwrap_or(0.0) as f32, f("toY").unwrap_or(0.0) as f32);
-                push_drag(app, a, b, p.get("steps").and_then(Value::as_u64).unwrap_or(10), m);
+                push_drag(app, a, b, steps, m);
             } else {
                 app.synthetic.push(egui::Event::PointerMoved(a));
-                for _ in 0..p.get("count").and_then(Value::as_u64).unwrap_or(1) {
+                for _ in 0..clicks {
                     app.synthetic.push(egui::Event::PointerButton { pos: a, button, pressed: true, modifiers: m });
                     app.synthetic.push(egui::Event::PointerButton { pos: a, button, pressed: false, modifiers: m });
                 }

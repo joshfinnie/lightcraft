@@ -4694,4 +4694,37 @@ mod tests {
         let r = h.request("ui.screenshot", json!({"headless": true}), SETTLE);
         assert_eq!(r["result"]["width"], 640, "{r}");
     }
+
+    /// A huge click count or drag step count is refused before anything is queued: the events
+    /// replay one per frame, so `count: 1e12` used to queue two trillion of them.
+    #[test]
+    fn pointer_counts_out_of_range_are_refused_and_queue_nothing() {
+        use crate::control::{ControlRequest, Outcome, handle};
+        let mut h = demo([800.0, 600.0]);
+        let ctx = egui::Context::default();
+        // the handler alone, without frames that would replay (and so empty) the queue
+        let mut send = |method: &str, params: &serde_json::Value| {
+            h.app.synthetic.clear();
+            let (req, _rx) = ControlRequest::new(method, params.clone());
+            let Outcome::Done(r) = handle(&mut h.app, &ctx, &req) else { panic!("{method}: not a plain reply") };
+            (r, h.app.synthetic.len())
+        };
+        for (method, params) in [
+            ("ui.click", json!({"x": 10, "y": 10, "count": 1_000_000_000_000u64})),
+            ("ui.click", json!({"x": 10, "y": 10, "count": 0})),
+            ("ui.click", json!({"x": 10, "y": 10, "count": 1.5})),
+            ("ui.drag", json!({"x": 10, "y": 10, "toX": 20, "toY": 20, "steps": 1_000_000_000u64})),
+            ("ui.drag", json!({"x": 10, "y": 10, "toX": 20, "toY": 20, "steps": -1})),
+        ] {
+            let (r, queued) = send(method, &params);
+            assert_eq!(r["ok"], false, "{method} {params}: {r}");
+            assert_eq!(queued, 0, "{method} {params}");
+        }
+        let (r, queued) = send("ui.drag", &json!({"x": 10, "y": 10, "toX": 20, "toY": 20, "steps": 1000}));
+        assert_eq!(r["ok"], true, "{r}");
+        assert_eq!(queued, 1003, "move, press, 1000 moves, release");
+        let (r, queued) = send("ui.click", &json!({"x": 10, "y": 10, "count": 3}));
+        assert_eq!(r["ok"], true, "{r}");
+        assert_eq!(queued, 7, "move, then a press and release per click");
+    }
 }
