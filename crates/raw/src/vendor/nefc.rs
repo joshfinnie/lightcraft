@@ -239,7 +239,6 @@ pub(crate) fn decode_rows(src: &[u8], w: usize, h: usize, rows: usize, bits: u32
     if bits != 12 && bits != 14 {
         return Err(RawError::Unsupported(format!("Nikon compressed NEF with {bits}-bit samples")));
     }
-    crate::check_dimensions(w as u64, h as u64)?;
     let whole = w.checked_mul(h).filter(|&n| n > 0 && n <= MAX_SAMPLES).ok_or(RawError::Limit("NEF image size"))?;
     // every code word is at least 2 bits long: a strip that can't hold the image is truncated (also bounds the
     // allocation by the file size)

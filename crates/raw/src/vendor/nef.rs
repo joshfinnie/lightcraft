@@ -359,6 +359,7 @@ fn compressed(bytes: &[u8], info: &ImageInfo, mn: Option<&makernote::MakerNote>,
     if info.samples_per_pixel != 1 {
         return Err(RawError::Unsupported(format!("Nikon compressed NEF with {} samples per pixel", info.samples_per_pixel)));
     }
+    crate::check_dimensions(u64::from(info.width), u64::from(info.height))?;
     let bits = info.bits() as u32;
     let table = nefc::parse_table(table.0, table.1, bits)?;
     // one strip in every sample; several would be contiguous parts of the same bit stream
