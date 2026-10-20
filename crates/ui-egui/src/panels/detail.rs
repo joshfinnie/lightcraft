@@ -922,19 +922,7 @@ fn info_overlay(app: &LightcraftApp, p: &egui::Painter, canvas: Rect, photo: &li
         }
         InfoOverlay::Exposure => {
             let m = &photo.meta;
-            let mut exp = Vec::new();
-            if !m.shutter.is_empty() {
-                exp.push(format!("{} s", m.shutter));
-            }
-            if let Some(a) = m.aperture {
-                exp.push(format!("f/{a:.1}"));
-            }
-            if let Some(i) = m.iso {
-                exp.push(format!("ISO {i}"));
-            }
-            if let Some(f) = m.focal_mm {
-                exp.push(format!("{f:.0} mm"));
-            }
+            let exp: Vec<String> = [m.shutter_text(), m.aperture_text(), m.iso_text(), m.focal_text()].into_iter().flatten().collect();
             let camera = [m.camera.as_str(), m.lens.as_str()].iter().filter(|s| !s.is_empty()).copied().collect::<Vec<_>>().join(" · ");
             let mut v = vec![photo.file_name.clone()];
             v.push(if exp.is_empty() { "No exposure information".into() } else { exp.join("  ") });

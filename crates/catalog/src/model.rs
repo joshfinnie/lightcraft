@@ -206,6 +206,33 @@ pub struct Meta {
     pub focus: Option<lightcraft_meta::FocusPoint>,
 }
 
+/// The capture settings as shown everywhere in the app ("1/250 s", "f/2.8", "ISO 400", "4.5 mm").
+impl Meta {
+    pub fn shutter_text(&self) -> Option<String> {
+        let s = self.shutter.trim();
+        match s {
+            "" => None,
+            _ if s.ends_with('s') || s.ends_with('"') => Some(s.to_string()),
+            _ => Some(format!("{s} s")),
+        }
+    }
+    pub fn aperture_text(&self) -> Option<String> {
+        self.aperture.filter(|a| a.is_finite() && *a > 0.0).map(|a| format!("f/{}", trim_decimal(a)))
+    }
+    pub fn iso_text(&self) -> Option<String> {
+        self.iso.map(|i| format!("ISO {i}"))
+    }
+    pub fn focal_text(&self) -> Option<String> {
+        self.focal_mm.filter(|f| f.is_finite() && *f > 0.0).map(|f| format!("{} mm", trim_decimal(f)))
+    }
+}
+
+/// One decimal, without a trailing ".0".
+fn trim_decimal(v: f32) -> String {
+    let s = format!("{v:.1}");
+    s.strip_suffix(".0").map(str::to_string).unwrap_or(s)
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Version {
     pub name: String,
@@ -553,6 +580,24 @@ impl Album {
 mod edited_tests {
     use super::*;
     use lightcraft_develop::WbScale;
+
+    #[test]
+    fn capture_settings_text() {
+        let m = Meta { shutter: "1/250".into(), aperture: Some(8.0), iso: Some(3200), focal_mm: Some(135.0), ..Default::default() };
+        assert_eq!(m.shutter_text().as_deref(), Some("1/250 s"));
+        assert_eq!(m.aperture_text().as_deref(), Some("f/8"));
+        assert_eq!(m.iso_text().as_deref(), Some("ISO 3200"));
+        assert_eq!(m.focal_text().as_deref(), Some("135 mm"));
+        let m = Meta { shutter: "8".into(), aperture: Some(2.8), focal_mm: Some(4.5), ..Default::default() };
+        assert_eq!(m.shutter_text().as_deref(), Some("8 s"));
+        assert_eq!(m.aperture_text().as_deref(), Some("f/2.8"));
+        assert_eq!(m.focal_text().as_deref(), Some("4.5 mm"));
+        let m = Meta { shutter: "2.5 s".into(), aperture: Some(f32::NAN), focal_mm: Some(0.0), ..Default::default() };
+        assert_eq!(m.shutter_text().as_deref(), Some("2.5 s"));
+        let m = Meta { shutter: "2\"".into(), ..Default::default() };
+        assert_eq!(m.shutter_text().as_deref(), Some("2\""));
+        assert_eq!((m.aperture_text(), m.iso_text(), m.focal_text()), (None, None, None));
+    }
 
     #[test]
     fn raw_with_import_settings_is_not_edited() {
