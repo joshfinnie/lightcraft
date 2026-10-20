@@ -30,6 +30,23 @@ impl Patch {
     }
 }
 
+/// One string or a list of them (`"a"` is `["a"]`).
+#[derive(Debug, serde::Deserialize)]
+#[serde(untagged)]
+pub enum Strings {
+    One(String),
+    Many(Vec<String>),
+}
+
+impl Strings {
+    pub fn to_vec(&self) -> Vec<String> {
+        match self {
+            Strings::One(s) => vec![s.clone()],
+            Strings::Many(v) => v.clone(),
+        }
+    }
+}
+
 /// Read `p` as `T`. Every key `T` would ignore is an error, and a value of the wrong type names
 /// its key. The error's command is filled in by [`crate::Session::execute`].
 pub(crate) fn parse<T: Params>(p: &Value) -> Result<T> {
@@ -145,6 +162,7 @@ macro_rules! params {
         #[derive(Debug, serde::Deserialize)]
         #[serde(rename_all = "camelCase")]
         $vis struct $name { $($(#[$fm])* pub $f: $t),* }
+        $(#[$m])*
         impl $crate::cmd::params::Params for $name {}
     };
     ($(#[$m:meta])* $vis:vis struct $name:ident with targets { $($(#[$fm:meta])* $f:ident : $t:ty),* $(,)? }) => {
@@ -156,6 +174,7 @@ macro_rules! params {
                 $($(#[$fm])* $f: $t),*
             }
         }
+        $(#[$m])*
         impl $name {
             /// The photos the call names (`ids`, else `id`), else the selection.
             #[allow(dead_code)]

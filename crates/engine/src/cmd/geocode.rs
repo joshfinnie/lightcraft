@@ -14,13 +14,32 @@ use serde_json::{Value, json};
 use lightcraft_catalog::{Op, PhotoId};
 use lightcraft_geocode::{GEONAMES_ATTRIBUTION, GEONAMES_FILES, GeoNames, LatLon};
 
-use super::{CommandSpec, always, bad, bool_or, has_selection, raw_cmd, str_param};
+use super::params::params;
+use super::{CommandSpec, always, bad, cmd, has_selection};
 use crate::activity::Cancel;
 use crate::{Result, Session};
 
+params! {
+    /// `metadata.placeNamesStatus`
+    struct Dataset {
+        dataset: Option<String>,
+    }
+}
+
+params! {
+    /// `metadata.reverseGeocode`
+    struct Reverse with targets {
+        #[serde(default)]
+        overwrite: bool,
+        #[serde(default)]
+        dry_run: bool,
+        dataset: Option<String>,
+    }
+}
+
 /// Where the place names live: `dataset` (a folder) or `<settings>/geonames`.
-fn dataset_dir(p: &Value) -> Option<PathBuf> {
-    str_param(p, "dataset").map(PathBuf::from).or_else(|| crate::config::config_dir().map(|d| d.join("geonames")))
+fn dataset_dir(dataset: Option<&str>) -> Option<PathBuf> {
+    dataset.map(PathBuf::from).or_else(|| crate::config::config_dir().map(|d| d.join("geonames")))
 }
 
 /// How a place-names download ended.
@@ -82,8 +101,8 @@ impl PlaceNames {
     }
 }
 
-fn status(s: &mut Session, p: &Value) -> Result<Value> {
-    let dir = dataset_dir(p);
+fn status(s: &mut Session, p: Dataset) -> Result<Value> {
+    let dir = dataset_dir(p.dataset.as_deref());
     let size = dir.as_ref().and_then(|d| std::fs::metadata(d.join(GEONAMES_FILES[0])).ok()).map(|m| m.len());
     let sh = s.place_names.lock();
     let (last, error) = match &sh.last {
@@ -112,10 +131,10 @@ fn fill(meta: &mut lightcraft_catalog::Meta, place: &lightcraft_geocode::Place, 
     }
 }
 
-fn reverse(s: &mut Session, p: &Value) -> Result<Value> {
+fn reverse(s: &mut Session, p: Reverse) -> Result<Value> {
     const C: &str = "metadata.reverseGeocode";
-    let overwrite = bool_or(p, "overwrite", false);
-    let ids = s.targets(p)?;
+    let overwrite = p.overwrite;
+    let ids = p.targets(s);
     let todo: Vec<(PhotoId, LatLon)> = ids
         .iter()
         .filter_map(|id| {
@@ -127,7 +146,7 @@ fn reverse(s: &mut Session, p: &Value) -> Result<Value> {
     if todo.is_empty() {
         return Err(bad(C, "none of these photos has a GPS position"));
     }
-    let dir = dataset_dir(p).ok_or_else(|| bad(C, "no settings folder: give `dataset`"))?;
+    let dir = dataset_dir(p.dataset.as_deref()).ok_or_else(|| bad(C, "no settings folder: give `dataset`"))?;
     let names = s.place_names.load(&dir).map_err(|e| bad(C, format!("{e}: download the place names first (Photo ▸ Download Place Names)")))?;
     // a large selection shows in the activity stack and can be stopped
     let task = (todo.len() > 1).then(|| s.activity.start("geocode", "Looking up places", Cancel::Yes));
@@ -151,7 +170,7 @@ fn reverse(s: &mut Session, p: &Value) -> Result<Value> {
     }
     drop(task);
     let changed = ops.len();
-    if !bool_or(p, "dryRun", false) && changed > 0 {
+    if !p.dry_run && changed > 0 {
         s.commit("Reverse Geocode", Op::Batch { ops })?;
     }
     Ok(json!({"looked": todo.len(), "found": found.len(), "changed": changed, "photos": found, "attribution": GEONAMES_ATTRIBUTION}))
@@ -214,11 +233,19 @@ mod download {
             || base.strip_prefix("http://127.0.0.1").is_some_and(|rest| rest.is_empty() || rest.starts_with(':') || rest.starts_with('/'))
     }
 
+    params! {
+        /// `metadata.downloadPlaceNames`: `base` is another https:// mirror (tests: a local server).
+        pub(super) struct Download {
+            dataset: Option<String>,
+            base: Option<String>,
+        }
+    }
+
     /// `metadata.downloadPlaceNames`: starts a background download (shown in the activity stack, cancellable).
-    pub(super) fn start(s: &mut Session, p: &Value) -> Result<Value> {
+    pub(super) fn start(s: &mut Session, p: Download) -> Result<Value> {
         const C: &str = "metadata.downloadPlaceNames";
-        let dir = dataset_dir(p).ok_or_else(|| bad(C, "no settings folder: give `dataset`"))?;
-        let base = str_param(p, "base").unwrap_or(GEONAMES_BASE).to_string();
+        let dir = dataset_dir(p.dataset.as_deref()).ok_or_else(|| bad(C, "no settings folder: give `dataset`"))?;
+        let base = p.base.unwrap_or_else(|| GEONAMES_BASE.to_string());
         if !base_allowed(&base) {
             return Err(bad(C, "`base` must be an https:// address"));
         }
@@ -266,24 +293,26 @@ mod download {
 pub fn specs() -> Vec<CommandSpec> {
     #[allow(unused_mut)]
     let mut v = vec![
-        raw_cmd!(
+        cmd!(
             "metadata.reverseGeocode",
             "Fill Location from GPS",
             ["Photo"],
             None,
             "{ids?, overwrite?: bool (also replace place fields that already have text; default false: only empty ones are filled), dryRun?, dataset?: folder} → {looked, found, changed, photos: [{id, place: {sublocation, city, state, country, iso, distance}}], attribution} — fills City / State / Country (and Sublocation when known) from GPS with the offline GeoNames place names (download them first); one undo step",
+            Reverse,
             has_selection,
             reverse
         ),
-        raw_cmd!(query "metadata.placeNamesStatus", "Place Names Status", [], None, "{dataset?: folder} → {downloaded, bytes, path, attribution, source}", always, status),
+        cmd!(query "metadata.placeNamesStatus", "Place Names Status", [], None, "{dataset?: folder} → {downloaded, bytes, path, attribution, source}", Dataset, always, status),
     ];
     #[cfg(not(target_arch = "wasm32"))]
-    v.push(raw_cmd!(
+    v.push(cmd!(
         "metadata.downloadPlaceNames",
         "Download Place Names (GeoNames)",
         ["Photo"],
         None,
         "{dataset?: folder} → {started, path, attribution} — downloads the GeoNames cities list (CC-BY 4.0, ~3 MB, from download.geonames.org) in the background for Fill Location from GPS; no photo data is sent",
+        download::Download,
         always,
         download::start
     ));

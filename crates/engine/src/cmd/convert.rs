@@ -7,7 +7,8 @@ use std::path::Path;
 use lightcraft_catalog::{MediaKind, Op, Source};
 use serde_json::{Value, json};
 
-use super::{CommandSpec, bad, has_active, has_selection, raw_cmd};
+use super::params::params;
+use super::{CommandSpec, bad, cmd, has_active, has_selection};
 use crate::{Result, Session};
 
 /// `<stem>.dng`, then `<stem>-2.dng`, `<stem>-3.dng`… next to `path`.
@@ -57,9 +58,24 @@ pub(crate) fn write_dng_with(file_bytes: Option<&crate::merge::ByteReader>, path
     Ok(out.to_string_lossy().to_string())
 }
 
-fn convert(s: &mut Session, p: &Value) -> Result<Value> {
+params! {
+    /// Photo commands that take only their targets.
+    struct Targets with targets {}
+}
+
+params! {
+    /// `photo.editExternal`
+    struct EditExternal with targets {
+        color_space: Option<String>,
+        format: Option<String>,
+        bit_depth: Option<u64>,
+        dir: Option<String>,
+    }
+}
+
+fn convert(s: &mut Session, p: Targets) -> Result<Value> {
     const C: &str = "photo.convertToDng";
-    let ids = s.targets(p)?;
+    let ids = p.targets(s);
     let mut ops = Vec::new();
     let mut converted = Vec::new();
     let mut skipped = Vec::new();
@@ -109,12 +125,13 @@ fn convert(s: &mut Session, p: &Value) -> Result<Value> {
 }
 
 pub fn specs() -> Vec<CommandSpec> {
-    vec![raw_cmd!(
+    vec![cmd!(
         "photo.convertToDng",
         "Convert to DNG",
         ["Photo"],
         None,
         "{ids?} — write each raw photo as a lossless DNG next to it (settings embedded) and relink the photo to it; originals are kept → {converted: [{id, path, original}], skipped}",
+        Targets,
         has_selection,
         convert
     )]
@@ -123,9 +140,9 @@ pub fn specs() -> Vec<CommandSpec> {
 /// Edit in an external editor, the engine half: render the photo with its edits as a 16-bit
 /// TIFF (or PSD, or 8-bit) next to the original (`<name>-Edit.tif`, never overwriting), add it to
 /// the library and stack it on top of the original. The host opens the file in the editor.
-fn edit_external(s: &mut Session, p: &Value) -> Result<Value> {
+fn edit_external(s: &mut Session, p: EditExternal) -> Result<Value> {
     const C: &str = "photo.editExternal";
-    let mut ids = s.targets(p)?;
+    let mut ids = p.targets(s);
     ids.dedup();
     if ids.is_empty() {
         return Err(bad(C, "no active photo"));
@@ -133,18 +150,18 @@ fn edit_external(s: &mut Session, p: &Value) -> Result<Value> {
     if ids.len() > MAX_EDIT_COPIES {
         return Err(bad(C, format!("{} photos selected: edit at most {MAX_EDIT_COPIES} at a time", ids.len())));
     }
-    let space = match super::str_param(p, "colorSpace").unwrap_or("adobeRgb") {
+    let space = match p.color_space.as_deref().unwrap_or("adobeRgb") {
         "srgb" => lightcraft_pipeline::OutputSpace::Srgb,
         "displayP3" => lightcraft_pipeline::OutputSpace::DisplayP3,
         "prophoto" | "proPhoto" => lightcraft_pipeline::OutputSpace::ProPhoto,
         _ => lightcraft_pipeline::OutputSpace::AdobeRgb,
     };
-    let format = match super::str_param(p, "format").unwrap_or("tiff") {
+    let format = match p.format.as_deref().unwrap_or("tiff") {
         "tiff" | "tif" => crate::export::ExportFormat::Tiff,
         "psd" => crate::export::ExportFormat::Psd,
         f => return Err(bad(C, format!("format {f:?}: use tiff or psd"))),
     };
-    let bit_depth = match p.get("bitDepth").and_then(Value::as_u64).unwrap_or(16) {
+    let bit_depth = match p.bit_depth.unwrap_or(16) {
         8 => 8,
         16 => 16,
         d => return Err(bad(C, format!("bitDepth {d}: use 8 or 16"))),
@@ -159,7 +176,7 @@ fn edit_external(s: &mut Session, p: &Value) -> Result<Value> {
     };
     let mut copies = Vec::new();
     for id in ids {
-        copies.push(edit_copy(s, p, id, &opts)?);
+        copies.push(edit_copy(s, p.dir.as_deref(), id, &opts)?);
     }
     let new: Vec<lightcraft_catalog::PhotoId> = copies.iter().filter_map(|c| c["id"].as_u64()).map(lightcraft_catalog::PhotoId).collect();
     s.selection = crate::Selection { active: new.first().copied(), ids: new };
@@ -172,12 +189,12 @@ const MAX_EDIT_COPIES: usize = 50;
 
 /// One photo's edit copy for [`edit_external`]: rendered with `opts` next to its original (a demo
 /// photo into `dir`), added to the library and stacked on top of the original, expanded.
-fn edit_copy(s: &mut Session, p: &Value, id: lightcraft_catalog::PhotoId, opts: &crate::export::ExportOptions) -> Result<Value> {
+fn edit_copy(s: &mut Session, demo_dir: Option<&str>, id: lightcraft_catalog::PhotoId, opts: &crate::export::ExportOptions) -> Result<Value> {
     const C: &str = "photo.editExternal";
     let ph = s.catalog.photo(id).cloned().ok_or_else(|| bad(C, format!("no photo {}", id.0)))?;
     let dir = match &ph.source {
         Source::File { path } => Path::new(path).parent().map(|d| d.to_string_lossy().to_string()).unwrap_or_default(),
-        Source::Demo { .. } => match super::str_param(p, "dir") {
+        Source::Demo { .. } => match demo_dir {
             Some(d) => d.to_string(),
             None => return Err(bad(C, "a generated demo photo has no folder: give `dir`")),
         },
@@ -314,8 +331,8 @@ pub(crate) fn reload_ops(
 
 /// Re-read photos whose files changed on disk (an external editor saved them): new size,
 /// dimensions and content hash, cached sources dropped. → {reloaded: [ids]}
-fn reload(s: &mut Session, p: &Value) -> Result<Value> {
-    let ids = s.targets(p)?;
+fn reload(s: &mut Session, p: Targets) -> Result<Value> {
+    let ids = p.targets(s);
     let paths: Vec<(lightcraft_catalog::PhotoId, String)> = ids
         .iter()
         .filter_map(|id| match s.catalog.photo(*id).map(|ph| ph.source.clone()) {
@@ -341,10 +358,10 @@ fn reload(s: &mut Session, p: &Value) -> Result<Value> {
 
 /// Duplicate: copy the file next to itself (`<name>-copy`, never overwriting) and add it with the
 /// same settings, metadata, rating, flag, label and albums. → {ids}
-fn duplicate(s: &mut Session, p: &Value) -> Result<Value> {
+fn duplicate(s: &mut Session, p: Targets) -> Result<Value> {
     const C: &str = "photo.duplicate";
     let mut made = Vec::new();
-    for id in s.targets(p)? {
+    for id in p.targets(s) {
         let Some(ph) = s.catalog.photo(id).map(|p| (**p).clone()) else { continue };
         let Source::File { path } = &ph.source else { return Err(bad(C, "a generated demo photo has no file to duplicate")) };
         let src = Path::new(path);
@@ -387,30 +404,33 @@ fn duplicate(s: &mut Session, p: &Value) -> Result<Value> {
 
 pub fn edit_specs() -> Vec<CommandSpec> {
     vec![
-        raw_cmd!(
+        cmd!(
             "photo.duplicate",
             "Duplicate",
             ["Photo"],
             None,
             "{ids?} — copy each photo's file next to it (`-copy`) and add it with the same settings, metadata and albums (a real file, unlike a virtual copy) → {ids}",
+            Targets,
             has_selection,
             duplicate
         ),
-        raw_cmd!(
+        cmd!(
             "photo.reload",
             "Reload from Disk",
             ["Photo"],
             None,
             "{ids?} — re-read photos whose files changed on disk (e.g. saved by an external editor), or raws shown from their embedded preview that can be decoded now; camera fields the catalog lacks are filled in, and so is the lens data the file carries (an untouched photo then gets its lens correction turned on as import would; an edited one keeps its settings) → {reloaded}",
+            Targets,
             has_selection,
             reload
         ),
-        raw_cmd!(
+        cmd!(
             "photo.editExternal",
             "Edit Copy for External Editor",
             [],
             None,
             "{ids?, colorSpace?: adobeRgb (default) | proPhoto | displayP3 | srgb, format?: tiff (default) | psd, bitDepth?: 16 (default) | 8, dir?} — render each selected photo (or `ids`, at most 50) with its edits as `<name>-Edit.tif` (or `.psd`, flat, which PhotoCraft saves back to in place) next to it, add each stacked on its original and select the copies → {path, id, original (the first copy), copies: [{path, id, original}]} (the app then opens them in the external editor)",
+            EditExternal,
             has_active,
             edit_external
         ),
