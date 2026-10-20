@@ -413,31 +413,6 @@ env_logger 风格的指令，例如 `RUST_LOG=debug` 或 `RUST_LOG=warn,lightcra
 网页版需要 `wasm32-unknown-unknown` target 和匹配的 `wasm-bindgen` CLI
 （`cargo xtask web` 会打印确切的安装命令）；见 [docs/web.md](docs/web.md)。
 
-**Nix** 会构建桌面应用和 `lightcraft-cli`（Nix 构建总是包含 craft-fonts 输入，所以日文
-文字有字形）：
-
-```sh
-nix run github:storytold/lightcraft                    # 桌面应用
-nix build github:storytold/lightcraft                  # → ./result/bin/{lightcraft,lightcraft-cli}
-nix develop github:storytold/lightcraft                # rust 工具链 + 原生依赖 + 字体
-```
-
-在 flake 配置中（NixOS、home-manager、nix-darwin）：
-
-```nix
-# flake.nix
-inputs.lightcraft.url = "github:storytold/lightcraft";
-# 可选：使用你自己的 nixpkgs，而不是 LightCraft 锁定的那个
-# inputs.lightcraft.inputs.nixpkgs.follows = "nixpkgs";
-
-# 然后在 NixOS 或 home-manager 模块中（`inputs` 在作用域内）：
-nixpkgs.overlays = [ inputs.lightcraft.overlays.default ];   # 让 `pkgs.lightcraft` 可用
-environment.systemPackages = [ pkgs.lightcraft ];           # home-manager：home.packages = [ pkgs.lightcraft ];
-```
-
-`nix build` 会安装与 .deb/.rpm 相同的 desktop 文件、hicolor 图标和 AppStream 元数据，并运行
-`cargo test --workspace` 作为它的检查阶段（用 `pkgs.lightcraft.overrideAttrs { doCheck = false; }` 跳过）。
-
 **键盘：** <kbd>G</kbd> 网格 · <kbd>D</kbd> 细节 · <kbd>E</kbd> 编辑 · <kbd>C</kbd> 裁剪 · <kbd>M</kbd> 蒙版 ·
 <kbd>Shift</kbd>+<kbd>P</kbd> 预设 · <kbd>\\</kbd> 原图 · <kbd>Y</kbd> 修改前后 · <kbd>Z</kbd> 缩放 ·
 <kbd>J</kbd> 溢出警告 · <kbd>⌘Z</kbd> 撤销 · <kbd>⌘/</kbd> 全部快捷键。
@@ -503,12 +478,6 @@ egui 前端是一个可替换的 crate；它下面没有任何东西知道 UI �
 | Debian/Ubuntu | `lightcraft-<ver>-linux-x86_64.deb` | `lightcraft-<ver>-linux-aarch64.deb` | |
 | Fedora/RHEL/openSUSE | `lightcraft-<ver>-linux-x86_64.rpm` | `lightcraft-<ver>-linux-aarch64.rpm` | |
 | 压缩包 | `lightcraft-<ver>-linux-x86_64.tar.gz` | `lightcraft-<ver>-linux-aarch64.tar.gz` | 解压到任意位置 |
-
-### FreeBSD
-
-| 构建 | 文件 |
-|---|---|
-| x86_64 | `lightcraft-<ver>-freebsd-x86_64.tar.gz` |
 
 ### 网页版（WebAssembly）
 

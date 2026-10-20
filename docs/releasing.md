@@ -40,9 +40,6 @@ and the WASM web app. The platform scripts in [`packaging/`](../packaging/) writ
   `packaging/linux/flatpak/ai.storyteller.lightcraft.bundle.yml`; no Rust build). The from-source
   manifest `ai.storyteller.lightcraft.yml` is for Flathub; packaging-lint keeps their runtime and
   `finish-args` identical.
-- FreeBSD: `lightcraft-<version>-freebsd-x86_64.tar.gz`, a `/usr/local`-style tree built in a
-  FreeBSD 14.3 VM (`packaging/freebsd/package.sh`, the same packages as `freebsd.yml`). Install
-  with `tar -xzf <file> --strip-components 1 -C /usr/local`.
 - Web: `lightcraft-web-<version>.zip`.
 
 Only the macOS, Windows and draft-release jobs use the `release` environment. The others sign

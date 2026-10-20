@@ -37,7 +37,7 @@ The release has these files for `x86_64` and `aarch64` (Arm). Replace `x86_64` w
 | `lightcraft-<version>-linux-x86_64.rpm`      | For Fedora, RHEL and openSUSE.                           |
 | `lightcraft-<version>-linux-x86_64.tar.gz`   | Unpack anywhere.                                         |
 
-RISC-V and FreeBSD builds are on the release page too. On a Wayland desktop, LightCraft runs through XWayland when it is available, because only X11 gives it file drag-and-drop.
+RISC-V builds are on the release page too. On a Wayland desktop, LightCraft runs through XWayland when it is available, because only X11 gives it file drag-and-drop.
 
 ## Install with ArtCraft Launcher
 
