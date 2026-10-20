@@ -339,14 +339,10 @@ pub fn decode_thumbnail_with(bytes: &[u8], opts: &ThumbnailOptions) -> Result<Th
     })
 }
 
-/// Cap on total decoded samples. Mirrors `lightcraft_raw::MAX_SAMPLES` (codecs does not depend on
-/// lightcraft-raw, so the value is restated here).
-const MAX_SAMPLES: u64 = 1 << 30;
-
-/// Checked sample-buffer length `width × height × ch`, in u64: `None` on overflow, a zero dimension,
-/// or a product past [`MAX_SAMPLES`].
+/// Checked sample-buffer length `width × height × ch`, in u64 so it cannot wrap on wasm32: `None` on
+/// overflow or a zero dimension. Image size is bounded earlier by [`DecodeOptions::max_pixels`].
 pub(crate) fn checked_sample_buf_len(width: usize, height: usize, ch: usize) -> Option<u64> {
-    (width as u64).checked_mul(height as u64).and_then(|n| n.checked_mul(ch as u64)).filter(|&n| n > 0 && n <= MAX_SAMPLES)
+    (width as u64).checked_mul(height as u64).and_then(|n| n.checked_mul(ch as u64)).filter(|&n| n > 0)
 }
 
 #[cfg(test)]
@@ -355,9 +351,16 @@ mod checked_arithmetic_tests {
 
     #[test]
     fn checked_sample_buf_len_wrap_inputs_rejected() {
-        // 2^30 px × 4 ch = 2^32 samples wraps on 32-bit usize and is past the 2^30-sample cap.
-        assert_eq!(checked_sample_buf_len(1 << 30, 1, 4), None);
-        assert_eq!(checked_sample_buf_len(u32::MAX as usize, 1, 2), None);
+        assert_eq!(checked_sample_buf_len(usize::MAX, usize::MAX, 2), None);
+        assert_eq!(checked_sample_buf_len(0, 100, 3), None);
+    }
+
+    /// Size is `max_pixels`' job: an RGBA image within it has more samples than pixels, and the
+    /// product (2^32, which would wrap a 32-bit usize) must stay exact rather than be refused.
+    #[test]
+    fn checked_sample_buf_len_counts_channels_beyond_the_pixel_limit() {
+        let pixels = DecodeOptions::default().max_pixels as usize;
+        assert_eq!(checked_sample_buf_len(pixels, 1, 4), Some(4 << 30));
     }
 
     #[test]
