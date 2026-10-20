@@ -17,7 +17,47 @@ use lightcraft_faces::{known, onnx};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-use super::{CommandSpec, always, bad, raw_cmd, str_param};
+use super::params::{NoParams, params};
+use super::{CommandSpec, always, bad, cmd};
+
+params! {
+    /// `faces.models.inspect`
+    struct ModelFile {
+        path: Option<String>,
+    }
+}
+
+params! {
+    /// `faces.models.install`
+    struct Install {
+        path: Option<String>,
+        #[serde(default)]
+        acknowledged: bool,
+        activate: Option<bool>,
+    }
+}
+
+params! {
+    /// `faces.models.download`
+    struct Download {
+        id: Option<String>,
+        acknowledged: Option<bool>,
+    }
+}
+
+params! {
+    /// Commands on one installed or downloading model; `faces.models.select` takes `null` (none).
+    struct ModelId {
+        id: Option<String>,
+    }
+}
+
+params! {
+    /// `faces.enable`
+    struct Enable {
+        enabled: Option<bool>,
+    }
+}
 use crate::face_download::{self, State};
 use crate::{EngineError, Result, Session};
 
@@ -176,7 +216,7 @@ fn inspect_file(path: &str, cmd: &str, known_sha: Option<&str>, extra: &[ModelMa
     Ok(Inspection { sha256, size: meta.len(), file_name, suggestion })
 }
 
-fn list(s: &mut Session, _: &Value) -> Result<Value> {
+fn list(s: &mut Session, _: NoParams) -> Result<Value> {
     refresh_catalog(s);
     let dir = s.face_models_dir.clone();
     let (settings, installed) = match &dir {
@@ -219,9 +259,9 @@ fn list(s: &mut Session, _: &Value) -> Result<Value> {
     }))
 }
 
-fn inspect(s: &mut Session, p: &Value) -> Result<Value> {
+fn inspect(s: &mut Session, p: ModelFile) -> Result<Value> {
     const C: &str = "faces.models.inspect";
-    let path = str_param(p, "path").ok_or_else(|| bad(C, "missing `path`"))?;
+    let path = p.path.as_deref().ok_or_else(|| bad(C, "missing `path`"))?;
     refresh_catalog(s);
     let ins = inspect_file(path, C, None, &catalog_manifests(s))?;
     let installed = s.face_models_dir.as_deref().map(installed_models).unwrap_or_default();
@@ -244,11 +284,11 @@ fn inspect(s: &mut Session, p: &Value) -> Result<Value> {
     }))
 }
 
-fn install(s: &mut Session, p: &Value) -> Result<Value> {
+fn install(s: &mut Session, p: Install) -> Result<Value> {
     const C: &str = "faces.models.install";
-    let path = str_param(p, "path").ok_or_else(|| bad(C, "missing `path`"))?;
-    let acknowledged = p.get("acknowledged").and_then(Value::as_bool).unwrap_or(false);
-    let activate = p.get("activate").and_then(Value::as_bool).unwrap_or(true);
+    let path = p.path.as_deref().ok_or_else(|| bad(C, "missing `path`"))?;
+    let acknowledged = p.acknowledged;
+    let activate = p.activate.unwrap_or(true);
     refresh_catalog(s);
     let ins = inspect_file(path, C, None, &catalog_manifests(s))?;
     install_file(s, C, Path::new(path), ins, acknowledged, activate, false)
@@ -349,16 +389,16 @@ pub(super) fn finish_downloads(s: &mut Session) {
 
 /// `faces.models.download {id, acknowledged: true}`: fetch a model LightCraft knows an address for, in the background;
 /// when it has arrived and checked out it is installed.
-fn download(s: &mut Session, p: &Value) -> Result<Value> {
+fn download(s: &mut Session, p: Download) -> Result<Value> {
     const C: &str = "faces.models.download";
-    let id = str_param(p, "id").ok_or_else(|| bad(C, "missing `id`"))?;
+    let id = p.id.as_deref().ok_or_else(|| bad(C, "missing `id`"))?;
     let dir = models_dir(s, C)?;
     refresh_catalog(s);
     let spec = download_spec(s, id).ok_or_else(|| bad(C, "LightCraft has no download for that model: get the file from its page, then add it"))?;
     if cfg!(target_arch = "wasm32") {
         return Err(bad(C, "the web build downloads no models"));
     }
-    if p.get("acknowledged").and_then(Value::as_bool) != Some(true) {
+    if p.acknowledged != Some(true) {
         return Err(bad(
             C,
             "the licence has not been accepted: show the user the model's terms (see `faces.models.list`) and pass `acknowledged: true` once they agree",
@@ -390,16 +430,16 @@ fn download_row(s: &Session, id: &str, state: &State) -> Value {
 }
 
 /// `faces.models.downloads`: where each download stands (a finished one is installed first).
-fn downloads(s: &mut Session, _: &Value) -> Result<Value> {
+fn downloads(s: &mut Session, _: NoParams) -> Result<Value> {
     finish_downloads(s);
     let all: Vec<Value> = s.face_downloads.snapshot().iter().map(|(id, st)| download_row(s, id, st)).collect();
     Ok(json!({"running": s.face_downloads.running(), "downloads": all}))
 }
 
 /// `faces.models.downloadCancel {id}`: stop a download, or clear a finished one (a staged file is deleted).
-fn download_cancel(s: &mut Session, p: &Value) -> Result<Value> {
+fn download_cancel(s: &mut Session, p: ModelId) -> Result<Value> {
     const C: &str = "faces.models.downloadCancel";
-    let id = str_param(p, "id").ok_or_else(|| bad(C, "missing `id`"))?;
+    let id = p.id.as_deref().ok_or_else(|| bad(C, "missing `id`"))?;
     Ok(json!({"discarded": s.face_downloads.discard(id)}))
 }
 
@@ -434,9 +474,9 @@ fn self_test(_: &Path, _: &ModelManifest) -> std::result::Result<Value, String> 
 }
 
 /// `faces.models.test {id}`: run an installed model's self-test again.
-fn test(s: &mut Session, p: &Value) -> Result<Value> {
+fn test(s: &mut Session, p: ModelId) -> Result<Value> {
     const C: &str = "faces.models.test";
-    let id = str_param(p, "id").ok_or_else(|| bad(C, "missing `id`"))?;
+    let id = p.id.as_deref().ok_or_else(|| bad(C, "missing `id`"))?;
     let dir = models_dir(s, C)?;
     if !cfg!(not(target_arch = "wasm32")) {
         return Err(bad(C, "this build cannot run face recognition models"));
@@ -459,9 +499,9 @@ fn test(s: &mut Session, p: &Value) -> Result<Value> {
     Ok(json!({"id": id, "ok": ok, "result": detail}))
 }
 
-fn remove(s: &mut Session, p: &Value) -> Result<Value> {
+fn remove(s: &mut Session, p: ModelId) -> Result<Value> {
     const C: &str = "faces.models.remove";
-    let id = str_param(p, "id").ok_or_else(|| bad(C, "missing `id`"))?;
+    let id = p.id.as_deref().ok_or_else(|| bad(C, "missing `id`"))?;
     let dir = models_dir(s, C)?;
     if !manifest::valid_id(id) {
         return Err(bad(C, "not a model id"));
@@ -483,13 +523,10 @@ fn remove(s: &mut Session, p: &Value) -> Result<Value> {
     Ok(json!({"removed": id, "embedder": st.embedder}))
 }
 
-fn select(s: &mut Session, p: &Value) -> Result<Value> {
+fn select(s: &mut Session, p: ModelId) -> Result<Value> {
     const C: &str = "faces.models.select";
     let dir = models_dir(s, C)?;
-    let id = match p.get("id") {
-        None | Some(Value::Null) => None,
-        Some(v) => Some(v.as_str().ok_or_else(|| bad(C, "`id` must be a model id or null"))?.to_string()),
-    };
+    let id = p.id;
     if let Some(id) = &id
         && !installed_models(&dir).iter().any(|i| &i.manifest.id == id && i.manifest.role == Role::Embedder)
     {
@@ -501,11 +538,11 @@ fn select(s: &mut Session, p: &Value) -> Result<Value> {
     Ok(json!({"embedder": st.embedder}))
 }
 
-fn enable(s: &mut Session, p: &Value) -> Result<Value> {
+fn enable(s: &mut Session, p: Enable) -> Result<Value> {
     const C: &str = "faces.enable";
     let dir = models_dir(s, C)?;
     let mut st = read_settings(&dir);
-    let on = p.get("enabled").and_then(Value::as_bool).unwrap_or(!st.enabled);
+    let on = p.enabled.unwrap_or(!st.enabled);
     // on means something only with a model to run (issue #678): a toggle that is on with nothing
     // chosen would sit there doing nothing, with no word about why
     let usable =
@@ -525,15 +562,15 @@ fn enable(s: &mut Session, p: &Value) -> Result<Value> {
 
 pub fn specs() -> Vec<CommandSpec> {
     vec![
-        raw_cmd!(query "faces.models.list", "Face Models", [], None, "{} → {dir, enabled, embedder, runtime, models: [{id, name, role, licence{name, commercial, url, notice}, provenance, source, sizeBytes, known, installed, selected}]}", always, list),
-        raw_cmd!(query "faces.models.inspect", "Inspect Face Model File", [], None, "{path} → what a .onnx file is: {kind: known | draft | unsupported, model, assumptions, reason, alreadyInstalled}; installs nothing", always, inspect),
-        raw_cmd!(query "faces.models.install", "Install Face Model", [], None, "{path, acknowledged: true, activate?: true} → {installed, active: {embedder, enabled}} — copy a .onnx face recognition model into the models folder. `acknowledged` must be true: the user has been shown its licence (see inspect) and accepted it. Unless `activate` is false the model becomes the one in use and recognition is switched on; an earlier model stays installed", always, install),
-        raw_cmd!(query "faces.models.download", "Download Face Model", [], None, "{id, acknowledged: true} → {started, from} — fetch a recognition model LightCraft has a pinned address for (see `downloadHost` in the list), in the background over pure-Rust https (lightcraft-fetch). `acknowledged` must be true: the user has been shown the model's terms and accepted them. It is checked against its size and SHA-256, then installed, chosen and switched on by itself; `faces.models.downloads` shows how far it is", always, download),
-        raw_cmd!(query "faces.models.downloads", "Face Model Downloads", [], None, "{} → {running, downloads: [{id, state: running | done | installed | failed | cancelled, bytes, total, error, from}]} — also installs any download that has arrived; `installed` stays listed until `faces.models.downloadCancel` clears it", always, downloads),
-        raw_cmd!(query "faces.models.downloadCancel", "Cancel Face Model Download", [], None, "{id} → {discarded} — stop a download, or delete a finished one that was not installed", always, download_cancel),
-        raw_cmd!(query "faces.models.test", "Test Face Model", [], None, "{id} → {ok, result: {loadMs, embedMs, dimension, checks}} — load an installed recognition model and check it gives sensible faces; needs the recognition runtime", always, test),
-        raw_cmd!(query "faces.models.remove", "Remove Face Model", [], None, "{id} — delete an installed model", always, remove),
-        raw_cmd!(query "faces.models.select", "Choose Face Recognition Model", [], None, "{id: installed recogniser | null}", always, select),
-        raw_cmd!(query "faces.enable", "Face Recognition On/Off", [], None, "{enabled?: bool} (toggles when omitted)", always, enable),
+        cmd!(query "faces.models.list", "Face Models", [], None, "{} → {dir, enabled, embedder, runtime, models: [{id, name, role, licence{name, commercial, url, notice}, provenance, source, sizeBytes, known, installed, selected}]}", NoParams, always, list),
+        cmd!(query "faces.models.inspect", "Inspect Face Model File", [], None, "{path} → what a .onnx file is: {kind: known | draft | unsupported, model, assumptions, reason, alreadyInstalled}; installs nothing", ModelFile, always, inspect),
+        cmd!(query "faces.models.install", "Install Face Model", [], None, "{path, acknowledged: true, activate?: true} → {installed, active: {embedder, enabled}} — copy a .onnx face recognition model into the models folder. `acknowledged` must be true: the user has been shown its licence (see inspect) and accepted it. Unless `activate` is false the model becomes the one in use and recognition is switched on; an earlier model stays installed", Install, always, install),
+        cmd!(query "faces.models.download", "Download Face Model", [], None, "{id, acknowledged: true} → {started, from} — fetch a recognition model LightCraft has a pinned address for (see `downloadHost` in the list), in the background over pure-Rust https (lightcraft-fetch). `acknowledged` must be true: the user has been shown the model's terms and accepted them. It is checked against its size and SHA-256, then installed, chosen and switched on by itself; `faces.models.downloads` shows how far it is", Download, always, download),
+        cmd!(query "faces.models.downloads", "Face Model Downloads", [], None, "{} → {running, downloads: [{id, state: running | done | installed | failed | cancelled, bytes, total, error, from}]} — also installs any download that has arrived; `installed` stays listed until `faces.models.downloadCancel` clears it", NoParams, always, downloads),
+        cmd!(query "faces.models.downloadCancel", "Cancel Face Model Download", [], None, "{id} → {discarded} — stop a download, or delete a finished one that was not installed", ModelId, always, download_cancel),
+        cmd!(query "faces.models.test", "Test Face Model", [], None, "{id} → {ok, result: {loadMs, embedMs, dimension, checks}} — load an installed recognition model and check it gives sensible faces; needs the recognition runtime", ModelId, always, test),
+        cmd!(query "faces.models.remove", "Remove Face Model", [], None, "{id} — delete an installed model", ModelId, always, remove),
+        cmd!(query "faces.models.select", "Choose Face Recognition Model", [], None, "{id: installed recogniser | null}", ModelId, always, select),
+        cmd!(query "faces.enable", "Face Recognition On/Off", [], None, "{enabled?: bool} (toggles when omitted)", Enable, always, enable),
     ]
 }

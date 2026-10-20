@@ -10,7 +10,7 @@ use lightcraft_catalog::{Catalog, Op, Photo, PhotoId, Source};
 use serde_json::{Value, json};
 
 use super::params::{NoParams, params};
-use super::{CommandSpec, always, bad, cmd, str_param};
+use super::{CommandSpec, always, bad, cmd};
 use crate::{Result, Session};
 
 /// The file Missing Photos checks for `p`, if it is in scope: a library photo (not in Recently
@@ -70,9 +70,11 @@ params! {
     /// `ambiguous`, as the command returns them).
     struct FindMissing {
         folder: Option<String>,
-        found: Option<Value>,
-        missing: Option<Value>,
-        ambiguous: Option<Value>,
+        found: Option<Vec<FoundFile>>,
+        #[serde(default)]
+        missing: usize,
+        #[serde(default)]
+        ambiguous: Vec<AmbiguousFile>,
     }
 }
 
@@ -137,7 +139,8 @@ pub fn find_candidates(cat: &Catalog) -> Vec<FindCandidate> {
 }
 
 /// How a missing photo's file was recognised.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum MatchBy {
     /// Same name and size (and content, when the library knows its hash).
     Name,
@@ -155,7 +158,7 @@ impl MatchBy {
 }
 
 /// A missing photo and the file found for it.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Deserialize)]
 pub struct FoundFile {
     pub id: PhotoId,
     pub from: String,
@@ -165,7 +168,7 @@ pub struct FoundFile {
 
 /// A missing photo with several look-alike files (same name and size, no hash to tell them
 /// apart): skipped, never guessed.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Deserialize)]
 pub struct AmbiguousFile {
     pub id: PhotoId,
     pub from: String,
@@ -188,32 +191,6 @@ impl FindPlan {
         let found: Vec<Value> = self.found.iter().map(|f| json!({"id": f.id.0, "from": f.from, "to": f.to, "by": f.by.as_str()})).collect();
         let ambiguous: Vec<Value> = self.ambiguous.iter().map(|a| json!({"id": a.id.0, "from": a.from, "candidates": a.candidates})).collect();
         json!({"found": found, "missing": self.missing, "ambiguous": ambiguous})
-    }
-
-    /// The inverse of [`FindPlan::to_json`] (entries it can't read are dropped).
-    pub fn from_json(v: &Value) -> FindPlan {
-        let list = |k: &str| v.get(k).and_then(Value::as_array).cloned().unwrap_or_default();
-        let found = list("found")
-            .iter()
-            .filter_map(|f| {
-                let by = if f.get("by").and_then(Value::as_str) == Some("content") { MatchBy::Content } else { MatchBy::Name };
-                Some(FoundFile {
-                    id: PhotoId(f.get("id")?.as_u64()?),
-                    from: str_param(f, "from")?.to_string(),
-                    to: str_param(f, "to")?.to_string(),
-                    by,
-                })
-            })
-            .collect();
-        let ambiguous = list("ambiguous")
-            .iter()
-            .filter_map(|a| {
-                let candidates = a.get("candidates")?.as_array()?.iter().filter_map(|c| c.as_str().map(str::to_string)).collect();
-                Some(AmbiguousFile { id: PhotoId(a.get("id")?.as_u64()?), from: str_param(a, "from")?.to_string(), candidates })
-            })
-            .collect();
-        let missing = v.get("missing").and_then(Value::as_u64).map_or(0, |n| usize::try_from(n).unwrap_or(usize::MAX));
-        FindPlan { found, missing, ambiguous }
     }
 }
 
@@ -348,8 +325,8 @@ fn commit_find(s: &mut Session, plan: FindPlan) -> Result<Value> {
 /// thread returned, as `{found, missing, ambiguous}`), only the relinking is done.
 fn find_missing(s: &mut Session, p: FindMissing) -> Result<Value> {
     const C: &str = "library.findMissing";
-    if p.found.as_ref().is_some_and(Value::is_array) {
-        return commit_find(s, FindPlan::from_json(&json!({"found": p.found, "missing": p.missing, "ambiguous": p.ambiguous})));
+    if let Some(found) = p.found {
+        return commit_find(s, FindPlan { found, missing: p.missing, ambiguous: p.ambiguous });
     }
     let folder = p.folder.as_deref().ok_or_else(|| bad(C, "missing `folder`"))?;
     let plan = plan_find_missing(&find_candidates(&s.catalog), folder).map_err(|e| bad(C, e))?;

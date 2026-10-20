@@ -328,7 +328,7 @@ fn preview_of_a_template_leaves_the_settings_alone() {
     assert_eq!(SlideLook::of(&s), before, "nothing changed");
     assert!(s.slide_templates_previous.is_none());
     assert!(err(&mut s, "slideshow.preview", json!({"template": "builtin:nope"})).contains("no slideshow template"));
-    assert!(err(&mut s, "slideshow.preview", json!({"template": 3})).contains("template id"));
+    assert!(err(&mut s, "slideshow.preview", json!({"template": 3})).contains("`template`"));
     let _ = std::fs::remove_dir_all(dir);
 }
 

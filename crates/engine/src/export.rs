@@ -3209,7 +3209,7 @@ mod tests {
         assert!(err(json!({"ids": [1, "x"]})).contains("`ids` must be an array of photo ids"));
         assert!(err(json!("jpeg")).contains("params must be an object"));
         assert!(
-            ExportOptions::validate("export.savePreset", &json!({"qualty": 5}))
+            ExportOptions::validate("export.savePreset", &json!({"qualty": 5})) // unknown on purpose
                 .unwrap_err()
                 .to_string()
                 .starts_with("invalid parameters for `export.savePreset`")

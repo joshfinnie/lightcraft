@@ -113,10 +113,11 @@ fn suggestions_come_from_the_named_faces_and_are_never_applied() {
     s.commit("pet", Op::SetMeta { id: b, meta: Box::new(meta) }).unwrap();
     let r = s.execute("faces.suggest", &json!({"ids": [b.0], "threshold": -1.0, "margin": -2.0, "budgetMs": 60_000})).unwrap();
     assert_eq!(r["galleryFaces"], 1, "{r}");
-    // odd parameters are tolerated
-    for p in [json!({"threshold": "x"}), json!({"margin": null}), json!({"budgetMs": 0}), json!({"ids": []}), json!({"ids": [999999]})] {
+    // odd parameters are tolerated; a value of the wrong type is not
+    for p in [json!({"margin": null}), json!({"budgetMs": 0}), json!({"ids": []}), json!({"ids": [999999]})] {
         assert!(s.execute("faces.suggest", &p).is_ok(), "{p}");
     }
+    assert!(s.execute("faces.suggest", &json!({"threshold": "x"})).unwrap_err().to_string().contains("`threshold`"));
     let _ = std::fs::remove_dir_all(&d);
 }
 
@@ -444,9 +445,10 @@ fn unnamed_faces_come_with_look_alikes_together_and_the_name_the_named_ones_sugg
     let r = s.execute("faces.unnamed", &json!({})).unwrap();
     assert_eq!((r["total"].clone(), r["ordered"].clone(), r["ready"].clone()), (json!(5), json!(false), json!(false)));
     assert!(r["faces"].as_array().unwrap().iter().all(|f| f["suggestion"].is_null()));
-    for odd in [json!({"limit": 0}), json!({"limit": "x"}), json!({"limit": u64::MAX})] {
+    for odd in [json!({"limit": 0}), json!({"limit": u64::MAX})] {
         assert!(s.execute("faces.unnamed", &odd).is_ok(), "{odd}");
     }
+    assert!(s.execute("faces.unnamed", &json!({"limit": "x"})).unwrap_err().to_string().contains("`limit`"));
     let _ = std::fs::remove_dir_all(&d);
 }
 

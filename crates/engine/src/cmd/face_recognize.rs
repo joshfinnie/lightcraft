@@ -10,15 +10,101 @@
 use lightcraft_catalog::Op;
 use serde_json::{Value, json};
 
-use super::{CommandSpec, bad, raw_cmd};
+use super::params::params;
+use super::{CommandSpec, bad, cmd};
 use crate::{Result, Session};
 
+params! {
+    /// `faces.index`
+    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
+    struct IndexParams {
+        budget_ms: Option<u64>,
+        ids: Option<Vec<lightcraft_catalog::PhotoId>>,
+    }
+}
+
+params! {
+    /// `faces.suggest`
+    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
+    struct Suggest with targets {
+        threshold: Option<f64>,
+        margin: Option<f64>,
+        budget_ms: Option<u64>,
+    }
+}
+
+params! {
+    /// `faces.pump`
+    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
+    struct Pump {
+        pace: Option<String>,
+    }
+}
+
+params! {
+    /// `faces.evaluate`
+    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
+    struct Evaluate {
+        budget_ms: Option<u64>,
+        burst_secs: Option<i64>,
+        margin: Option<f64>,
+        thresholds: Option<Vec<f64>>,
+        scope: Option<String>,
+    }
+}
+
+params! {
+    /// `faces.unnamed`
+    struct Unnamed {
+        limit: Option<u64>,
+    }
+}
+
+/// One face region: its photo and its place among the photo's regions.
+#[derive(Debug, serde::Deserialize)]
+struct FaceRef {
+    photo: u64,
+    index: usize,
+}
+
+params! {
+    /// `faces.nameFaces`
+    struct NameFaces {
+        faces: Option<Vec<FaceRef>>,
+        name: Option<String>,
+    }
+}
+
+params! {
+    /// `faces.person`
+    struct Person {
+        name: Option<String>,
+        more: Option<u64>,
+    }
+}
+
+params! {
+    /// `faces.setName`
+    struct SetName {
+        id: Option<lightcraft_catalog::PhotoId>,
+        index: Option<usize>,
+        name: Option<String>,
+    }
+}
+
+params! {
+    /// `faces.renamePerson`
+    struct RenamePerson {
+        from: Option<String>,
+        to: Option<String>,
+        #[serde(default)]
+        merge: bool,
+    }
+}
+
 /// The `name` parameter of the naming commands: a name, or none (`null`, empty) to clear it.
-fn name_param(p: &Value, c: &str) -> Result<Option<String>> {
-    let name = match p.get("name") {
-        None | Some(Value::Null) => None,
-        Some(v) => Some(v.as_str().ok_or_else(|| bad(c, "`name` must be text or null"))?.trim().to_string()).filter(|n| !n.is_empty()),
-    };
+fn name_param(name: Option<&str>, c: &str) -> Result<Option<String>> {
+    let name = name.map(|n| n.trim().to_string()).filter(|n| !n.is_empty());
     if let Some(n) = &name
         && (n.chars().count() > 200 || n.chars().any(char::is_control))
     {
@@ -37,21 +123,16 @@ fn apply_name(region: &mut lightcraft_meta::Region, name: &Option<String>) {
 
 /// `faces.nameFaces {faces: [{photo, index}], name}`: name (or clear) many face regions at once, as one undo step: what
 /// naming a group of look-alikes does.
-fn name_faces(s: &mut Session, p: &Value) -> Result<Value> {
+fn name_faces(s: &mut Session, p: NameFaces) -> Result<Value> {
     const C: &str = "faces.nameFaces";
-    let name = name_param(p, C)?;
-    let list = p.get("faces").and_then(Value::as_array).ok_or_else(|| bad(C, "missing `faces`"))?;
+    let name = name_param(p.name.as_deref(), C)?;
+    let list = p.faces.ok_or_else(|| bad(C, "missing `faces`"))?;
     if list.len() > 5000 {
         return Err(bad(C, "at most 5000 faces at a time"));
     }
     let mut by_photo: std::collections::BTreeMap<u64, Vec<usize>> = std::collections::BTreeMap::new();
     for f in list {
-        let (Some(photo), Some(index)) =
-            (f.get("photo").and_then(Value::as_u64), f.get("index").and_then(Value::as_u64).and_then(|i| usize::try_from(i).ok()))
-        else {
-            return Err(bad(C, "each face needs a `photo` and an `index`"));
-        };
-        by_photo.entry(photo).or_default().push(index);
+        by_photo.entry(f.photo).or_default().push(f.index);
     }
     let (mut ops, mut named) = (Vec::new(), 0usize);
     for (photo, indexes) in by_photo {
@@ -80,11 +161,11 @@ fn name_faces(s: &mut Session, p: &Value) -> Result<Value> {
 
 /// `faces.setName {id?, index, name}`: name (or, with `null` or an empty name, un-name) one face region. Naming
 /// makes the face yours: a later "Detect Faces" run no longer replaces it.
-fn set_name(s: &mut Session, p: &Value) -> Result<Value> {
+fn set_name(s: &mut Session, p: SetName) -> Result<Value> {
     const C: &str = "faces.setName";
-    let id = p.get("id").and_then(Value::as_u64).map(lightcraft_catalog::PhotoId).or_else(|| s.active()).ok_or_else(|| bad(C, "no photo"))?;
-    let index = p.get("index").and_then(Value::as_u64).and_then(|i| usize::try_from(i).ok()).ok_or_else(|| bad(C, "missing or invalid `index`"))?;
-    let name = name_param(p, C)?;
+    let id = p.id.or_else(|| s.active()).ok_or_else(|| bad(C, "no photo"))?;
+    let index = p.index.ok_or_else(|| bad(C, "missing or invalid `index`"))?;
+    let name = name_param(p.name.as_deref(), C)?;
     let mut meta = s.catalog.photo(id).ok_or_else(|| bad(C, "no such photo"))?.meta.clone();
     let region = meta.regions.get_mut(index).ok_or_else(|| bad(C, "no such region"))?;
     apply_name(region, &name);
@@ -96,34 +177,18 @@ fn set_name(s: &mut Session, p: &Value) -> Result<Value> {
 /// `faces.renamePerson {from, to, merge?}`: give every in-library face of `from` the exact name `to`, as one undo
 /// step. Names match the People view (trimmed, case-insensitive). A `to` that is already someone else is refused
 /// unless `merge` is set, and then the two people become one. The sidecar is not touched, and a refusal changes nothing.
-fn rename_person(s: &mut Session, p: &Value) -> Result<Value> {
+fn rename_person(s: &mut Session, p: RenamePerson) -> Result<Value> {
     const C: &str = "faces.renamePerson";
-    let from = match p.get("from") {
-        Some(Value::String(v)) => {
-            let t = v.trim();
-            if t.is_empty() {
-                return Err(bad(C, "missing `from`"));
-            }
-            t.to_string()
+    let from = p.from.as_deref().map(str::trim).filter(|t| !t.is_empty()).ok_or_else(|| bad(C, "missing `from`"))?.to_string();
+    let to = match p.to.as_deref().map(str::trim) {
+        Some("") => return Err(bad(C, "`to` must be a name")),
+        Some(t) if t.chars().count() > 200 || t.chars().any(char::is_control) => {
+            return Err(bad(C, "a name is at most 200 characters, without control characters"));
         }
-        Some(_) => return Err(bad(C, "`from` must be text")),
-        None => return Err(bad(C, "missing `from`")),
-    };
-    let to = match p.get("to") {
-        Some(Value::String(v)) => {
-            let t = v.trim();
-            if t.is_empty() {
-                return Err(bad(C, "`to` must be a name"));
-            }
-            if t.chars().count() > 200 || t.chars().any(char::is_control) {
-                return Err(bad(C, "a name is at most 200 characters, without control characters"));
-            }
-            t.to_string()
-        }
-        Some(_) => return Err(bad(C, "`to` must be text")),
+        Some(t) => t.to_string(),
         None => return Err(bad(C, "missing `to`")),
     };
-    let merge = super::bool_or(p, "merge", false);
+    let merge = p.merge;
     let from_key = from.to_lowercase();
     let to_key = to.to_lowercase();
     let mut matched = 0usize;
@@ -194,8 +259,8 @@ struct Arranged {
 
 /// `faces.unnamed {limit?: 600}`: the faces nobody has named, to be named a group at a time. With recognition running,
 /// faces that look alike are next to each other, and a face the named faces recognise carries the name they suggest.
-fn unnamed(s: &mut Session, p: &Value) -> Result<Value> {
-    let limit = p.get("limit").and_then(Value::as_u64).map_or(600, |n| usize::try_from(n).unwrap_or(600)).clamp(1, MAX_UNNAMED);
+fn unnamed(s: &mut Session, p: Unnamed) -> Result<Value> {
+    let limit = p.limit.map_or(600, |n| usize::try_from(n).unwrap_or(600)).clamp(1, MAX_UNNAMED);
     let mut all: Vec<(u64, usize, lightcraft_geom::Rect)> = Vec::new();
     for ph in s.catalog.photos().filter(|ph| ph.in_library()) {
         for (index, r) in ph.meta.regions.iter().enumerate() {
@@ -238,11 +303,11 @@ const MAX_CONFIRMED: usize = 5000;
 
 /// `faces.person {name, more?}`: the faces named `name` (case-insensitively) across the library, and, when recognition is
 /// running, the unnamed faces that look most like them, to be confirmed one by one.
-fn person(s: &mut Session, p: &Value) -> Result<Value> {
+fn person(s: &mut Session, p: Person) -> Result<Value> {
     const C: &str = "faces.person";
-    let name = p.get("name").and_then(Value::as_str).map(str::trim).filter(|n| !n.is_empty()).ok_or_else(|| bad(C, "missing `name`"))?;
+    let name = p.name.as_deref().map(str::trim).filter(|n| !n.is_empty()).ok_or_else(|| bad(C, "missing `name`"))?;
     let key = name.to_lowercase();
-    let limit = p.get("more").and_then(Value::as_u64).map_or(120, |n| usize::try_from(n).unwrap_or(120)).min(1000);
+    let limit = p.more.map_or(120, |n| usize::try_from(n).unwrap_or(120)).min(1000);
     let (mut shown, mut total, mut confirmed) = (name.to_string(), 0usize, Vec::new());
     for ph in s.catalog.photos().filter(|ph| ph.in_library()) {
         for (index, r) in ph.meta.regions.iter().enumerate() {
@@ -465,13 +530,12 @@ mod imp {
         out.into_iter().map(|(_, id)| id).collect()
     }
 
-    pub fn index(s: &mut Session, p: &Value) -> Result<Value> {
+    pub fn index(s: &mut Session, p: super::IndexParams) -> Result<Value> {
         const C: &str = "faces.index";
         let embedder = current(s, C)?;
         collect(s);
-        let budget = Duration::from_millis(p.get("budgetMs").and_then(Value::as_u64).unwrap_or(200).min(600_000));
-        let first: Vec<PhotoId> =
-            p.get("ids").and_then(Value::as_array).map(|a| a.iter().filter_map(Value::as_u64).map(PhotoId).collect()).unwrap_or_default();
+        let budget = Duration::from_millis(p.budget_ms.unwrap_or(200).min(600_000));
+        let first: Vec<PhotoId> = p.ids.unwrap_or_default();
         let todo = pending(s, &first, false);
         let started = Instant::now();
         let (mut embedded, mut failed, mut done) = (0, 0, 0);
@@ -497,10 +561,6 @@ mod imp {
         }))
     }
 
-    fn str_scope(p: &Value) -> Option<&str> {
-        p.get("scope").and_then(Value::as_str)
-    }
-
     /// Seconds since 1970 of an ISO capture time (`2024-09-20T10:48:45…`, any zone suffix ignored): only for telling
     /// shots taken close together, so the zone does not matter.
     fn capture_secs(iso: &str) -> Option<i64> {
@@ -522,22 +582,22 @@ mod imp {
     /// photos and which threshold to trust. Each named face in turn is treated as unknown and ranked against the
     /// other named faces, ignoring those from shots taken within `burstSecs` of it (near-duplicates would make
     /// everything look easy). Reports counts only.
-    pub fn evaluate(s: &mut Session, p: &Value) -> Result<Value> {
+    pub fn evaluate(s: &mut Session, p: super::Evaluate) -> Result<Value> {
         const C: &str = "faces.evaluate";
         let embedder = current(s, C)?;
         collect(s);
-        let burst = p.get("burstSecs").and_then(Value::as_i64).unwrap_or(5).clamp(0, 86_400 * 7);
-        let margin = p.get("margin").and_then(Value::as_f64).filter(|v| v.is_finite()).map_or(DEFAULT_MARGIN, |v| v as f32);
+        let burst = p.burst_secs.unwrap_or(5).clamp(0, 86_400 * 7);
+        let margin = p.margin.map_or(DEFAULT_MARGIN, |v| v as f32);
         let thresholds: Vec<f32> = p
-            .get("thresholds")
-            .and_then(Value::as_array)
-            .map(|a| a.iter().filter_map(Value::as_f64).filter(|v| v.is_finite()).map(|v| v as f32).take(64).collect())
+            .thresholds
+            .map(|a| a.iter().map(|v| *v as f32).take(64).collect())
             .filter(|v: &Vec<f32>| !v.is_empty())
             .unwrap_or_else(|| (4..=16).map(|i| i as f32 * 0.05).collect());
-        let budget = Duration::from_millis(p.get("budgetMs").and_then(Value::as_u64).unwrap_or(0).min(3_600_000));
+        let budget = Duration::from_millis(p.budget_ms.unwrap_or(0).min(3_600_000));
         let started = Instant::now();
         // `scope: "visible"` looks only at the photos the current filter shows (say one year, or one album)
-        let scope: Option<std::collections::HashSet<PhotoId>> = (str_scope(p) == Some("visible")).then(|| s.visible_cloned().into_iter().collect());
+        let scope: Option<std::collections::HashSet<PhotoId>> =
+            (p.scope.as_deref() == Some("visible")).then(|| s.visible_cloned().into_iter().collect());
         let in_scope = |id: PhotoId| scope.as_ref().is_none_or(|v| v.contains(&id));
         let todo: Vec<PhotoId> = pending(s, &[], false).into_iter().filter(|id| in_scope(*id)).collect();
         let mut done = 0;
@@ -625,11 +685,11 @@ mod imp {
     /// `faces.pump`: cheap to call every frame. Takes in what the background worker has finished and, when it is idle,
     /// hands it the next photo with faces to embed. Does nothing (and says so) until recognition is switched on in
     /// Settings with a model chosen.
-    pub fn pump(s: &mut Session, p: &Value) -> Result<Value> {
+    pub fn pump(s: &mut Session, p: super::Pump) -> Result<Value> {
         const C: &str = "faces.pump";
         // how hard the scan may work now, from what the user is doing (the app says); nothing new is started while paused,
         // and what is already running finishes
-        let pace = Pace::parse(p.get("pace").and_then(Value::as_str));
+        let pace = Pace::parse(p.pace.as_deref());
         let target = target_workers(pace);
         // a model that has finished downloading is installed and switched on here, whether or not recognition was on
         finish_downloads(s);
@@ -842,17 +902,16 @@ mod imp {
         on
     }
 
-    pub fn suggest(s: &mut Session, p: &Value) -> Result<Value> {
+    pub fn suggest(s: &mut Session, p: super::Suggest) -> Result<Value> {
         const C: &str = "faces.suggest";
         let embedder = current(s, C)?;
         collect(s);
-        let targets = s.targets(p)?;
+        let targets = p.targets(s);
         let model_threshold = embedder.manifest().thresholds.match_cosine;
-        let num = |k: &str| p.get(k).and_then(Value::as_f64).filter(|v| v.is_finite()).map(|v| v as f32);
-        let threshold = num("threshold").or(model_threshold).unwrap_or(DEFAULT_THRESHOLD);
-        let margin = num("margin").unwrap_or(DEFAULT_MARGIN);
+        let threshold = p.threshold.map(|v| v as f32).or(model_threshold).unwrap_or(DEFAULT_THRESHOLD);
+        let margin = p.margin.map_or(DEFAULT_MARGIN, |v| v as f32);
         // the photos asked about are embedded first, then the named faces they are compared with, within the budget
-        let budget = Duration::from_millis(p.get("budgetMs").and_then(Value::as_u64).unwrap_or(1500).min(600_000));
+        let budget = Duration::from_millis(p.budget_ms.unwrap_or(1500).min(600_000));
         let started = Instant::now();
         let todo = pending(s, &targets, false);
         let mut done = 0;
@@ -1080,19 +1139,19 @@ mod imp {
     use super::super::bad;
     use crate::{Result, Session};
 
-    pub fn index(_: &mut Session, _: &Value) -> Result<Value> {
+    pub fn index(_: &mut Session, _: super::IndexParams) -> Result<Value> {
         Err(bad("faces.index", "this build cannot run face recognition"))
     }
 
-    pub fn suggest(_: &mut Session, _: &Value) -> Result<Value> {
+    pub fn suggest(_: &mut Session, _: super::Suggest) -> Result<Value> {
         Err(bad("faces.suggest", "this build cannot run face recognition"))
     }
 
-    pub fn evaluate(_: &mut Session, _: &Value) -> Result<Value> {
+    pub fn evaluate(_: &mut Session, _: super::Evaluate) -> Result<Value> {
         Err(bad("faces.evaluate", "this build cannot run face recognition"))
     }
 
-    pub fn pump(_: &mut Session, _: &Value) -> Result<Value> {
+    pub fn pump(_: &mut Session, _: super::Pump) -> Result<Value> {
         Ok(serde_json::json!({"active": false}))
     }
 
@@ -1107,84 +1166,93 @@ mod imp {
 
 pub fn specs() -> Vec<CommandSpec> {
     vec![
-        raw_cmd!(
+        cmd!(
             "faces.index",
             "Index Faces",
             [],
             None,
             "{budgetMs?: 200, ids?: [photo ids to do first]} → {embedded, photosDone, pendingPhotos, indexedFaces, ms} — embed the faces in the library with the chosen recognition model, as many photos as fit in the time (at least one); call again until `pendingPhotos` is 0. `budgetMs: 0` only reports",
+            IndexParams,
             super::always,
             imp::index
         ),
-        raw_cmd!(
+        cmd!(
             "faces.suggest",
             "Suggest Names for Faces",
             [],
             None,
             "{ids?, threshold?, margin?, budgetMs?} → {photos: [{id, faces: [{index, suggestion: {name, score, runnerUp} | null, candidates: [{name, score}]}]}]} — who the unnamed faces in these photos might be, from the faces already named in the library. Only suggestions: nothing is named",
+            Suggest,
             super::always,
             imp::suggest
         ),
-        raw_cmd!(
+        cmd!(
             query "faces.pump",
             "Index Faces in the Background",
             [],
             None,
             "{pace?: pause | light | normal | full} → {active, inFlight, pendingPhotos, indexedFaces, searchedPhotos, workers} — cheap to call every frame: takes in what the background workers have finished and gives them the next photos, as many at once as the pace allows (none when paused, one when light, half the machine's threads when normal, four fifths when full); inactive until face recognition is on in Settings with a model chosen",
+            Pump,
             super::always,
             imp::pump
         ),
-        raw_cmd!(
+        cmd!(
             "faces.evaluate",
             "Evaluate Face Recognition",
             [],
             None,
             "{budgetMs?: 0, burstSecs?: 5, margin?, thresholds?: [..], scope?: \"visible\"} → {queries, top1, sweep: [{threshold, suggested, correct, precision, recall}]} — leave-one-out over your named faces: each is ranked against the others (ignoring shots within burstSecs of it) to show how well the chosen model recognises people in *your* photos and which threshold to trust. Faces not yet embedded are done within budgetMs (`faces.index` does them all); counts only",
+            Evaluate,
             super::always,
             imp::evaluate
         ),
-        raw_cmd!(
+        cmd!(
             query "faces.unnamed",
             "Unnamed Faces",
             [],
             None,
             "{limit?: 600} → {total, faces: [{photo, index, rect, view, suggestion: {name, score} | null}], ordered, ready} — the faces nobody has named; with recognition running, look-alikes are next to each other and a face the named ones recognise carries the name they suggest. `view` is the box to show the face by. Name them with `faces.nameFaces`",
+            Unnamed,
             super::always,
             unnamed
         ),
-        raw_cmd!(
+        cmd!(
             "faces.nameFaces",
             "Name Faces",
             [],
             None,
             "{faces: [{photo, index}], name} → {named, photos} — name (or, with a null or empty name, clear) many face regions as one undoable step; the sidecar is not touched",
+            NameFaces,
             super::always,
             name_faces
         ),
-        raw_cmd!(
+        cmd!(
             query "faces.person",
             "Faces of a Person",
             [],
             None,
             "{name, more?: 120} → {name, total, confirmed: [{photo, index, rect}], more: [{photo, index, rect, score}], ready, pendingPhotos} — the faces named `name` across the library, and the unnamed faces that look most like them (best first, already embedded ones only, once recognition is on); confirm one with `faces.setName`",
+            Person,
             super::always,
             person
         ),
-        raw_cmd!(
+        cmd!(
             "faces.setName",
             "Name Face",
             [],
             None,
             "{id?, index, name} — name a face region (null or empty clears it); undoable; the sidecar is not touched",
+            SetName,
             super::always,
             set_name
         ),
-        raw_cmd!(
+        cmd!(
             "faces.renamePerson",
             "Rename Person",
             [],
             None,
             "{from, to, merge?: bool} → {faces, photos, from, to, merged} — give every in-library face of `from` the name `to` (trimmed, any capitalization), one undo step; refused when `to` is already someone else unless `merge` is true, which combines the two; the sidecar is not touched",
+            RenamePerson,
             super::always,
             rename_person
         ),

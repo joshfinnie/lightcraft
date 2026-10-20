@@ -17,7 +17,8 @@ use lightcraft_faces::yunet::{Detector, Face, Options};
 use lightcraft_meta::{Region, RegionKind};
 use serde_json::{Value, json};
 
-use super::{CommandSpec, always, bad, has_selection, raw_cmd};
+use super::params::params;
+use super::{CommandSpec, always, bad, cmd, has_selection};
 use crate::{AiModel, EngineError, Result, Session};
 
 const C: &str = "faces.detect";
@@ -168,11 +169,27 @@ pub(crate) fn offer_gpu(
     }
 }
 
+params! {
+    /// `faces.gpu`
+    struct Gpu {
+        cpu_only: Option<bool>,
+    }
+}
+
+params! {
+    /// `faces.detect`
+    struct Detect with targets {
+        apply: Option<bool>,
+        score: Option<f64>,
+        nms_iou: Option<f64>,
+        max_faces: Option<u64>,
+    }
+}
+
 /// `faces.gpu`: where the face models run, and the switch that keeps them on the CPU.
-fn gpu(s: &mut Session, p: &Value) -> Result<Value> {
+fn gpu(s: &mut Session, p: Gpu) -> Result<Value> {
     const C: &str = "faces.gpu";
-    if let Some(cpu) = p.get("cpuOnly") {
-        let cpu = cpu.as_bool().ok_or_else(|| bad(C, "`cpuOnly` is true or false"))?;
+    if let Some(cpu) = p.cpu_only {
         let dir = s.face_models_dir.clone().ok_or_else(|| bad(C, "this build has nowhere to keep face models (the desktop app does)"))?;
         super::face_models::set_cpu_only(&dir, cpu)?;
         let detector = LOADED.lock().unwrap_or_else(PoisonError::into_inner).as_ref().map(|(_, d)| d.clone());
@@ -246,18 +263,18 @@ pub(crate) fn render_rgb(s: &mut Session, id: lightcraft_catalog::PhotoId, edge:
     Ok((rgb, image.width, image.height))
 }
 
-fn detect(s: &mut Session, p: &Value) -> Result<Value> {
-    let apply = p.get("apply").and_then(Value::as_bool).unwrap_or(true);
+fn detect(s: &mut Session, p: Detect) -> Result<Value> {
+    let apply = p.apply.unwrap_or(true);
     let defaults = Options::default();
     let opts = Options {
-        score: p.get("score").and_then(Value::as_f64).map_or(defaults.score, |v| v as f32),
-        nms_iou: p.get("nmsIou").and_then(Value::as_f64).map_or(defaults.nms_iou, |v| v as f32),
-        max_faces: p.get("maxFaces").and_then(Value::as_u64).map_or(defaults.max_faces, |v| usize::try_from(v).unwrap_or(defaults.max_faces)),
+        score: p.score.map_or(defaults.score, |v| v as f32),
+        nms_iou: p.nms_iou.map_or(defaults.nms_iou, |v| v as f32),
+        max_faces: p.max_faces.map_or(defaults.max_faces, |v| usize::try_from(v).unwrap_or(defaults.max_faces)),
     };
     let detector = detector(s).map_err(|e| e.into_error(C))?;
     let started = Instant::now();
     let (mut results, mut ops) = (Vec::new(), Vec::new());
-    for id in s.targets(p)? {
+    for id in p.targets(s) {
         let (rgb, width, height) = match render_rgb(s, id, LOOK_EDGE) {
             Ok(r) => r,
             Err(e) => {
@@ -299,21 +316,23 @@ fn detect(s: &mut Session, p: &Value) -> Result<Value> {
 
 pub fn specs() -> Vec<CommandSpec> {
     vec![
-        raw_cmd!(
+        cmd!(
             "faces.detect",
             "Detect Faces",
             ["Photo"],
             None,
             "{ids?, apply?: bool (default true), score?: 0.6, nmsIou?: 0.3, maxFaces?} → {photos: [{id, faces: [{rect, score, landmarks}]}]}. Finds faces with the YuNet detector (download it first: `faces.models.download {id: \"yunet-2023mar\"}`) and, unless `apply` is false, adds them as unnamed face regions (one undo step), replacing earlier detections but never regions from XMP or ones you named; the sidecar is not touched",
+            Detect,
             has_selection,
             detect
         ),
-        raw_cmd!(
+        cmd!(
             query "faces.gpu",
             "Face Models on the GPU",
             [],
             None,
             "{cpuOnly?: bool} → {cpuOnly, detection, recognition}: where the face models run, each as {checking, device, why} (null until it is loaded). The GPU is used only after a background check shows it gives the CPU's results faster; `cpuOnly: true` keeps every face model on the CPU (Settings ▸ Faces), `false` checks the GPU again",
+            Gpu,
             always,
             gpu
         ),

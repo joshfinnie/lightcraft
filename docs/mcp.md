@@ -152,9 +152,11 @@ when a path is optional. The image-only `render_preview` and `ui_screenshot` rem
 and non-destructive. These annotations are client hints, not a file-access sandbox.
 `export` is not idempotent because the default conflict policy chooses a new filename on repeated calls.
 Unknown helper argument keys return JSON-RPC `-32602` naming the key and accepted arguments.
-Generated `cmd_*` tools and nested command params remain free-form: the registry has prose
-parameter docs, not machine-readable schemas. Existing command validation (including strict
-export options) is preserved. Escaped tool panics return `isError: true`, and the session keeps
+Generated `cmd_*` tools and nested command params are free-form in the tool schema: the registry
+has prose parameter docs, not machine-readable schemas. Every command checks its params, though:
+a key it doesn't take (at any depth, so a misspelled `idz` or `settings.light.exposre`) or a
+value of the wrong type is an error naming the key and the keys the command takes, and nothing
+runs. Escaped tool panics return `isError: true`, and the session keeps
 serving; backend panics during resource reads or tool listing return an internal error.
 The headless backend owns its session directly, without a session mutex.
 

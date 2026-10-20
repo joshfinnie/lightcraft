@@ -68,8 +68,7 @@ pub struct CommandSpec {
     /// `id`, see [`names_photos`]) skips it, and the command validates those photos itself.
     /// Off unless a command opts in (`CommandSpec { explicit_targets: true, ..cmd!(…) }`).
     pub explicit_targets: bool,
-    /// The top-level keys `run` takes; `None` for any (a partial value it merges, or a command
-    /// still reading raw JSON).
+    /// The top-level keys `run` takes; `None` for any (a partial value it merges and checks).
     pub keys: fn() -> Option<&'static [&'static str]>,
 }
 
@@ -161,17 +160,6 @@ macro_rules! cmd {
 }
 pub(crate) use cmd;
 
-/// A command still reading raw JSON params; moving to [`cmd!`].
-macro_rules! raw_cmd {
-    ($id:literal, $label:literal, [$($m:literal),*], $sc:expr, $params:literal, $en:expr, $run:expr) => {
-        $crate::cmd::CommandSpec { id: $id, label: $label, menu: &[$($m),*], shortcut: $sc, params: $params, enabled: $en, run: $run, journal: true, explicit_targets: false, keys: || None }
-    };
-    (query $id:literal, $label:literal, [$($m:literal),*], $sc:expr, $params:literal, $en:expr, $run:expr) => {
-        $crate::cmd::CommandSpec { id: $id, label: $label, menu: &[$($m),*], shortcut: $sc, params: $params, enabled: $en, run: $run, journal: false, explicit_targets: false, keys: || None }
-    };
-}
-pub(crate) use raw_cmd;
-
 pub fn command_specs() -> &'static [CommandSpec] {
     static SPECS: std::sync::OnceLock<Vec<CommandSpec>> = std::sync::OnceLock::new();
     SPECS.get_or_init(|| {
@@ -230,12 +218,6 @@ pub(crate) fn names_photos(p: &Value) -> bool {
 
 pub(crate) fn bad(cmd: &str, msg: impl Into<String>) -> EngineError {
     EngineError::BadParams { cmd: cmd.into(), msg: msg.into() }
-}
-pub(crate) fn str_param<'a>(p: &'a Value, key: &str) -> Option<&'a str> {
-    p.get(key).and_then(Value::as_str)
-}
-pub(crate) fn bool_or(p: &Value, key: &str, d: bool) -> bool {
-    p.get(key).and_then(Value::as_bool).unwrap_or(d)
 }
 pub(crate) fn ok() -> Result<Value> {
     Ok(Value::Null)

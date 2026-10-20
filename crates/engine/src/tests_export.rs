@@ -826,13 +826,13 @@ mod apple_photos {
         let missing = std::env::temp_dir().join("lc-photos-nonexistent").join("a.jpg").to_string_lossy().into_owned();
         for (p, msg) in [
             (json!({}), "missing `paths`"),
-            (json!({"paths": "a.jpg"}), "missing `paths`"),
-            (json!({"paths": [1]}), "array of file paths"),
+            (json!({"paths": "a.jpg"}), "`paths`: invalid type"),
+            (json!({"paths": [1]}), "`paths[0]`: invalid type"),
             (json!({"paths": []}), "no files"),
             (json!({"paths": ["relative.jpg"]}), "absolute"),
             (json!({"paths": [missing]}), "no such file"),
-            (json!({"paths": paths, "album": 3}), "`album` must be a string"),
-            (json!({"paths": paths, "wait": "yes"}), "`wait` must be true or false"),
+            (json!({"paths": paths, "album": 3}), "`album`: invalid type"),
+            (json!({"paths": paths, "wait": "yes"}), "`wait`: invalid type"),
             (json!({"paths": paths, "albm": "x"}), "unknown parameter `albm`"),
         ] {
             let e = s.execute("export.addToPhotos", &p).unwrap_err().to_string();

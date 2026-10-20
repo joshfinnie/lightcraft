@@ -240,7 +240,10 @@ For example, send these requests one at a time and read each reply before sendin
 {"id":5,"method":"engine.execute","params":{"command":"photo.inspect"}}
 ```
 
-Replies use `{id, ok, result}` or `{id, ok: false, error}`. In the photo snapshot, exposure is
+Replies use `{id, ok, result}` or `{id, ok: false, error}`. A command refuses params it doesn't
+take: an unknown key (at any depth) or a value of the wrong type is an error such as
+`` invalid parameters for `photo.rate`: unknown parameter `idz` (takes `ids`, `id`, `rating`, `advance`) ``,
+and nothing changes. In the photo snapshot, exposure is
 `result.develop.light.exposure`; the controls array's matching `light.exposure` entry has `value`,
 `min: -5`, `max: 5` and `step: 0.01`. `wb.temp` is Kelvin on raws with colour matrices and relative
 (6500 = as shot) elsewhere, as described above. Re-read values after edits to reflect the stored result.

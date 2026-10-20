@@ -62,6 +62,10 @@ of it. Full standard: `../craftrules/standards/never-crash.md`
 - **Pure Rust** in the product. No C/C++ dependencies.
 - **Layering** (`plan/architecture.md` §3, enforced by `cargo xtask layers`): nothing below L5 depends on egui/eframe/winit/rfd.
 - **Everything is a command** (`crates/engine`): id, label, menu path, shortcut, params, enabled(), run(). UI, CLI, control channel and MCP all dispatch by id. Every slider is a `develop` control spec.
+  A command's params are a `params!` struct (`crates/engine/src/cmd/params.rs`) named in its `cmd!`: a key it doesn't
+  take (at any depth) or a value of the wrong type is refused before `run`, never ignored. A partial value the command
+  merges (`Patch`) is read with `params::from_value`, which checks it the same way. `tests/param_callers.rs` checks every
+  written-out call in the repo against the keys its command takes.
 - **Long-running work shows in the activity stack** ([`docs/background-tasks.md`](docs/background-tasks.md)): anything
   that runs off the UI thread and can take more than a moment holds a `TaskGuard` from `session.activity.start(kind,
   label, cancel)` for its whole run. It adopts the cancel flag the job already checks (`Cancel::Flag`), or uses

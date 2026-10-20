@@ -16,7 +16,94 @@ use lightcraft_denoise::known::{self, Known};
 use lightcraft_denoise::manifest::{self, DenoiserManifest, MAX_MANIFEST_BYTES, MAX_MODEL_BYTES};
 use serde_json::{Value, json};
 
-use super::{CommandSpec, always, bad, bool_or, raw_cmd, str_param};
+use super::params::{NoParams, params, present};
+use super::{CommandSpec, always, bad, cmd};
+
+params! {
+    /// `denoise.models.install`
+    struct Install {
+        path: Option<String>,
+        #[serde(default)]
+        acknowledged: bool,
+        activate: Option<bool>,
+        #[serde(default)]
+        background: bool,
+    }
+}
+
+params! {
+    /// `denoise.models.inspect`
+    struct ModelFile {
+        path: Option<String>,
+    }
+}
+
+params! {
+    /// `denoise.models.download`
+    struct Download {
+        id: Option<String>,
+        #[serde(default)]
+        acknowledged: bool,
+    }
+}
+
+params! {
+    /// Commands on one model; `denoise.models.select` takes `null` (denoise off).
+    struct ModelId {
+        id: Option<String>,
+    }
+}
+
+params! {
+    /// `denoise.settings`: `threads: null` goes back to the default.
+    struct SettingsParams {
+        auto: Option<bool>,
+        cache_gb: Option<u64>,
+        #[serde(default, deserialize_with = "present")]
+        threads: Option<Option<u64>>,
+        run_on: Option<String>,
+    }
+}
+
+params! {
+    /// `denoise.toggle`
+    struct Toggle {
+        id: Option<PhotoId>,
+        enabled: Option<bool>,
+    }
+}
+
+params! {
+    /// `denoise.queue`
+    struct Queue {
+        ids: Option<Vec<PhotoId>>,
+        scope: Option<String>,
+        #[serde(default)]
+        retry: bool,
+    }
+}
+
+params! {
+    /// `denoise.cancel`
+    struct CancelParams {
+        id: Option<PhotoId>,
+        all: Option<bool>,
+    }
+}
+
+params! {
+    /// `denoise.status`
+    struct Status {
+        id: Option<PhotoId>,
+    }
+}
+
+params! {
+    /// `denoise.pump`
+    struct Pump {
+        pace: Option<String>,
+    }
+}
 use crate::denoise::{Pace, RunOn, Settings, forget_gpu_set_ups, installed_models, read_capped, read_settings, write_atomic, write_settings};
 use crate::model_download::State;
 use crate::{EngineError, Result, Session};
@@ -54,7 +141,7 @@ fn host_of(k: &Known) -> Option<String> {
     k.download.as_ref().map(|d| lightcraft_denoise::known::host(&d.url).to_string())
 }
 
-fn list(s: &mut Session, _: &Value) -> Result<Value> {
+fn list(s: &mut Session, _: NoParams) -> Result<Value> {
     s.denoise_refresh_active(true);
     let dir = s.denoise.models_dir.clone();
     let st = dir.as_deref().map(read_settings).unwrap_or_default();
@@ -276,15 +363,15 @@ fn start_install(s: &mut Session, src: PathBuf, id: String, activate: bool, veri
     Ok(json!({"started": id}))
 }
 
-fn install(s: &mut Session, p: &Value) -> Result<Value> {
+fn install(s: &mut Session, p: Install) -> Result<Value> {
     const C: &str = "denoise.models.install";
-    let path = str_param(p, "path").ok_or_else(|| bad(C, "missing `path`"))?;
-    let acknowledged = bool_or(p, "acknowledged", false);
-    let activate = bool_or(p, "activate", true);
+    let path = p.path.as_deref().ok_or_else(|| bad(C, "missing `path`"))?;
+    let acknowledged = p.acknowledged;
+    let activate = p.activate.unwrap_or(true);
     if !acknowledged {
         return Err(bad(C, "the licence has not been accepted: show its terms first"));
     }
-    if bool_or(p, "background", false) {
+    if p.background {
         return start_install(s, PathBuf::from(path), "local-install".into(), activate, false);
     }
     if s.denoise.install.is_some() {
@@ -296,9 +383,9 @@ fn install(s: &mut Session, p: &Value) -> Result<Value> {
 }
 
 /// Read only the small adjacent manifest; hashing and execution happen in the install worker.
-fn inspect(s: &mut Session, p: &Value) -> Result<Value> {
+fn inspect(s: &mut Session, p: ModelFile) -> Result<Value> {
     const C: &str = "denoise.models.inspect";
-    let path = str_param(p, "path").ok_or_else(|| bad(C, "missing `path`"))?;
+    let path = p.path.as_deref().ok_or_else(|| bad(C, "missing `path`"))?;
     let src = Path::new(path);
     if !src.extension().is_some_and(|e| e.eq_ignore_ascii_case("onnx")) {
         return Err(bad(C, "choose an .onnx file with denoise-model.json beside it"));
@@ -360,16 +447,16 @@ pub(crate) fn finish_downloads(s: &mut Session) {
     }
 }
 
-fn download(s: &mut Session, p: &Value) -> Result<Value> {
+fn download(s: &mut Session, p: Download) -> Result<Value> {
     const C: &str = "denoise.models.download";
-    let id = str_param(p, "id").ok_or_else(|| bad(C, "missing `id`"))?;
+    let id = p.id.as_deref().ok_or_else(|| bad(C, "missing `id`"))?;
     let dir = models_dir(s, C)?;
     let k = known::find(id).ok_or_else(|| bad(C, "LightCraft has no download for that model: get the file from its page, then add it"))?;
     let spec = k.download.clone().ok_or_else(|| bad(C, "LightCraft has no download for that model: get the file from its page, then add it"))?;
     if !cfg!(feature = "denoise") {
         return Err(bad(C, "this build cannot run denoise models, so there is nothing to download for it"));
     }
-    if !bool_or(p, "acknowledged", false) {
+    if !p.acknowledged {
         return Err(bad(
             C,
             "the licence has not been accepted: show the user the model's terms (see `denoise.models.list`) and pass `acknowledged: true` once they agree",
@@ -395,21 +482,21 @@ fn download_row(id: &str, state: &State) -> Value {
     }
 }
 
-fn downloads(s: &mut Session, _: &Value) -> Result<Value> {
+fn downloads(s: &mut Session, _: NoParams) -> Result<Value> {
     finish_downloads(s);
     let all: Vec<Value> = s.denoise.downloads.snapshot().iter().map(|(id, st)| download_row(id, st)).collect();
     Ok(json!({"running": s.denoise.downloads.running(), "downloads": all}))
 }
 
-fn download_cancel(s: &mut Session, p: &Value) -> Result<Value> {
+fn download_cancel(s: &mut Session, p: ModelId) -> Result<Value> {
     const C: &str = "denoise.models.downloadCancel";
-    let id = str_param(p, "id").ok_or_else(|| bad(C, "missing `id`"))?;
+    let id = p.id.as_deref().ok_or_else(|| bad(C, "missing `id`"))?;
     Ok(json!({"discarded": s.denoise.downloads.discard(id)}))
 }
 
-fn test(s: &mut Session, p: &Value) -> Result<Value> {
+fn test(s: &mut Session, p: ModelId) -> Result<Value> {
     const C: &str = "denoise.models.test";
-    let id = str_param(p, "id").ok_or_else(|| bad(C, "missing `id`"))?;
+    let id = p.id.as_deref().ok_or_else(|| bad(C, "missing `id`"))?;
     let dir = models_dir(s, C)?;
     let found = installed_models(&dir).into_iter().find(|i| i.manifest.id == id).ok_or_else(|| bad(C, "that model is not installed"))?;
     let run_on = s.denoise.settings.run_on();
@@ -428,9 +515,9 @@ fn test(s: &mut Session, p: &Value) -> Result<Value> {
     Ok(json!({"id": id, "ok": ok, "result": detail}))
 }
 
-fn remove(s: &mut Session, p: &Value) -> Result<Value> {
+fn remove(s: &mut Session, p: ModelId) -> Result<Value> {
     const C: &str = "denoise.models.remove";
-    let id = str_param(p, "id").ok_or_else(|| bad(C, "missing `id`"))?;
+    let id = p.id.as_deref().ok_or_else(|| bad(C, "missing `id`"))?;
     let dir = models_dir(s, C)?;
     if !lightcraft_denoise::licence::valid_id(id) {
         return Err(bad(C, "not a model id"));
@@ -451,13 +538,10 @@ fn remove(s: &mut Session, p: &Value) -> Result<Value> {
     Ok(json!({"removed": id, "model": st.model}))
 }
 
-fn select(s: &mut Session, p: &Value) -> Result<Value> {
+fn select(s: &mut Session, p: ModelId) -> Result<Value> {
     const C: &str = "denoise.models.select";
     let dir = models_dir(s, C)?;
-    let id = match p.get("id") {
-        None | Some(Value::Null) => None,
-        Some(v) => Some(v.as_str().ok_or_else(|| bad(C, "`id` must be a model id or null"))?.to_string()),
-    };
+    let id = p.id;
     if let Some(id) = &id
         && !installed_models(&dir).iter().any(|i| &i.manifest.id == id)
     {
@@ -471,27 +555,27 @@ fn select(s: &mut Session, p: &Value) -> Result<Value> {
     Ok(json!({"model": st.model}))
 }
 
-fn settings(s: &mut Session, p: &Value) -> Result<Value> {
+fn settings(s: &mut Session, p: SettingsParams) -> Result<Value> {
     const C: &str = "denoise.settings";
     let dir = models_dir(s, C)?;
     let mut st: Settings = read_settings(&dir);
-    if let Some(v) = p.get("auto") {
-        st.auto = Some(v.as_bool().ok_or_else(|| bad(C, "`auto` must be true or false"))?);
+    if let Some(v) = p.auto {
+        st.auto = Some(v);
     }
-    if let Some(v) = p.get("cacheGb") {
+    if let Some(n) = p.cache_gb {
         let n =
-            v.as_u64().filter(|n| (1..=10_000).contains(n)).ok_or_else(|| bad(C, "`cacheGb` must be a whole number of gigabytes from 1 to 10000"))?;
+            Some(n).filter(|n| (1..=10_000).contains(n)).ok_or_else(|| bad(C, "`cacheGb` must be a whole number of gigabytes from 1 to 10000"))?;
         st.cache_gb = Some(n as u32);
     }
-    if let Some(v) = p.get("threads") {
+    if let Some(v) = p.threads {
         st.threads = match v {
-            Value::Null => None,
-            v => Some(v.as_u64().filter(|n| (1..=64).contains(n)).ok_or_else(|| bad(C, "`threads` must be from 1 to 64, or null"))? as u32),
+            None => None,
+            Some(n) => Some(Some(n).filter(|n| (1..=64).contains(n)).ok_or_else(|| bad(C, "`threads` must be from 1 to 64, or null"))? as u32),
         };
     }
-    let run_on = match p.get("runOn") {
+    let run_on = match p.run_on.as_deref() {
         None => None,
-        Some(v) => Some(v.as_str().and_then(RunOn::parse).ok_or_else(|| bad(C, "`runOn` must be auto, gpu or cpu"))?),
+        Some(v) => Some(RunOn::parse(v).ok_or_else(|| bad(C, "`runOn` must be auto, gpu or cpu"))?),
     };
     if let Some(r) = run_on {
         st.run_on = Some(r.name().to_string());
@@ -511,10 +595,6 @@ fn settings(s: &mut Session, p: &Value) -> Result<Value> {
     // a smaller limit takes effect now
     s.denoise_evict(None);
     Ok(json!({"auto": st.auto(), "cacheGb": st.cache_bytes() >> 30, "threads": st.threads, "runOn": st.run_on().name()}))
-}
-
-fn ids_param(p: &Value) -> Option<Vec<PhotoId>> {
-    p.get("ids").and_then(Value::as_array).map(|a| a.iter().filter_map(Value::as_u64).map(PhotoId).collect())
 }
 
 fn status_json(s: &Session, photo: Option<PhotoId>) -> Value {
@@ -543,10 +623,10 @@ fn status_json(s: &Session, photo: Option<PhotoId>) -> Value {
 }
 
 /// A per-photo switch, independent of the selection and Auto Sync. Turning on starts at 50%.
-fn toggle(s: &mut Session, p: &Value) -> Result<Value> {
+fn toggle(s: &mut Session, p: Toggle) -> Result<Value> {
     const C: &str = "denoise.toggle";
-    let id = match p.get("id") {
-        Some(v) => PhotoId(v.as_u64().ok_or_else(|| bad(C, "`id` must be a photo id"))?),
+    let id = match p.id {
+        Some(id) => id,
         None => s.active().ok_or_else(|| bad(C, "select a raw photo"))?,
     };
     let photo = s.catalog.photo(id).ok_or_else(|| bad(C, "no such photo"))?;
@@ -554,10 +634,7 @@ fn toggle(s: &mut Session, p: &Value) -> Result<Value> {
         return Err(bad(C, "AI Denoise applies to raw photos developed from their sensor data"));
     }
     let mut d = (*s.develop_of(id).ok_or_else(|| bad(C, "no such photo"))?).clone();
-    let on = match p.get("enabled") {
-        Some(v) => v.as_bool().ok_or_else(|| bad(C, "`enabled` must be true or false"))?,
-        None => !d.enhance.denoise_enabled(),
-    };
+    let on = p.enabled.unwrap_or(!d.enhance.denoise_enabled());
     if on {
         if !d.enhance.denoise.is_finite() {
             return Err(bad(C, "the photo has an invalid Denoise amount"));
@@ -585,7 +662,7 @@ fn toggle(s: &mut Session, p: &Value) -> Result<Value> {
     Ok(json!({"id": id.0, "enabled": on, "amount": amount}))
 }
 
-fn queue(s: &mut Session, p: &Value) -> Result<Value> {
+fn queue(s: &mut Session, p: Queue) -> Result<Value> {
     const C: &str = "denoise.queue";
     s.denoise_refresh_active(true);
     if s.denoise.active.is_none() {
@@ -594,16 +671,16 @@ fn queue(s: &mut Session, p: &Value) -> Result<Value> {
     if s.denoise_products_dir().is_none() {
         return Err(bad(C, "denoise keeps its pictures in the library's folder: open a library on disk first"));
     }
-    let ids = match ids_param(p) {
+    let ids = match p.ids {
         Some(ids) => ids,
-        None => match str_param(p, "scope").unwrap_or("selected") {
+        None => match p.scope.as_deref().unwrap_or("selected") {
             "selected" => s.selection.active.iter().chain(s.selection.ids.iter()).copied().collect(),
             "visible" => s.visible_cloned().to_vec(),
             "withAmount" => s.catalog.photos().filter(|ph| ph.develop.denoise_amount() > 0.0).map(|ph| ph.id).collect(),
             other => return Err(bad(C, format!("unknown scope `{other}`: use selected, visible or withAmount"))),
         },
     };
-    let queued = s.denoise_enqueue(&ids, false, bool_or(p, "retry", false));
+    let queued = s.denoise_enqueue(&ids, false, p.retry);
     let mut v = status_json(s, None);
     if let Some(o) = v.as_object_mut() {
         o.insert("added".into(), json!(queued));
@@ -611,20 +688,20 @@ fn queue(s: &mut Session, p: &Value) -> Result<Value> {
     Ok(v)
 }
 
-fn cancel(s: &mut Session, p: &Value) -> Result<Value> {
-    let photo = p.get("id").and_then(Value::as_u64).map(PhotoId);
-    let n = s.denoise_cancel(photo, bool_or(p, "all", photo.is_none()));
+fn cancel(s: &mut Session, p: CancelParams) -> Result<Value> {
+    let photo = p.id;
+    let n = s.denoise_cancel(photo, p.all.unwrap_or(photo.is_none()));
     Ok(json!({"cancelled": n}))
 }
 
-fn status(s: &mut Session, p: &Value) -> Result<Value> {
+fn status(s: &mut Session, p: Status) -> Result<Value> {
     s.denoise_refresh_active(false);
-    Ok(status_json(s, p.get("id").and_then(Value::as_u64).map(PhotoId)))
+    Ok(status_json(s, p.id))
 }
 
 /// `denoise.pump {pace?}`: cheap to call every frame. Takes in what the background job has finished and keeps one going.
-fn pump(s: &mut Session, p: &Value) -> Result<Value> {
-    s.denoise_pump(Pace::parse(p.get("pace").and_then(Value::as_str)));
+fn pump(s: &mut Session, p: Pump) -> Result<Value> {
+    s.denoise_pump(Pace::parse(p.pace.as_deref()));
     s.denoise_track();
     Ok(json!({
         "active": s.denoise.active.is_some(),
@@ -636,36 +713,37 @@ fn pump(s: &mut Session, p: &Value) -> Result<Value> {
     }))
 }
 
-fn clear(s: &mut Session, _: &Value) -> Result<Value> {
+fn clear(s: &mut Session, _: NoParams) -> Result<Value> {
     let (files, bytes) = s.denoise_clear();
     Ok(json!({"deleted": files, "bytes": bytes}))
 }
 
 pub fn specs() -> Vec<CommandSpec> {
     vec![
-        raw_cmd!(query "denoise.models.list", "Denoise Models", [], None, "{} → {dir, productsDir, model, runtime, auto, cacheGb, threads, runOn, models: [{id, name, version, licence{name, commercial, url, notice}, provenance, source, sizeBytes, sha256, tile, known, downloadHost, installed, selected, accepted}]}", always, list),
-        raw_cmd!(query "denoise.models.inspect", "Inspect Denoise Model", [], None, "{path} → model terms from an adjacent manifest; never executes the file", always, inspect),
-        raw_cmd!(query "denoise.models.install", "Install Denoise Model", [], None, "{path, acknowledged: true, activate?: true, background?: false} → {installed, model} or {started} — install a denoise model from a file: an .onnx with a denoise-model.json beside it, or an archive LightCraft knows (the darktable `.dtmodel`). `acknowledged` must be true: the user has been shown the model's licence and accepted it. Unless `activate` is false it becomes the model in use", always, install),
-        raw_cmd!(query "denoise.models.download", "Download Denoise Model", [], None, "{id, acknowledged: true} → {started, from} — fetch a model LightCraft has a pinned address for (see `downloadHost` in the list) in the background over HTTPS with lightcraft-fetch. `acknowledged` must be true: the user has been shown the model's terms and accepted them. It is checked against its size and SHA-256, installed and chosen by itself; `denoise.models.downloads` shows how far it is", always, download),
-        raw_cmd!(query "denoise.models.downloads", "Denoise Model Downloads", [], None, "{} → {running, downloads: [{id, state: running | done | installed | failed | cancelled, bytes, total, error, from}]} — also installs any download that has arrived", always, downloads),
-        raw_cmd!(query "denoise.models.downloadCancel", "Cancel Denoise Model Download", [], None, "{id} → {discarded} — stop a download, or delete a finished one that was not installed", always, download_cancel),
-        raw_cmd!(query "denoise.models.test", "Test Denoise Model", [], None, "{id} → {ok, result} — load an installed model and check it gives sensible pictures; needs the denoise runtime", always, test),
-        raw_cmd!(query "denoise.models.remove", "Remove Denoise Model", [], None, "{id} → {removed, model} — delete an installed model (its cached pictures stay until they are evicted)", always, remove),
-        raw_cmd!(query "denoise.models.select", "Choose Denoise Model", [], None, "{id: installed model | null} → {model} — null switches denoise off", always, select),
-        raw_cmd!(query "denoise.settings", "Denoise Settings", [], None, "{auto?: bool, cacheGb?: 1..10000, threads?: 1..64 | null, runOn?: auto | gpu | cpu} → the settings — `auto`: make the picture of the photos being looked at that have a Denoise amount; `cacheGb`: how much the cached pictures may take; `threads`: most tiles run at once; `runOn`: where the model runs — `auto` (the default) the graphics card where it is faster than the processor (both timed on this computer when the card is set up), `gpu` the card whenever it can run the model, `cpu` the processor. Setting `runOn` also lets the card be tried again after a set-up that failed or closed LightCraft", always, settings),
-        raw_cmd!(
+        cmd!(query "denoise.models.list", "Denoise Models", [], None, "{} → {dir, productsDir, model, runtime, auto, cacheGb, threads, runOn, models: [{id, name, version, licence{name, commercial, url, notice}, provenance, source, sizeBytes, sha256, tile, known, downloadHost, installed, selected, accepted}]}", NoParams, always, list),
+        cmd!(query "denoise.models.inspect", "Inspect Denoise Model", [], None, "{path} → model terms from an adjacent manifest; never executes the file", ModelFile, always, inspect),
+        cmd!(query "denoise.models.install", "Install Denoise Model", [], None, "{path, acknowledged: true, activate?: true, background?: false} → {installed, model} or {started} — install a denoise model from a file: an .onnx with a denoise-model.json beside it, or an archive LightCraft knows (the darktable `.dtmodel`). `acknowledged` must be true: the user has been shown the model's licence and accepted it. Unless `activate` is false it becomes the model in use", Install, always, install),
+        cmd!(query "denoise.models.download", "Download Denoise Model", [], None, "{id, acknowledged: true} → {started, from} — fetch a model LightCraft has a pinned address for (see `downloadHost` in the list) in the background over HTTPS with lightcraft-fetch. `acknowledged` must be true: the user has been shown the model's terms and accepted them. It is checked against its size and SHA-256, installed and chosen by itself; `denoise.models.downloads` shows how far it is", Download, always, download),
+        cmd!(query "denoise.models.downloads", "Denoise Model Downloads", [], None, "{} → {running, downloads: [{id, state: running | done | installed | failed | cancelled, bytes, total, error, from}]} — also installs any download that has arrived", NoParams, always, downloads),
+        cmd!(query "denoise.models.downloadCancel", "Cancel Denoise Model Download", [], None, "{id} → {discarded} — stop a download, or delete a finished one that was not installed", ModelId, always, download_cancel),
+        cmd!(query "denoise.models.test", "Test Denoise Model", [], None, "{id} → {ok, result} — load an installed model and check it gives sensible pictures; needs the denoise runtime", ModelId, always, test),
+        cmd!(query "denoise.models.remove", "Remove Denoise Model", [], None, "{id} → {removed, model} — delete an installed model (its cached pictures stay until they are evicted)", ModelId, always, remove),
+        cmd!(query "denoise.models.select", "Choose Denoise Model", [], None, "{id: installed model | null} → {model} — null switches denoise off", ModelId, always, select),
+        cmd!(query "denoise.settings", "Denoise Settings", [], None, "{auto?: bool, cacheGb?: 1..10000, threads?: 1..64 | null, runOn?: auto | gpu | cpu} → the settings — `auto`: make the picture of the photos being looked at that have a Denoise amount; `cacheGb`: how much the cached pictures may take; `threads`: most tiles run at once; `runOn`: where the model runs — `auto` (the default) the graphics card where it is faster than the processor (both timed on this computer when the card is set up), `gpu` the card whenever it can run the model, `cpu` the processor. Setting `runOn` also lets the card be tried again after a set-up that failed or closed LightCraft", SettingsParams, always, settings),
+        cmd!(
             "denoise.toggle",
             "AI Denoise",
             [],
             None,
             "{id?: photoId, enabled?: bool} → {id, enabled, amount} — turn AI Denoise on (50% initially) or off for one raw photo, independent of selection and Auto Sync; needs an installed model to turn on",
+            Toggle,
             always,
             toggle
         ),
-        raw_cmd!(query "denoise.queue", "Denoise Photos", [], None, "{ids?: [photoId], scope?: selected | visible | withAmount, retry?: false} → {added, …status} — make the denoised pictures of raw photos that have none, in the background. `retry` tries photos that failed before", always, queue),
-        raw_cmd!(query "denoise.cancel", "Cancel Denoise", [], None, "{id?, all?} → {cancelled} — stop the photo being made and/or forget the ones waiting (all of them when `id` is omitted)", always, cancel),
-        raw_cmd!(query "denoise.status", "Denoise Status", [], None, "{id?} → {enabled, model, runtime, productsDir, queued, running: {photo, done, total, seconds} | null, ready, made, auto, runOn, device: {kind: gpu | cpu | pending | none, adapter?, reason?, cardMs?, cpuMs?, fellBack?, remote?: {address, state: pending | unavailable | used | idle | slower | given up, device?, remoteMs?, localMs?, reason?, failures?, lastError?}}, cache: {files, bytes, limitBytes}, generation, photo?: {state: notApplicable | noModel | ready | queued | running | failed | idle, …}}", always, status),
-        raw_cmd!(query "denoise.pump", "Denoise Pump", [], None, "{pace?: pause | light | normal | full} → {active, running, queued, ready, generation, downloading} — called every frame by the app: takes in finished work and keeps one photo going", always, pump),
-        raw_cmd!(query "denoise.clear", "Clear Denoise Cache", [], None, "{} → {deleted, bytes} — delete every cached denoised picture of this library (they are made again when wanted)", always, clear),
+        cmd!(query "denoise.queue", "Denoise Photos", [], None, "{ids?: [photoId], scope?: selected | visible | withAmount, retry?: false} → {added, …status} — make the denoised pictures of raw photos that have none, in the background. `retry` tries photos that failed before", Queue, always, queue),
+        cmd!(query "denoise.cancel", "Cancel Denoise", [], None, "{id?, all?} → {cancelled} — stop the photo being made and/or forget the ones waiting (all of them when `id` is omitted)", CancelParams, always, cancel),
+        cmd!(query "denoise.status", "Denoise Status", [], None, "{id?} → {enabled, model, runtime, productsDir, queued, running: {photo, done, total, seconds} | null, ready, made, auto, runOn, device: {kind: gpu | cpu | pending | none, adapter?, reason?, cardMs?, cpuMs?, fellBack?, remote?: {address, state: pending | unavailable | used | idle | slower | given up, device?, remoteMs?, localMs?, reason?, failures?, lastError?}}, cache: {files, bytes, limitBytes}, generation, photo?: {state: notApplicable | noModel | ready | queued | running | failed | idle, …}}", Status, always, status),
+        cmd!(query "denoise.pump", "Denoise Pump", [], None, "{pace?: pause | light | normal | full} → {active, running, queued, ready, generation, downloading} — called every frame by the app: takes in finished work and keeps one photo going", Pump, always, pump),
+        cmd!(query "denoise.clear", "Clear Denoise Cache", [], None, "{} → {deleted, bytes} — delete every cached denoised picture of this library (they are made again when wanted)", NoParams, always, clear),
     ]
 }
