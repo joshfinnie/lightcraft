@@ -15,6 +15,43 @@ pub mod histogram;
 pub mod morph;
 pub mod resample;
 
+/// The longest image edge LightCraft opens, in pixels (Lightroom Classic's limit).
+pub const MAX_IMAGE_EDGE: u64 = 65_000;
+/// The most pixels an image LightCraft opens may have (Lightroom Classic's limit: 512 megapixels).
+/// Developing takes about 85 bytes a pixel at peak, so this also bounds what a small crafted file
+/// can make the app allocate.
+pub const MAX_IMAGE_PIXELS: u64 = 512_000_000;
+
+static PIXEL_CEILING: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(MAX_IMAGE_PIXELS);
+
+/// Lower the pixel limit for this process below [`MAX_IMAGE_PIXELS`] (to what the machine's
+/// memory can develop); at least one pixel, never above [`MAX_IMAGE_PIXELS`].
+pub fn set_pixel_ceiling(pixels: u64) {
+    PIXEL_CEILING.store(pixels.clamp(1, MAX_IMAGE_PIXELS), std::sync::atomic::Ordering::Relaxed);
+}
+
+/// The most pixels an image may have in this process: [`MAX_IMAGE_PIXELS`] or the lower
+/// [`set_pixel_ceiling`].
+pub fn max_image_pixels() -> u64 {
+    PIXEL_CEILING.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// Whether a `width × height` image is within [`MAX_IMAGE_EDGE`] and [`max_image_pixels`].
+pub fn within_image_limits(width: u64, height: u64) -> bool {
+    width.max(height) <= MAX_IMAGE_EDGE && width.saturating_mul(height) <= max_image_pixels()
+}
+
+/// The limits in words, for errors: "up to 65,000 pixels a side and 512 megapixels", naming the
+/// machine's memory when that is what sets the pixel limit.
+pub fn image_limits_text() -> String {
+    let mp = max_image_pixels() / 1_000_000;
+    if max_image_pixels() < MAX_IMAGE_PIXELS {
+        format!("up to 65,000 pixels a side and {mp} megapixels with this computer's memory")
+    } else {
+        format!("up to 65,000 pixels a side and {mp} megapixels")
+    }
+}
+
 pub use histogram::{HdrBins, Histogram};
 
 /// Run `f` over row chunks, in parallel when the `parallel` feature is on.
@@ -278,6 +315,21 @@ impl Rgba8 {
 mod tests {
     use super::*;
     use lightcraft_geom::Orientation;
+
+    #[test]
+    fn image_limits_are_lightrooms_and_a_ceiling_only_lowers_them() {
+        assert!(within_image_limits(65_000, 7_876));
+        assert!(!within_image_limits(65_001, 2), "edge");
+        assert!(!within_image_limits(22_628, 22_628), "512 MP");
+        assert!(within_image_limits(6_240, 4_160), "an X-T30 II raw");
+        assert_eq!(image_limits_text(), "up to 65,000 pixels a side and 512 megapixels");
+        set_pixel_ceiling(u64::MAX);
+        assert_eq!(max_image_pixels(), MAX_IMAGE_PIXELS);
+        set_pixel_ceiling(100_000_000);
+        assert!(!within_image_limits(12_000, 9_000));
+        assert_eq!(image_limits_text(), "up to 65,000 pixels a side and 100 megapixels with this computer's memory");
+        set_pixel_ceiling(MAX_IMAGE_PIXELS);
+    }
 
     /// A sample at an infinite coordinate (the inverse mapping of a crop of no size) cast to
     /// isize::MAX, and its right / lower neighbour overflowed (a panic where overflow is checked):

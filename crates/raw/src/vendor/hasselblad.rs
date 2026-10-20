@@ -235,7 +235,15 @@ mod tests {
         for i in (8..header.len()).step_by(3) {
             header[i] ^= 0x5a;
             match decode_file(&fff(Some(header.clone()), false)) {
-                Ok(_) | Err(RawError::Corrupt(_) | RawError::Tiff(_) | RawError::Unsupported(_) | RawError::Limit(_) | RawError::NotRaw) => {}
+                Ok(_)
+                | Err(
+                    RawError::Corrupt(_)
+                    | RawError::Tiff(_)
+                    | RawError::Unsupported(_)
+                    | RawError::Limit(_)
+                    | RawError::TooLarge(..)
+                    | RawError::NotRaw,
+                ) => {}
             }
         }
     }

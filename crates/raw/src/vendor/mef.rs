@@ -69,6 +69,7 @@ pub(crate) fn decode(bytes: &[u8], mode: Mode) -> Result<RawImage> {
     let raw = raw_ifd(&tiff, bytes.len()).ok_or_else(|| RawError::Unsupported("Mef raw image not found".into()))?;
     let info = raw.image()?;
     let (w, h) = (info.width as usize, info.height as usize);
+    crate::check_dimensions(w as u64, h as u64)?;
     let n = w.checked_mul(h).filter(|n| *n > 0 && *n <= crate::MAX_SAMPLES).ok_or(RawError::Limit("image too large"))?;
     let cfa = match (raw.u64s(t::CFA_REPEAT_PATTERN_DIM).as_deref(), raw.bytes(t::CFA_PATTERN_EP)) {
         (Some([2, 2]), Some(p)) if p.len() == 4 && p.iter().all(|&c| c <= 2) => Cfa { width: 2, height: 2, pattern: p.to_vec() },

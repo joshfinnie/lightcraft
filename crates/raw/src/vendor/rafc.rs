@@ -60,6 +60,7 @@ pub(super) fn decode(src: &[u8], width: usize, height: usize, bits: u32, xtrans:
     {
         return Err(corrupt("inconsistent compression dimensions"));
     }
+    crate::check_dimensions(width as u64, height as u64)?;
     let n = width.checked_mul(height).filter(|&n| n <= crate::MAX_SAMPLES).ok_or(RawError::Limit("image too large"))?;
     let table_end = 16 + count * 4;
     let mut offset = table_end.div_ceil(16) * 16;

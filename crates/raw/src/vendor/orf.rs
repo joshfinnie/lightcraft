@@ -204,6 +204,7 @@ pub(crate) fn decode(bytes: &[u8], mode: Mode) -> Result<RawImage> {
     let ifd0 = &tiff.ifds[0];
     let info = ifd0.image()?;
     let (w, h) = (info.width as usize, info.height as usize);
+    crate::check_dimensions(w as u64, h as u64)?;
     let n = w.checked_mul(h).filter(|n| *n > 0 && *n <= crate::MAX_SAMPLES).ok_or(RawError::Limit("image too large"))?;
     let chunks = info.chunks(bytes.len() as u64);
     let total: u64 = chunks.iter().map(|c| c.len).sum();

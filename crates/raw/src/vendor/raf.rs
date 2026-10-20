@@ -129,6 +129,7 @@ pub(crate) fn decode(bytes: &[u8], mode: Mode) -> Result<RawImage> {
     if w == 0 || hgt == 0 || !(8..=16).contains(&bits) {
         return Err(RawError::Corrupt(format!("RAF raw IFD: {w}x{hgt}, {bits} bits")));
     }
+    crate::check_dimensions(w as u64, hgt as u64)?;
     let n = w.checked_mul(hgt).filter(|n| *n <= crate::MAX_SAMPLES).ok_or(RawError::Limit("image too large"))?;
     let src = raw
         .get(off..off.checked_add(len).ok_or_else(|| RawError::Corrupt("RAF strip size overflow".into()))?)

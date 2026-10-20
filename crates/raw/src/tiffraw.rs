@@ -31,6 +31,7 @@ pub(crate) enum ChunkPx {
 pub fn check_image(data: &[u8], info: &ImageInfo) -> Result<usize> {
     let (w, h) = (info.width as usize, info.height as usize);
     let cpp = info.samples_per_pixel as usize;
+    crate::check_dimensions(w as u64, h as u64)?;
     let total = w.checked_mul(h).and_then(|v| v.checked_mul(cpp)).ok_or(RawError::Limit("image too large"))?;
     if total > MAX_SAMPLES || total == 0 {
         return Err(RawError::Limit("image too large"));

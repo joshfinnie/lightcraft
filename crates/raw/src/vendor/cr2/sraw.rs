@@ -90,6 +90,7 @@ impl Layout {
         }
         let rows = samples / row;
         let (width, height) = (row / mcu * 2, rows * vertical);
+        crate::check_dimensions(width as u64, height as u64)?;
         if width.checked_mul(height).and_then(|p| p.checked_mul(3)).is_none_or(|s| s > crate::MAX_SAMPLES) {
             return Err(RawError::Limit("sRAW image too large"));
         }

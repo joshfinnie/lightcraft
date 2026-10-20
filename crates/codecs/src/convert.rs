@@ -92,7 +92,7 @@ pub(crate) fn check_size(format: Format, w: u64, h: u64, opts: &DecodeOptions) -
     if w == 0 || h == 0 {
         return Err(Error::Malformed(format, "zero dimension".into()));
     }
-    if w.saturating_mul(h) > opts.max_pixels {
+    if w.saturating_mul(h) > opts.max_pixels || !lightcraft_raster::within_image_limits(w, h) {
         return Err(Error::TooLarge(w, h));
     }
     Ok(())

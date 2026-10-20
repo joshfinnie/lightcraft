@@ -1131,3 +1131,25 @@ fn legacy_lightcraft_dng_keeps_the_sensor_anchored_pattern() {
     assert_eq!(build("Adobe Photoshop Lightroom").cfa.unwrap().name(), "BGGR");
     assert_ne!(lightcraft_raw::dngwrite::SOFTWARE, "LightCraft");
 }
+
+/// Images past Lightroom's limits (65,000 px a side, 512 megapixels) are refused from the header,
+/// before any buffer is sized from it: a few bytes of strip data can't make the decoder allocate
+/// gigabytes. An image at the edge limit still decodes.
+#[test]
+fn images_past_the_size_limits_are_refused_before_allocating() {
+    let file = |w: usize, h: usize, strip: Vec<u8>| {
+        let mut raw = base_ifd(w, h, 16, 1, true);
+        raw.set(t::COMPRESSION, Value::Short(vec![compression::NONE]));
+        raw.set_image(ImageData::Strips { rows_per_strip: h as u32, strips: vec![strip] });
+        dng(raw, ByteOrder::Little)
+    };
+    for (w, h) in [(65_002, 2), (2, 65_002), (22_628, 22_628)] {
+        let bytes = file(w, h, vec![0; 64]);
+        for e in [decode(&bytes).unwrap_err(), lightcraft_raw::probe_info(&bytes).unwrap_err()] {
+            assert_eq!(e, lightcraft_raw::RawError::TooLarge(w as u64, h as u64), "{w}x{h}");
+        }
+    }
+    let (w, h) = (65_000, 2);
+    let raw = decode(&file(w, h, u16_bytes(&vec![1000; w * h], ByteOrder::Little))).unwrap();
+    assert_eq!((raw.width, raw.height), (w, h));
+}

@@ -53,8 +53,30 @@ pub(crate) fn total_ram() -> Option<usize> {
     }
     #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "freebsd")))]
     {
-        None
+        PHYSICAL.get().and_then(|f| f()).and_then(|b| usize::try_from(b).ok())
     }
+}
+
+static PHYSICAL: OnceLock<fn() -> Option<u64>> = OnceLock::new();
+
+/// Install how to read the machine's physical memory where the engine can't without a native
+/// call (Windows; the apps install `lightcraft_sysmem::physical_memory`). First call wins.
+pub fn set_physical_memory_hook(f: fn() -> Option<u64>) {
+    let _ = PHYSICAL.set(f);
+}
+
+/// Peak memory of developing a raw, in bytes per pixel (measured: a 64 MP DNG peaked at 5.7 GB).
+pub const PEAK_BYTES_PER_PIXEL: u64 = 85;
+
+/// Refuse, for this process, images whose development would need more than three quarters of the
+/// machine's memory ([`lightcraft_raster::set_pixel_ceiling`]): beyond that a decode makes the
+/// system swap until it kills the app, or, on Windows, an allocation fails and the process aborts.
+/// Without a known memory size the fixed limits apply. Returns the pixel limit now in force.
+pub fn limit_images_to_machine() -> u64 {
+    if let Some(ram) = total_ram() {
+        lightcraft_raster::set_pixel_ceiling((ram as u64 / 4 * 3) / PEAK_BYTES_PER_PIXEL);
+    }
+    lightcraft_raster::max_image_pixels()
 }
 
 static BUDGET: AtomicUsize = AtomicUsize::new(0);
@@ -314,5 +336,22 @@ impl crate::Session {
         let b = set_budget(bytes);
         self.media.set_budget(cache_share(b));
         b
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn images_are_limited_to_what_the_machine_can_develop() {
+        let limit = limit_images_to_machine();
+        assert!(limit <= lightcraft_raster::MAX_IMAGE_PIXELS);
+        match total_ram() {
+            Some(ram) => assert_eq!(limit, ((ram as u64 / 4 * 3) / PEAK_BYTES_PER_PIXEL).min(lightcraft_raster::MAX_IMAGE_PIXELS)),
+            None => assert_eq!(limit, lightcraft_raster::MAX_IMAGE_PIXELS),
+        }
+        // the camera this fork is for develops on any machine LightCraft runs on
+        assert!(lightcraft_raster::within_image_limits(6_240, 4_160));
     }
 }

@@ -54,7 +54,8 @@ pub(crate) fn header(bytes: &[u8]) -> Result<(u32, u32, u16)> {
 pub(crate) fn decode(bytes: &[u8], opts: &DecodeOptions) -> Result<Decoded> {
     // The container alone: the declared size is checked before any pixel is decoded.
     let info = lightcraft_heif::probe(bytes).map_err(err)?;
-    if (info.width as u64).saturating_mul(info.height as u64) > opts.max_pixels {
+    let (w, h) = (info.width as u64, info.height as u64);
+    if w.saturating_mul(h) > opts.max_pixels || !lightcraft_raster::within_image_limits(w, h) {
         return Err(Error::TooLarge(info.width as u64, info.height as u64));
     }
     let options = lightcraft_heif::Options { max_pixels: opts.max_pixels, apply_transforms: true };

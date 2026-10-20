@@ -6,8 +6,11 @@
 //! everything ever decoded. `malloc_zone_pressure_relief` (libSystem) returns those pages now.
 //! Elsewhere (glibc, Windows) blocks this large are unmapped when freed: nothing to do.
 //!
-//! This is LightCraft's only crate allowed `unsafe` (one FFI call, in `macos`). Its API is safe,
-//! and on failure or on other platforms it simply releases nothing.
+//! It also reads the machine's physical memory on Windows (`GlobalMemoryStatusEx`), which has no
+//! command-line way to ask that is quick and dependable.
+//!
+//! This is LightCraft's only crate allowed `unsafe` (one FFI call each in `macos` and `windows`).
+//! Its API is safe: on failure or on other platforms it releases nothing and reports no memory size.
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 #![cfg_attr(test, allow(clippy::disallowed_methods))]
 
@@ -22,6 +25,35 @@ pub fn release_free_memory() -> usize {
     #[cfg(not(target_os = "macos"))]
     {
         0
+    }
+}
+
+/// The machine's physical memory in bytes, on Windows; `None` elsewhere or when the system won't say.
+pub fn physical_memory() -> Option<u64> {
+    #[cfg(windows)]
+    {
+        windows::total_physical()
+    }
+    #[cfg(not(windows))]
+    {
+        None
+    }
+}
+
+#[cfg(windows)]
+#[allow(unsafe_code)]
+mod windows {
+    use windows_sys::Win32::System::SystemInformation::{GlobalMemoryStatusEx, MEMORYSTATUSEX};
+
+    pub fn total_physical() -> Option<u64> {
+        // SAFETY: MEMORYSTATUSEX is a struct of plain integers, for which all zero bytes is a valid value.
+        let mut status: MEMORYSTATUSEX = unsafe { std::mem::zeroed() };
+        status.dwLength = u32::try_from(std::mem::size_of::<MEMORYSTATUSEX>()).ok()?;
+        // SAFETY: `GlobalMemoryStatusEx` (kernel32, documented, thread-safe) writes only into the
+        // struct we pass, which lives for the call and has `dwLength` set as the API requires. It
+        // returns 0 on failure, when the struct's contents are not used.
+        let ok = unsafe { GlobalMemoryStatusEx(&mut status) };
+        (ok != 0 && status.ullTotalPhys > 0).then_some(status.ullTotalPhys)
     }
 }
 
@@ -47,6 +79,16 @@ mod macos {
 #[cfg(test)]
 mod tests {
     use super::release_free_memory;
+
+    #[test]
+    fn physical_memory_is_known_on_windows_only() {
+        let m = super::physical_memory();
+        if cfg!(windows) {
+            assert!(m.is_some_and(|b| b >= 256 << 20), "{m:?}");
+        } else {
+            assert_eq!(m, None);
+        }
+    }
 
     #[test]
     fn releasing_with_nothing_freed_is_harmless() {

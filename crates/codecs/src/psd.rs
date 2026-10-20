@@ -514,23 +514,29 @@ mod tests {
 
     #[test]
     fn huge_rle_with_truncated_count_table_is_rejected_before_allocating() {
-        // 1 × 2^30 px, 56 channels: the row table alone would be 56 Gi entries; the file has 4 bytes.
-        let mut b = header(56, 1, 1 << 30, 32, 3, 1);
+        // 7,800 × 65,000 px (the size limit), 56 channels: the row table alone is 3.6 M entries; the file has 4 bytes.
+        let mut b = header(56, 7_800, 65_000, 32, 3, 1);
         b.extend_from_slice(&[0, 0, 0, 0]);
         let e = decode(&b, &DecodeOptions::default()).unwrap_err();
         assert!(matches!(e, Error::Malformed(_, ref m) if m == "truncated"), "{e:?}");
+        // past the size limit, refused before the table is read
+        let mut b = header(56, 1, 1 << 30, 32, 3, 1);
+        b.extend_from_slice(&[0, 0, 0, 0]);
+        let e = decode(&b, &DecodeOptions::default()).unwrap_err();
+        assert!(matches!(e, Error::TooLarge(1, h) if h == 1 << 30), "{e:?}");
     }
 
     #[test]
     fn huge_rle_of_empty_rows_is_rejected_before_allocating() {
-        // 2^30 × 1 px RGB at 32 bits: every row count is 0, which used to zero-pad 3 × 4 GiB.
-        let mut b = header(3, 1 << 30, 1, 32, 3, 1);
-        b.extend_from_slice(&[0; 6]);
+        // 65,000 × 7,800 px RGB at 32 bits (the size limit): every row count is 0, which would
+        // zero-pad 3 × 2 GB.
+        let mut b = header(3, 65_000, 7_800, 32, 3, 1);
+        b.extend_from_slice(&[0; 3 * 7_800 * 2]);
         let e = decode(&b, &DecodeOptions::default()).unwrap_err();
         assert!(matches!(e, Error::Malformed(_, ref m) if m.contains("too short")), "{e:?}");
-        // 1 Gpx RGB 8-bit whose (plausible) row counts claim more data than the file holds.
-        let mut b = header(3, 1 << 20, 1 << 10, 8, 3, 1);
-        b.extend_from_slice(&[0xFF; 3 * 1024 * 2]);
+        // 507 Mpx RGB 8-bit whose (plausible) row counts claim more data than the file holds.
+        let mut b = header(3, 65_000, 7_800, 8, 3, 1);
+        b.extend_from_slice(&[0xFF; 3 * 7_800 * 2]);
         let e = decode(&b, &DecodeOptions::default()).unwrap_err();
         assert!(matches!(e, Error::Malformed(_, ref m) if m == "truncated"), "{e:?}");
     }

@@ -62,7 +62,7 @@ pub enum Error {
     Unsupported(Format, &'static str),
     #[error("malformed {0:?} data: {1}")]
     Malformed(Format, String),
-    #[error("image too large: {0}×{1}")]
+    #[error("image too large: {0}×{1} (LightCraft opens images of {limits})", limits = lightcraft_raster::image_limits_text())]
     TooLarge(u64, u64),
     #[error("encode error: {0}")]
     Encode(String),
@@ -82,7 +82,7 @@ pub struct DecodeOptions {
 
 impl Default for DecodeOptions {
     fn default() -> Self {
-        DecodeOptions { max_size: None, max_pixels: 1 << 30 }
+        DecodeOptions { max_size: None, max_pixels: lightcraft_raster::max_image_pixels() }
     }
 }
 
@@ -356,12 +356,13 @@ mod checked_arithmetic_tests {
         assert_eq!(checked_sample_buf_len(0, 100, 3), None);
     }
 
-    /// Size is `max_pixels`' job: an RGBA image within it has more samples than pixels, and the
-    /// product (2^32, which would wrap a 32-bit usize) must stay exact rather than be refused.
+    /// Size is `max_pixels`' job: an RGBA image has more samples than pixels, and the product
+    /// (2^32, which would wrap a 32-bit usize) must stay exact rather than be refused.
     #[test]
     fn checked_sample_buf_len_counts_channels_beyond_the_pixel_limit() {
+        assert_eq!(checked_sample_buf_len(1 << 30, 1, 4), Some(4 << 30));
         let pixels = DecodeOptions::default().max_pixels as usize;
-        assert_eq!(checked_sample_buf_len(pixels, 1, 4), Some(4 << 30));
+        assert_eq!(checked_sample_buf_len(pixels, 1, 4), Some(pixels as u64 * 4));
     }
 
     #[test]

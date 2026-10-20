@@ -81,6 +81,18 @@ pub(crate) fn checked_pixel_count(width: u64, height: u64) -> Option<u64> {
     width.checked_mul(height).filter(|&n| n > 0 && n <= MAX_SAMPLES as u64)
 }
 
+/// `width × height` pixels when that image is within LightCraft's size limits
+/// ([`lightcraft_raster::within_image_limits`]); checked before allocating for it.
+pub(crate) fn check_dimensions(width: u64, height: u64) -> Result<u64> {
+    if width == 0 || height == 0 {
+        return Err(RawError::Corrupt(format!("{width}x{height} image")));
+    }
+    if !lightcraft_raster::within_image_limits(width, height) {
+        return Err(RawError::TooLarge(width, height));
+    }
+    Ok(width.saturating_mul(height))
+}
+
 /// Errors from raw decoding.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum RawError {
@@ -92,6 +104,8 @@ pub enum RawError {
     Corrupt(String),
     #[error("limit exceeded: {0}")]
     Limit(&'static str),
+    #[error("{0}×{1} raw image is too large (LightCraft opens images of {limits})", limits = lightcraft_raster::image_limits_text())]
+    TooLarge(u64, u64),
     #[error(transparent)]
     Tiff(#[from] TiffError),
 }
@@ -771,6 +785,7 @@ impl RawImage {
         if self.width == 0 || self.height == 0 || !(1..=4).contains(&self.cpp) {
             return Err(RawError::Corrupt("bad dimensions".into()));
         }
+        check_dimensions(self.width as u64, self.height as u64)?;
         // two samples a pixel are neither one colour nor RGB: nothing downstream can develop them (issue #1511)
         if self.cpp == 2 {
             return Err(RawError::Unsupported("2 samples per pixel".into()));
