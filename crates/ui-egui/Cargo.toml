@@ -32,6 +32,8 @@ log = { workspace = true }
 lightcraft-testkit = { workspace = true }
 egui_kittest = { workspace = true, features = ["wgpu", "snapshot"] }
 lightcraft-denoise = { workspace = true, features = ["runtime"] }
+# the model set-up tests install and run a denoise model, whichever crates the test build includes
+lightcraft-engine = { workspace = true, features = ["denoise"] }
 lightcraft-codecs = { workspace = true }
 lightcraft-faces = { workspace = true }
 lightcraft-merge = { workspace = true }
