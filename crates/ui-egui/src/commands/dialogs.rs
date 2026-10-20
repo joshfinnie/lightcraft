@@ -5,6 +5,7 @@ use serde_json::{Value, json};
 use crate::LightcraftApp;
 use crate::menus::*;
 use crate::state::Dialog;
+use lightcraft_engine::cmd::params::NoParams;
 
 pub(crate) fn dialog_new_folder(app: &mut LightcraftApp, c: &Call) -> Result<Value, String> {
     let p = c.params;
@@ -93,7 +94,7 @@ pub(crate) fn dialog_capture_time(app: &mut LightcraftApp, c: &Call) -> Result<V
     Ok(Value::Null)
 }
 
-pub(crate) fn dialog_label_names(app: &mut LightcraftApp, _: &Call) -> Result<Value, String> {
+pub(crate) fn dialog_label_names(app: &mut LightcraftApp, _: &Call, _: NoParams) -> Result<Value, String> {
     let names = lightcraft_catalog::ColorLabel::ALL.iter().map(|l| app.session.catalog.custom_label_name(*l).unwrap_or("").to_string()).collect();
     app.ui.dialog = Some(Dialog::LabelNames { names, save_as: String::new() });
     Ok(Value::Null)
@@ -106,18 +107,18 @@ pub(crate) fn dialog_rename(app: &mut LightcraftApp, c: &Call) -> Result<Value, 
     Ok(Value::Null)
 }
 
-pub(crate) fn dialog_create_preset(app: &mut LightcraftApp, _: &Call) -> Result<Value, String> {
+pub(crate) fn dialog_create_preset(app: &mut LightcraftApp, _: &Call, _: NoParams) -> Result<Value, String> {
     app.ui.dialog = Some(Dialog::create_preset());
     Ok(Value::Null)
 }
 
-pub(crate) fn dialog_paste_settings(app: &mut LightcraftApp, _: &Call) -> Result<Value, String> {
+pub(crate) fn dialog_paste_settings(app: &mut LightcraftApp, _: &Call, _: NoParams) -> Result<Value, String> {
     let groups = app.session.copy_groups.iter().filter_map(|g| serde_json::to_value(g).ok().and_then(|v| v.as_str().map(str::to_string))).collect();
     app.ui.dialog = Some(Dialog::PasteSettings { groups });
     Ok(Value::Null)
 }
 
-pub(crate) fn dialog_copy_settings(app: &mut LightcraftApp, _: &Call) -> Result<Value, String> {
+pub(crate) fn dialog_copy_settings(app: &mut LightcraftApp, _: &Call, _: NoParams) -> Result<Value, String> {
     let groups = app.session.copy_groups.iter().filter_map(|g| serde_json::to_value(g).ok().and_then(|v| v.as_str().map(str::to_string))).collect();
     app.ui.dialog = Some(Dialog::CopySettings { groups });
     Ok(Value::Null)
@@ -134,18 +135,18 @@ pub(crate) fn dialog_slideshow_export(app: &mut LightcraftApp, c: &Call) -> Resu
     Ok(Value::Null)
 }
 
-pub(crate) fn dialog_contact_sheet(app: &mut LightcraftApp, _: &Call) -> Result<Value, String> {
+pub(crate) fn dialog_contact_sheet(app: &mut LightcraftApp, _: &Call, _: NoParams) -> Result<Value, String> {
     app.ui.dialog = Some(Dialog::ContactSheet { options: lightcraft_engine::contact_sheet::Options::default() });
     Ok(Value::Null)
 }
 
-pub(crate) fn dialog_print(app: &mut LightcraftApp, _: &Call) -> Result<Value, String> {
+pub(crate) fn dialog_print(app: &mut LightcraftApp, _: &Call, _: NoParams) -> Result<Value, String> {
     app.ui.print = Default::default();
     app.ui.dialog = Some(Dialog::Print);
     Ok(Value::Null)
 }
 
-pub(crate) fn dialog_export(app: &mut LightcraftApp, _: &Call) -> Result<Value, String> {
+pub(crate) fn dialog_export(app: &mut LightcraftApp, _: &Call, _: NoParams) -> Result<Value, String> {
     let prev = app.session.last_export.clone().unwrap_or_default();
     let u = |k: &str, d: u64| prev.get(k).and_then(Value::as_u64).unwrap_or(d);
     let dir = prev.get("dir").and_then(Value::as_str).map(str::to_string).unwrap_or_else(crate::control::default_export_dir);
@@ -157,7 +158,7 @@ pub(crate) fn dialog_export(app: &mut LightcraftApp, _: &Call) -> Result<Value, 
     Ok(Value::Null)
 }
 
-pub(crate) fn dialog_merge_hdr(app: &mut LightcraftApp, _: &Call) -> Result<Value, String> {
+pub(crate) fn dialog_merge_hdr(app: &mut LightcraftApp, _: &Call, _: NoParams) -> Result<Value, String> {
     crate::merge::open(app, "merge.hdr")
 }
 
@@ -173,26 +174,26 @@ pub(crate) fn dialog_face_model(app: &mut LightcraftApp, c: &Call) -> Result<Val
     }
 }
 
-pub(crate) fn dialog_merge_panorama(app: &mut LightcraftApp, _: &Call) -> Result<Value, String> {
+pub(crate) fn dialog_merge_panorama(app: &mut LightcraftApp, _: &Call, _: NoParams) -> Result<Value, String> {
     crate::merge::open(app, "merge.panorama")
 }
 
-pub(crate) fn dialog_merge_hdr_panorama(app: &mut LightcraftApp, _: &Call) -> Result<Value, String> {
+pub(crate) fn dialog_merge_hdr_panorama(app: &mut LightcraftApp, _: &Call, _: NoParams) -> Result<Value, String> {
     crate::merge::open(app, "merge.hdrPanorama")
 }
 
-pub(crate) fn dialog_cull(app: &mut LightcraftApp, _: &Call) -> Result<Value, String> {
+pub(crate) fn dialog_cull(app: &mut LightcraftApp, _: &Call, _: NoParams) -> Result<Value, String> {
     app.ui.dialog = Some(Dialog::Cull { reject_below: 0.0, pick_best: true });
     Ok(Value::Null)
 }
 
-pub(crate) fn dialog_save_metadata_preset(app: &mut LightcraftApp, _: &Call) -> Result<Value, String> {
+pub(crate) fn dialog_save_metadata_preset(app: &mut LightcraftApp, _: &Call, _: NoParams) -> Result<Value, String> {
     // from the active photo's copyright, creator and place
     crate::panels::dialogs::prompt(app, "Save Metadata Preset", "Preset name", "", "metadata.savePreset", json!({}), "name");
     Ok(Value::Null)
 }
 
-pub(crate) fn dialog_save_mask_effect(app: &mut LightcraftApp, _: &Call) -> Result<Value, String> {
+pub(crate) fn dialog_save_mask_effect(app: &mut LightcraftApp, _: &Call, _: NoParams) -> Result<Value, String> {
     if app.session.active_mask.is_none() {
         return Err("select a mask first".into());
     }
@@ -200,7 +201,7 @@ pub(crate) fn dialog_save_mask_effect(app: &mut LightcraftApp, _: &Call) -> Resu
     Ok(Value::Null)
 }
 
-pub(crate) fn dialog_manage_mask_effects(app: &mut LightcraftApp, _: &Call) -> Result<Value, String> {
+pub(crate) fn dialog_manage_mask_effects(app: &mut LightcraftApp, _: &Call, _: NoParams) -> Result<Value, String> {
     crate::panels::mask_effects::open_manage(app);
     Ok(Value::Null)
 }

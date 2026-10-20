@@ -137,6 +137,8 @@ fn escape(s: &str) -> String {
     out
 }
 
+pub mod calls;
+
 #[cfg(test)]
 mod tests {
     use super::*;

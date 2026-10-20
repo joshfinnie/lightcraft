@@ -6,8 +6,9 @@ use crate::LightcraftApp;
 use crate::menus::*;
 use crate::pick::{PickRequest, Picked};
 use crate::state::Dialog;
+use lightcraft_engine::cmd::params::NoParams;
 
-pub(crate) fn library_select_only_active(app: &mut LightcraftApp, _: &Call) -> Result<Value, String> {
+pub(crate) fn library_select_only_active(app: &mut LightcraftApp, _: &Call, _: NoParams) -> Result<Value, String> {
     let Some(active) = app.session.active() else { return Err("no active photo".into()) };
     app.run("library.select", json!({"ids": [active.0], "active": active.0}))
 }
@@ -45,7 +46,7 @@ pub(crate) fn app_recent_libraries(app: &mut LightcraftApp, c: &Call) -> Result<
     crate::panels::settings::recent_libraries(app, p)
 }
 
-pub(crate) fn app_clear_recent_libraries(app: &mut LightcraftApp, _: &Call) -> Result<Value, String> {
+pub(crate) fn app_clear_recent_libraries(app: &mut LightcraftApp, _: &Call, _: NoParams) -> Result<Value, String> {
     crate::panels::settings::recent_libraries(app, &json!({"clear": true}))
 }
 
@@ -54,7 +55,7 @@ pub(crate) fn app_display_profile(app: &mut LightcraftApp, c: &Call) -> Result<V
     crate::panels::settings::display_profile(app, p)
 }
 
-pub(crate) fn file_backup_library(app: &mut LightcraftApp, c: &Call) -> Result<Value, String> {
+pub(crate) fn file_backup_library(app: &mut LightcraftApp, c: &Call, _: NoParams) -> Result<Value, String> {
     let id = c.id;
     let action = if id == "file.backupLibrary" { app.services.backup_library.as_mut() } else { app.services.restore_library.as_mut() };
     match action {
@@ -109,7 +110,7 @@ pub(crate) fn app_contact_sheet(app: &mut LightcraftApp, c: &Call) -> Result<Val
     crate::export_task::start_contact_sheet(app, &params)
 }
 
-pub(crate) fn merge_hdr_last(app: &mut LightcraftApp, _: &Call) -> Result<Value, String> {
+pub(crate) fn merge_hdr_last(app: &mut LightcraftApp, _: &Call, _: NoParams) -> Result<Value, String> {
     crate::merge::start_last(app, "merge.hdr")
 }
 
@@ -118,19 +119,19 @@ pub(crate) fn merge_hdr_batch(app: &mut LightcraftApp, c: &Call) -> Result<Value
     crate::merge::start_batch(app, p)
 }
 
-pub(crate) fn merge_panorama_last(app: &mut LightcraftApp, _: &Call) -> Result<Value, String> {
+pub(crate) fn merge_panorama_last(app: &mut LightcraftApp, _: &Call, _: NoParams) -> Result<Value, String> {
     crate::merge::start_last(app, "merge.panorama")
 }
 
-pub(crate) fn merge_hdr_panorama_last(app: &mut LightcraftApp, _: &Call) -> Result<Value, String> {
+pub(crate) fn merge_hdr_panorama_last(app: &mut LightcraftApp, _: &Call, _: NoParams) -> Result<Value, String> {
     crate::merge::start_last(app, "merge.hdrPanorama")
 }
 
-pub(crate) fn app_open_sam_model_folder(app: &mut LightcraftApp, _: &Call) -> Result<Value, String> {
+pub(crate) fn app_open_sam_model_folder(app: &mut LightcraftApp, _: &Call, _: NoParams) -> Result<Value, String> {
     crate::panels::dialogs::show_model_folder(app)
 }
 
-pub(crate) fn app_about(app: &mut LightcraftApp, _: &Call) -> Result<Value, String> {
+pub(crate) fn app_about(app: &mut LightcraftApp, _: &Call, _: NoParams) -> Result<Value, String> {
     app.ui.dialog = Some(Dialog::About);
     Ok(Value::Null)
 }
@@ -153,7 +154,7 @@ pub(crate) fn photo_open_original_in_external(app: &mut LightcraftApp, c: &Call)
     open_original_in(app, &ctx, p)
 }
 
-pub(crate) fn app_whats_new(app: &mut LightcraftApp, _: &Call) -> Result<Value, String> {
+pub(crate) fn app_whats_new(app: &mut LightcraftApp, _: &Call, _: NoParams) -> Result<Value, String> {
     app.ui.dialog = Some(Dialog::WhatsNew);
     Ok(json!({"text": crate::panels::dialogs::WHATS_NEW}))
 }
@@ -205,7 +206,7 @@ pub(crate) fn app_system_info(app: &mut LightcraftApp, c: &Call) -> Result<Value
     Ok(r)
 }
 
-pub(crate) fn app_shortcuts(app: &mut LightcraftApp, _: &Call) -> Result<Value, String> {
+pub(crate) fn app_shortcuts(app: &mut LightcraftApp, _: &Call, _: NoParams) -> Result<Value, String> {
     app.ui.dialog = Some(Dialog::Shortcuts);
     Ok(Value::Null)
 }
@@ -215,7 +216,7 @@ pub(crate) fn app_set_shortcut(app: &mut LightcraftApp, c: &Call) -> Result<Valu
     crate::shortcuts::set_shortcut(app, p)
 }
 
-pub(crate) fn app_reset_shortcuts(app: &mut LightcraftApp, _: &Call) -> Result<Value, String> {
+pub(crate) fn app_reset_shortcuts(app: &mut LightcraftApp, _: &Call, _: NoParams) -> Result<Value, String> {
     app.ui.settings.keymap.clear();
     Ok(Value::Null)
 }
@@ -273,7 +274,7 @@ pub(crate) fn file_import_lightroom(app: &mut LightcraftApp, c: &Call) -> Result
     }
 }
 
-pub(crate) fn app_quit(app: &mut LightcraftApp, _: &Call) -> Result<Value, String> {
+pub(crate) fn app_quit(app: &mut LightcraftApp, _: &Call, _: NoParams) -> Result<Value, String> {
     app.ui.quit = true;
     Ok(Value::Null)
 }
@@ -850,21 +851,21 @@ pub(crate) fn app_export(app: &mut LightcraftApp, c: &Call) -> Result<Value, Str
     crate::control::export_active(app, p)
 }
 
-pub(crate) fn app_show_in_finder(app: &mut LightcraftApp, _: &Call) -> Result<Value, String> {
+pub(crate) fn app_show_in_finder(app: &mut LightcraftApp, _: &Call, _: NoParams) -> Result<Value, String> {
     show_in_finder(app)
 }
 
-pub(crate) fn app_open_log_folder(app: &mut LightcraftApp, _: &Call) -> Result<Value, String> {
+pub(crate) fn app_open_log_folder(app: &mut LightcraftApp, _: &Call, _: NoParams) -> Result<Value, String> {
     open_log_folder(app)
 }
 
-pub(crate) fn app_discord(app: &mut LightcraftApp, c: &Call) -> Result<Value, String> {
+pub(crate) fn app_discord(app: &mut LightcraftApp, c: &Call, _: NoParams) -> Result<Value, String> {
     let id = c.id;
     let url = crate::links::url_of(id).unwrap_or(crate::links::WEBSITE);
     crate::links::open(app, url)
 }
 
-pub(crate) fn app_export_previous(app: &mut LightcraftApp, _: &Call) -> Result<Value, String> {
+pub(crate) fn app_export_previous(app: &mut LightcraftApp, _: &Call, _: NoParams) -> Result<Value, String> {
     match app.session.last_export.clone() {
         Some(prev) => crate::control::export_active(app, &lightcraft_engine::export::ExportOptions::known_keys_only(&prev)),
         None => Err("nothing exported yet — use Export…".into()),
@@ -872,7 +873,7 @@ pub(crate) fn app_export_previous(app: &mut LightcraftApp, _: &Call) -> Result<V
 }
 
 /// `app.language.*`: the language of the menu command.
-pub(crate) fn language(app: &mut LightcraftApp, c: &Call) -> Result<Value, String> {
+pub(crate) fn language(app: &mut LightcraftApp, c: &Call, _: NoParams) -> Result<Value, String> {
     let language = language_from_command(c.id).ok_or_else(|| format!("{}: no such language", c.id))?;
     app.ui.language = language;
     // Immediately, not on the next frame: the reply and anything else run this frame

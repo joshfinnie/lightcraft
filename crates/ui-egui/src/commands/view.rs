@@ -6,13 +6,14 @@ use crate::LightcraftApp;
 use crate::menus::*;
 use crate::pick::{PickRequest, Picked};
 use crate::state::{BeforeAfter, Dialog, RightPanel, ViewMode, Zoom};
+use lightcraft_engine::cmd::params::NoParams;
 
-pub(crate) fn view_photo_grid(app: &mut LightcraftApp, _: &Call) -> Result<Value, String> {
+pub(crate) fn view_photo_grid(app: &mut LightcraftApp, _: &Call, _: NoParams) -> Result<Value, String> {
     app.ui.view = ViewMode::PhotoGrid;
     Ok(Value::Null)
 }
 
-pub(crate) fn view_square_grid(app: &mut LightcraftApp, _: &Call) -> Result<Value, String> {
+pub(crate) fn view_square_grid(app: &mut LightcraftApp, _: &Call, _: NoParams) -> Result<Value, String> {
     app.ui.view = ViewMode::SquareGrid;
     Ok(Value::Null)
 }
@@ -113,7 +114,7 @@ pub(crate) fn view_sidebar_move_section(app: &mut LightcraftApp, c: &Call) -> Re
     Ok(json!({"section": section.id(), "moved": moved, "order": order}))
 }
 
-pub(crate) fn view_sidebar_reset(app: &mut LightcraftApp, _: &Call) -> Result<Value, String> {
+pub(crate) fn view_sidebar_reset(app: &mut LightcraftApp, _: &Call, _: NoParams) -> Result<Value, String> {
     // every section shown and open, in the usual order
     app.ui.sidebar = Default::default();
     Ok(json!({"sidebar": app.ui.sidebar}))
@@ -129,17 +130,17 @@ pub(crate) fn view_theme(app: &mut LightcraftApp, c: &Call) -> Result<Value, Str
     theme_command(app, p)
 }
 
-pub(crate) fn view_grid_toggle(app: &mut LightcraftApp, _: &Call) -> Result<Value, String> {
+pub(crate) fn view_grid_toggle(app: &mut LightcraftApp, _: &Call, _: NoParams) -> Result<Value, String> {
     app.ui.view = if app.ui.view == ViewMode::PhotoGrid { ViewMode::SquareGrid } else { ViewMode::PhotoGrid };
     Ok(Value::Null)
 }
 
-pub(crate) fn view_detail(app: &mut LightcraftApp, _: &Call) -> Result<Value, String> {
+pub(crate) fn view_detail(app: &mut LightcraftApp, _: &Call, _: NoParams) -> Result<Value, String> {
     app.ui.view = ViewMode::Detail;
     Ok(Value::Null)
 }
 
-pub(crate) fn view_compare(app: &mut LightcraftApp, _: &Call) -> Result<Value, String> {
+pub(crate) fn view_compare(app: &mut LightcraftApp, _: &Call, _: NoParams) -> Result<Value, String> {
     crate::panels::compare::enter_compare(app)
 }
 
@@ -163,7 +164,7 @@ pub(crate) fn view_face_boxes(app: &mut LightcraftApp, c: &Call) -> Result<Value
     Ok(json!({"show": app.ui.face_boxes}))
 }
 
-pub(crate) fn view_people(app: &mut LightcraftApp, _: &Call) -> Result<Value, String> {
+pub(crate) fn view_people(app: &mut LightcraftApp, _: &Call, _: NoParams) -> Result<Value, String> {
     // Everyone; the page just left stays one click away (the chip next to the title)
     if let Some(name) = app.ui.person_page.take() {
         app.ui.last_person = Some(name);
@@ -185,12 +186,12 @@ pub(crate) fn view_person(app: &mut LightcraftApp, c: &Call) -> Result<Value, St
     Ok(json!({"person": name}))
 }
 
-pub(crate) fn view_survey(app: &mut LightcraftApp, _: &Call) -> Result<Value, String> {
+pub(crate) fn view_survey(app: &mut LightcraftApp, _: &Call, _: NoParams) -> Result<Value, String> {
     app.ui.view = ViewMode::Survey;
     Ok(json!({"photos": crate::panels::compare::survey_photos(app).len()}))
 }
 
-pub(crate) fn view_reference(app: &mut LightcraftApp, _: &Call) -> Result<Value, String> {
+pub(crate) fn view_reference(app: &mut LightcraftApp, _: &Call, _: NoParams) -> Result<Value, String> {
     // the reference: the one set before, else the active photo (the next one becomes active)
     let vis = app.session.visible_cloned();
     let reference = app
@@ -210,7 +211,7 @@ pub(crate) fn view_reference(app: &mut LightcraftApp, _: &Call) -> Result<Value,
     Ok(json!({"reference": r, "active": app.session.active().map(|a| a.0)}))
 }
 
-pub(crate) fn compare_swap(app: &mut LightcraftApp, _: &Call) -> Result<Value, String> {
+pub(crate) fn compare_swap(app: &mut LightcraftApp, _: &Call, _: NoParams) -> Result<Value, String> {
     crate::panels::compare::swap(app)
 }
 
@@ -220,18 +221,18 @@ pub(crate) fn compare_set(app: &mut LightcraftApp, c: &Call) -> Result<Value, St
     crate::panels::compare::set_photo(app, lightcraft_catalog::PhotoId(id), p.get("side").and_then(Value::as_str))
 }
 
-pub(crate) fn compare_make_select(app: &mut LightcraftApp, _: &Call) -> Result<Value, String> {
+pub(crate) fn compare_make_select(app: &mut LightcraftApp, _: &Call, _: NoParams) -> Result<Value, String> {
     crate::panels::compare::make_select(app)
 }
 
-pub(crate) fn view_auto_advance(app: &mut LightcraftApp, _: &Call) -> Result<Value, String> {
+pub(crate) fn view_auto_advance(app: &mut LightcraftApp, _: &Call, _: NoParams) -> Result<Value, String> {
     let ctx = app.tasks.repaint.clone().unwrap_or_default();
     app.ui.auto_advance = !app.ui.auto_advance;
     app.toast(&ctx, crate::i18n::tr(if app.ui.auto_advance { "Auto Advance On" } else { "Auto Advance Off" }));
     Ok(json!({"autoAdvance": app.ui.auto_advance}))
 }
 
-pub(crate) fn view_back(app: &mut LightcraftApp, _: &Call) -> Result<Value, String> {
+pub(crate) fn view_back(app: &mut LightcraftApp, _: &Call, _: NoParams) -> Result<Value, String> {
     let ctx = app.tasks.repaint.clone().unwrap_or_default();
     if app.ui.dialog.is_some() {
         app.ui.dialog = None;
@@ -276,19 +277,19 @@ pub(crate) fn view_slideshow(app: &mut LightcraftApp, c: &Call) -> Result<Value,
     r
 }
 
-pub(crate) fn slideshow_toggle_pause(app: &mut LightcraftApp, c: &Call) -> Result<Value, String> {
+pub(crate) fn slideshow_toggle_pause(app: &mut LightcraftApp, c: &Call, _: NoParams) -> Result<Value, String> {
     let id = c.id;
     let ctx = app.tasks.repaint.clone().unwrap_or_default();
     let now = ctx.input(|i| i.time);
     crate::panels::slideshow::command(app, id, now)
 }
 
-pub(crate) fn view_slideshow_options(app: &mut LightcraftApp, _: &Call) -> Result<Value, String> {
+pub(crate) fn view_slideshow_options(app: &mut LightcraftApp, _: &Call, _: NoParams) -> Result<Value, String> {
     app.ui.dialog = Some(Dialog::Settings { tab: "slideshow".into() });
     Ok(Value::Null)
 }
 
-pub(crate) fn view_full_screen_preview(app: &mut LightcraftApp, _: &Call) -> Result<Value, String> {
+pub(crate) fn view_full_screen_preview(app: &mut LightcraftApp, _: &Call, _: NoParams) -> Result<Value, String> {
     app.ui.fullscreen = !app.ui.fullscreen;
     if !app.ui.fullscreen {
         app.ui.slideshow = None;
@@ -399,52 +400,59 @@ pub(crate) fn view_layout_image_opacity(app: &mut LightcraftApp, c: &Call) -> Re
     Ok(json!({"layoutImage": app.ui.layout_image}))
 }
 
-pub(crate) fn view_navigator(app: &mut LightcraftApp, _: &Call) -> Result<Value, String> {
+pub(crate) fn view_navigator(app: &mut LightcraftApp, _: &Call, _: NoParams) -> Result<Value, String> {
     app.ui.navigator = !app.ui.navigator;
     Ok(json!({"navigator": app.ui.navigator}))
 }
 
-pub(crate) fn view_filmstrip(app: &mut LightcraftApp, _: &Call) -> Result<Value, String> {
+pub(crate) fn view_filmstrip(app: &mut LightcraftApp, _: &Call, _: NoParams) -> Result<Value, String> {
     app.ui.filmstrip = !app.ui.filmstrip;
     Ok(Value::Null)
 }
 
-pub(crate) fn view_left_panel(app: &mut LightcraftApp, _: &Call) -> Result<Value, String> {
-    app.ui.left_panel = !app.ui.left_panel;
-    Ok(Value::Null)
+lightcraft_engine::params! {
+    /// `{show?}`: show or hide; toggles when omitted.
+    pub(crate) struct Show {
+        show: Option<bool>,
+    }
 }
 
-pub(crate) fn view_before_after(app: &mut LightcraftApp, _: &Call) -> Result<Value, String> {
+pub(crate) fn view_left_panel(app: &mut LightcraftApp, _: &Call, p: Show) -> Result<Value, String> {
+    app.ui.left_panel = p.show.unwrap_or(!app.ui.left_panel);
+    Ok(json!({"show": app.ui.left_panel}))
+}
+
+pub(crate) fn view_before_after(app: &mut LightcraftApp, _: &Call, _: NoParams) -> Result<Value, String> {
     app.ui.before_after = if app.ui.before_after == BeforeAfter::SideBySide { BeforeAfter::Off } else { BeforeAfter::SideBySide };
     Ok(Value::Null)
 }
 
-pub(crate) fn view_before_after_split(app: &mut LightcraftApp, _: &Call) -> Result<Value, String> {
+pub(crate) fn view_before_after_split(app: &mut LightcraftApp, _: &Call, _: NoParams) -> Result<Value, String> {
     app.ui.before_after = if app.ui.before_after == BeforeAfter::Split { BeforeAfter::Off } else { BeforeAfter::Split };
     Ok(Value::Null)
 }
 
-pub(crate) fn view_before_after_top_bottom(app: &mut LightcraftApp, _: &Call) -> Result<Value, String> {
+pub(crate) fn view_before_after_top_bottom(app: &mut LightcraftApp, _: &Call, _: NoParams) -> Result<Value, String> {
     app.ui.before_after = if app.ui.before_after == BeforeAfter::TopBottom { BeforeAfter::Off } else { BeforeAfter::TopBottom };
     Ok(Value::Null)
 }
 
-pub(crate) fn view_before_after_split_top_bottom(app: &mut LightcraftApp, _: &Call) -> Result<Value, String> {
+pub(crate) fn view_before_after_split_top_bottom(app: &mut LightcraftApp, _: &Call, _: NoParams) -> Result<Value, String> {
     app.ui.before_after = if app.ui.before_after == BeforeAfter::SplitTopBottom { BeforeAfter::Off } else { BeforeAfter::SplitTopBottom };
     Ok(Value::Null)
 }
 
-pub(crate) fn view_show_original(app: &mut LightcraftApp, _: &Call) -> Result<Value, String> {
+pub(crate) fn view_show_original(app: &mut LightcraftApp, _: &Call, _: NoParams) -> Result<Value, String> {
     app.ui.before_after = if app.ui.before_after == BeforeAfter::Original { BeforeAfter::Off } else { BeforeAfter::Original };
     Ok(Value::Null)
 }
 
-pub(crate) fn view_zoom_fit(app: &mut LightcraftApp, _: &Call) -> Result<Value, String> {
+pub(crate) fn view_zoom_fit(app: &mut LightcraftApp, _: &Call, _: NoParams) -> Result<Value, String> {
     app.ui.zoom = Zoom::Fit;
     Ok(Value::Null)
 }
 
-pub(crate) fn view_zoom100(app: &mut LightcraftApp, _: &Call) -> Result<Value, String> {
+pub(crate) fn view_zoom100(app: &mut LightcraftApp, _: &Call, _: NoParams) -> Result<Value, String> {
     app.ui.zoom = Zoom::Percent(100.0);
     Ok(Value::Null)
 }
@@ -494,7 +502,7 @@ pub(crate) fn view_zoom_in(app: &mut LightcraftApp, c: &Call) -> Result<Value, S
     Ok(Value::Null)
 }
 
-pub(crate) fn view_thumb_size_up(app: &mut LightcraftApp, c: &Call) -> Result<Value, String> {
+pub(crate) fn view_thumb_size_up(app: &mut LightcraftApp, c: &Call, _: NoParams) -> Result<Value, String> {
     let id = c.id;
     // the bottom-bar slider's range, one `THUMB_SIZE_STEP` per call; {} → {size}
     if !thumb_size_view(app) {
@@ -532,7 +540,7 @@ pub(crate) fn view_navigate(app: &mut LightcraftApp, c: &Call) -> Result<Value, 
     Ok(json!({"zoom": zoom, "pan": pan}))
 }
 
-pub(crate) fn view_clipping(app: &mut LightcraftApp, _: &Call) -> Result<Value, String> {
+pub(crate) fn view_clipping(app: &mut LightcraftApp, _: &Call, _: NoParams) -> Result<Value, String> {
     app.ui.show_clipping = !app.ui.show_clipping;
     Ok(Value::Null)
 }
@@ -607,7 +615,7 @@ pub(crate) fn view_soft_proof(app: &mut LightcraftApp, c: &Call) -> Result<Value
         "paperInk": app.ui.proof_paper_ink, "destWarning": pr.dest_warning, "displayWarning": pr.display_warning}))
 }
 
-pub(crate) fn view_histogram(app: &mut LightcraftApp, _: &Call) -> Result<Value, String> {
+pub(crate) fn view_histogram(app: &mut LightcraftApp, _: &Call, _: NoParams) -> Result<Value, String> {
     app.ui.histogram = !app.ui.histogram;
     Ok(Value::Null)
 }
@@ -618,7 +626,7 @@ pub(crate) fn view_mask_overlay(app: &mut LightcraftApp, c: &Call) -> Result<Val
     Ok(json!({"maskOverlay": app.ui.mask_overlay}))
 }
 
-pub(crate) fn view_mask_overlay_all(app: &mut LightcraftApp, _: &Call) -> Result<Value, String> {
+pub(crate) fn view_mask_overlay_all(app: &mut LightcraftApp, _: &Call, _: NoParams) -> Result<Value, String> {
     app.ui.mask_overlay_all = !app.ui.mask_overlay_all;
     Ok(json!({"maskOverlayAll": app.ui.mask_overlay_all}))
 }
@@ -665,7 +673,7 @@ pub(crate) fn view_mask_overlay_color(app: &mut LightcraftApp, c: &Call) -> Resu
     Ok(json!({"color": format!("#{r:02x}{g:02x}{b:02x}"), "opacity": app.ui.mask_overlay_opacity}))
 }
 
-pub(crate) fn brush_smaller(app: &mut LightcraftApp, c: &Call) -> Result<Value, String> {
+pub(crate) fn brush_smaller(app: &mut LightcraftApp, c: &Call, _: NoParams) -> Result<Value, String> {
     let id = c.id;
     let (k, df) = match id {
         "brush.smaller" => (1.0 / 1.2, 0.0),
@@ -698,7 +706,7 @@ pub(crate) fn view_tool_overlay(app: &mut LightcraftApp, c: &Call) -> Result<Val
     Ok(json!({"mode": mode.name()}))
 }
 
-pub(crate) fn view_visualize_spots(app: &mut LightcraftApp, _: &Call) -> Result<Value, String> {
+pub(crate) fn view_visualize_spots(app: &mut LightcraftApp, _: &Call, _: NoParams) -> Result<Value, String> {
     // like Lightroom's A: opens the Remove tool with the view on, or toggles it there
     if app.ui.right == RightPanel::Remove {
         app.ui.visualize_spots = !app.ui.visualize_spots;
@@ -709,7 +717,7 @@ pub(crate) fn view_visualize_spots(app: &mut LightcraftApp, _: &Call) -> Result<
     Ok(Value::Null)
 }
 
-pub(crate) fn view_crop_overlay(app: &mut LightcraftApp, _: &Call) -> Result<Value, String> {
+pub(crate) fn view_crop_overlay(app: &mut LightcraftApp, _: &Call, _: NoParams) -> Result<Value, String> {
     use crate::state::CropOverlay::*;
     app.ui.crop_overlay = match app.ui.crop_overlay {
         Thirds => Grid,
@@ -723,7 +731,7 @@ pub(crate) fn view_crop_overlay(app: &mut LightcraftApp, _: &Call) -> Result<Val
     Ok(json!({"overlay": app.ui.crop_overlay}))
 }
 
-pub(crate) fn view_crop_overlay_orientation(app: &mut LightcraftApp, _: &Call) -> Result<Value, String> {
+pub(crate) fn view_crop_overlay_orientation(app: &mut LightcraftApp, _: &Call, _: NoParams) -> Result<Value, String> {
     app.ui.crop_overlay_orient = (app.ui.crop_overlay_orient + 1) % 4;
     Ok(json!({"orientation": app.ui.crop_overlay_orient}))
 }
@@ -777,7 +785,7 @@ pub(crate) fn view_solo_sections(app: &mut LightcraftApp, c: &Call) -> Result<Va
     })
 }
 
-pub(crate) fn view_filter_bar(app: &mut LightcraftApp, _: &Call) -> Result<Value, String> {
+pub(crate) fn view_filter_bar(app: &mut LightcraftApp, _: &Call, _: NoParams) -> Result<Value, String> {
     app.ui.filter_bar = !app.ui.filter_bar;
     if app.ui.filter_bar && !matches!(app.ui.view, ViewMode::PhotoGrid | ViewMode::SquareGrid) {
         app.ui.view = ViewMode::PhotoGrid;
@@ -785,13 +793,13 @@ pub(crate) fn view_filter_bar(app: &mut LightcraftApp, _: &Call) -> Result<Value
     Ok(json!({"filterBar": app.ui.filter_bar}))
 }
 
-pub(crate) fn panel_edit(app: &mut LightcraftApp, _: &Call) -> Result<Value, String> {
+pub(crate) fn panel_edit(app: &mut LightcraftApp, _: &Call, _: NoParams) -> Result<Value, String> {
     let ctx = app.tasks.repaint.clone().unwrap_or_default();
     panel(app, &ctx, RightPanel::Edit, "Edit");
     Ok(Value::Null)
 }
 
-pub(crate) fn panel_profiles(app: &mut LightcraftApp, _: &Call) -> Result<Value, String> {
+pub(crate) fn panel_profiles(app: &mut LightcraftApp, _: &Call, _: NoParams) -> Result<Value, String> {
     // toggles between the profile browser and the Edit panel it belongs to
     app.ui.right = if app.ui.right == RightPanel::Profiles && crate::docking::exposed(app, crate::docking::Panel::Tools) {
         RightPanel::Edit
@@ -804,13 +812,13 @@ pub(crate) fn panel_profiles(app: &mut LightcraftApp, _: &Call) -> Result<Value,
     Ok(json!({"open": app.ui.right == RightPanel::Profiles}))
 }
 
-pub(crate) fn panel_crop(app: &mut LightcraftApp, _: &Call) -> Result<Value, String> {
+pub(crate) fn panel_crop(app: &mut LightcraftApp, _: &Call, _: NoParams) -> Result<Value, String> {
     let ctx = app.tasks.repaint.clone().unwrap_or_default();
     panel(app, &ctx, RightPanel::Crop, "Crop, Rotate, Geometry");
     Ok(Value::Null)
 }
 
-pub(crate) fn panel_remove(app: &mut LightcraftApp, _: &Call) -> Result<Value, String> {
+pub(crate) fn panel_remove(app: &mut LightcraftApp, _: &Call, _: NoParams) -> Result<Value, String> {
     let ctx = app.tasks.repaint.clone().unwrap_or_default();
     panel(app, &ctx, RightPanel::Remove, "Remove");
     if app.ui.right == RightPanel::Remove && app.ui.tool.is_empty() {
@@ -819,43 +827,43 @@ pub(crate) fn panel_remove(app: &mut LightcraftApp, _: &Call) -> Result<Value, S
     Ok(Value::Null)
 }
 
-pub(crate) fn panel_masking(app: &mut LightcraftApp, _: &Call) -> Result<Value, String> {
+pub(crate) fn panel_masking(app: &mut LightcraftApp, _: &Call, _: NoParams) -> Result<Value, String> {
     let ctx = app.tasks.repaint.clone().unwrap_or_default();
     panel(app, &ctx, RightPanel::Masking, "Masking");
     Ok(Value::Null)
 }
 
-pub(crate) fn panel_redeye(app: &mut LightcraftApp, _: &Call) -> Result<Value, String> {
+pub(crate) fn panel_redeye(app: &mut LightcraftApp, _: &Call, _: NoParams) -> Result<Value, String> {
     let ctx = app.tasks.repaint.clone().unwrap_or_default();
     panel(app, &ctx, RightPanel::RedEye, "Red Eye");
     Ok(Value::Null)
 }
 
-pub(crate) fn panel_info(app: &mut LightcraftApp, _: &Call) -> Result<Value, String> {
+pub(crate) fn panel_info(app: &mut LightcraftApp, _: &Call, _: NoParams) -> Result<Value, String> {
     let ctx = app.tasks.repaint.clone().unwrap_or_default();
     panel(app, &ctx, RightPanel::Info, "Info");
     Ok(Value::Null)
 }
 
-pub(crate) fn panel_keywords(app: &mut LightcraftApp, _: &Call) -> Result<Value, String> {
+pub(crate) fn panel_keywords(app: &mut LightcraftApp, _: &Call, _: NoParams) -> Result<Value, String> {
     let ctx = app.tasks.repaint.clone().unwrap_or_default();
     panel(app, &ctx, RightPanel::Keywords, "Keywords");
     Ok(Value::Null)
 }
 
-pub(crate) fn panel_versions(app: &mut LightcraftApp, _: &Call) -> Result<Value, String> {
+pub(crate) fn panel_versions(app: &mut LightcraftApp, _: &Call, _: NoParams) -> Result<Value, String> {
     let ctx = app.tasks.repaint.clone().unwrap_or_default();
     panel(app, &ctx, RightPanel::Versions, "Versions");
     Ok(Value::Null)
 }
 
-pub(crate) fn panel_activity(app: &mut LightcraftApp, _: &Call) -> Result<Value, String> {
+pub(crate) fn panel_activity(app: &mut LightcraftApp, _: &Call, _: NoParams) -> Result<Value, String> {
     let ctx = app.tasks.repaint.clone().unwrap_or_default();
     panel(app, &ctx, RightPanel::Activity, "History");
     Ok(Value::Null)
 }
 
-pub(crate) fn panel_presets(app: &mut LightcraftApp, _: &Call) -> Result<Value, String> {
+pub(crate) fn panel_presets(app: &mut LightcraftApp, _: &Call, _: NoParams) -> Result<Value, String> {
     app.ui.presets = !app.ui.presets || !crate::docking::exposed(app, crate::docking::Panel::Presets);
     if app.ui.presets && app.ui.view != ViewMode::Detail {
         app.ui.view = ViewMode::Detail;
@@ -863,7 +871,7 @@ pub(crate) fn panel_presets(app: &mut LightcraftApp, _: &Call) -> Result<Value, 
     Ok(Value::Null)
 }
 
-pub(crate) fn tool_done(app: &mut LightcraftApp, _: &Call) -> Result<Value, String> {
+pub(crate) fn tool_done(app: &mut LightcraftApp, _: &Call, _: NoParams) -> Result<Value, String> {
     // Return commits a tool panel (crop, remove, red eye, masking): back to Edit
     use RightPanel::*;
     if app.ui.dialog.is_none() && matches!(app.ui.right, Crop | Remove | RedEye | Masking) {
@@ -874,7 +882,7 @@ pub(crate) fn tool_done(app: &mut LightcraftApp, _: &Call) -> Result<Value, Stri
     Ok(Value::Null)
 }
 
-pub(crate) fn panel_close(app: &mut LightcraftApp, _: &Call) -> Result<Value, String> {
+pub(crate) fn panel_close(app: &mut LightcraftApp, _: &Call, _: NoParams) -> Result<Value, String> {
     app.ui.right = RightPanel::None;
     app.ui.presets = false;
     Ok(Value::Null)
@@ -954,7 +962,7 @@ pub(crate) fn tool(app: &mut LightcraftApp, c: &Call) -> Result<Value, String> {
     Ok(Value::Null)
 }
 
-pub(crate) fn view_focus_search(app: &mut LightcraftApp, _: &Call) -> Result<Value, String> {
+pub(crate) fn view_focus_search(app: &mut LightcraftApp, _: &Call, _: NoParams) -> Result<Value, String> {
     // the search field lives in the top bar of the library and detail views alike
     app.ui.focus_search = true;
     Ok(Value::Null)
