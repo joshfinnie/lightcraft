@@ -392,7 +392,7 @@ impl WebApp {
         let Boot { opts, backend, files, index, lib_dir } = boot;
         let originals = Originals::default();
         let t = perf_now();
-        let mut session = Session::new();
+        let mut session = Session::new().with_system_clock();
         originals.install(&mut session);
         let stores = LibraryStores {
             dir: format!("browser:{}/{lib_dir}", backend.as_ref().map_or("memory", |b| b.kind())).into(),
@@ -413,7 +413,7 @@ impl WebApp {
             Err(e) => {
                 // never a silent demo session (issue #100): an empty one, and the window says why
                 log::error!("opening the library failed: {e}");
-                session = Session::new();
+                session = Session::new().with_system_clock();
                 originals.install(&mut session);
                 problem = Some(lightcraft_ui_egui::panels::library_problem::LibraryProblem {
                     can_retry: false,

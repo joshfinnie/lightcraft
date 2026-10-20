@@ -11,6 +11,11 @@ pub const WEEKDAYS: [&str; 7] = ["Monday", "Tuesday", "Wednesday", "Thursday", "
 pub const MONTHS: [&str; 12] =
     ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
+/// The system clock as `YYYY-MM-DDTHH:MM:SS` (UTC), on every target (the browser's on the web).
+pub fn system_now() -> String {
+    civil(web_time::SystemTime::now().duration_since(web_time::UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0))
+}
+
 /// Unix seconds → `YYYY-MM-DDTHH:MM:SS` (proleptic Gregorian; H. Hinnant's algorithm).
 pub fn civil(secs: i64) -> String {
     let days = secs.div_euclid(86_400);
@@ -194,6 +199,13 @@ impl Catalog {
 mod tests {
     use super::*;
     use crate::{Op, Photo, Source};
+
+    #[test]
+    fn system_now_reads_the_clock() {
+        let secs = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as i64;
+        let now = system_now();
+        assert!([civil(secs), civil(secs + 1)].contains(&now), "{now}");
+    }
 
     #[test]
     fn calendar() {

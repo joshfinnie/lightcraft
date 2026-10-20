@@ -584,18 +584,7 @@ pub fn set_now(iso: Option<String>) {
 
 /// The current time as ISO 8601: [`set_now`]'s, else the system clock (UTC).
 pub fn now() -> String {
-    if let Some(n) = NOW.with(|n| n.borrow().clone()) {
-        return n;
-    }
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        let secs = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0);
-        crate::dates::civil(secs)
-    }
-    #[cfg(target_arch = "wasm32")]
-    {
-        "2026-01-01T00:00:00".to_string()
-    }
+    NOW.with(|n| n.borrow().clone()).unwrap_or_else(crate::dates::system_now)
 }
 
 /// A flag as rules name it (its variant, lower case), without building a string per photo.
