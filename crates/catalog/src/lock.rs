@@ -137,7 +137,8 @@ impl LibraryLock {
     /// Another descriptor on the locked file: what a process spawned by another thread holds
     /// between fork and exec (a `dup` refers to the same open file description). Tests only (the
     /// test that uses it is Unix-only: `flock` semantics).
-    #[cfg(all(test, unix))]
+    #[cfg(test)]
+    #[cfg(unix)]
     pub(crate) fn descriptor_copy(&self) -> Option<File> {
         self.file.as_ref().and_then(|f| f.try_clone().ok())
     }

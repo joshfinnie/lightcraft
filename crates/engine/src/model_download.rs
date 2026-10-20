@@ -226,7 +226,8 @@ fn run(spec: &Download, mirror: &str, staging: &Path, shared: &Shared) {
     }
 }
 
-#[cfg(all(test, not(target_arch = "wasm32")))]
+#[cfg(test)]
+#[cfg(not(target_arch = "wasm32"))]
 mod tests {
     use super::*;
     use lightcraft_denoise::hash::sha256_hex;

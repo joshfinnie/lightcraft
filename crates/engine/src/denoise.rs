@@ -1642,7 +1642,8 @@ impl Session {
     }
 }
 
-#[cfg(all(test, feature = "denoise"))]
+#[cfg(test)]
+#[cfg(feature = "denoise")]
 mod gpu_tests {
     use super::*;
     use lightcraft_denoise::manifest::{Domain, Gain};

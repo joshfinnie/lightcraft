@@ -1495,7 +1495,7 @@ mod tests {
                     body.extend(s.as_bytes());
                     13 + 2 * s.len() as u64
                 }
-                _ => unreachable!(),
+                other => panic!("the fixture writes no {other:?}"),
             };
             header.extend(varint(serial));
         }
