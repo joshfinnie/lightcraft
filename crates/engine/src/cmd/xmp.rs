@@ -3,7 +3,7 @@
 use lightcraft_catalog::Op;
 use serde_json::{Value, json};
 
-use super::{CommandSpec, always, bad, cmd, has_selection, str_param};
+use super::{CommandSpec, always, bad, has_selection, raw_cmd, str_param};
 use crate::sidecar::SidecarNaming;
 use crate::{Result, Session};
 
@@ -81,7 +81,7 @@ fn prefs(s: &mut Session, p: &Value) -> Result<Value> {
 
 pub fn specs() -> Vec<CommandSpec> {
     vec![
-        cmd!(
+        raw_cmd!(
             "photo.saveMetadataToFile",
             "Save Metadata to File",
             ["Photo"],
@@ -90,7 +90,7 @@ pub fn specs() -> Vec<CommandSpec> {
             has_selection,
             save
         ),
-        cmd!(
+        raw_cmd!(
             "photo.readMetadataFromFile",
             "Read Metadata from File",
             ["Photo"],
@@ -99,7 +99,7 @@ pub fn specs() -> Vec<CommandSpec> {
             has_selection,
             read
         ),
-        cmd!(
+        raw_cmd!(
             "library.xmpPreferences",
             "XMP Sidecar Preferences",
             [],
@@ -108,7 +108,7 @@ pub fn specs() -> Vec<CommandSpec> {
             always,
             prefs
         ),
-        cmd!(
+        raw_cmd!(
             "library.retrySidecars",
             "Write Waiting XMP Sidecars",
             [],
@@ -120,7 +120,7 @@ pub fn specs() -> Vec<CommandSpec> {
                 Ok(json!({"written": written, "waiting": s.unsaved_sidecars()}))
             }
         ),
-        cmd!("library.toggleAutoWriteXmp", "Automatically Write Changes into XMP", ["File"], None, "{} → {autoWrite}", always, |s, _| {
+        raw_cmd!("library.toggleAutoWriteXmp", "Automatically Write Changes into XMP", ["File"], None, "{} → {autoWrite}", always, |s, _| {
             let on = !s.xmp.auto_write;
             prefs(s, &json!({"autoWrite": on}))
         }),

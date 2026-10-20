@@ -9,7 +9,7 @@ use std::path::Path;
 use lightcraft_catalog::{Catalog, Op, Photo, PhotoId, Source};
 use serde_json::{Value, json};
 
-use super::{CommandSpec, always, bad, cmd, str_param};
+use super::{CommandSpec, always, bad, raw_cmd, str_param};
 use crate::{Result, Session};
 
 /// The file Missing Photos checks for `p`, if it is in scope: a library photo (not in Recently
@@ -338,10 +338,10 @@ fn find_missing(s: &mut Session, p: &Value) -> Result<Value> {
 
 pub fn specs() -> Vec<CommandSpec> {
     vec![
-        cmd!(query "library.missing", "Missing Photos", [], None, "{} → [{id, path}] — photos whose original file isn't where the library expects it", always, |s, _| {
+        raw_cmd!(query "library.missing", "Missing Photos", [], None, "{} → [{id, path}] — photos whose original file isn't where the library expects it", always, |s, _| {
             Ok(Value::Array(missing(s).into_iter().map(|(id, path)| json!({"id": id.0, "path": path})).collect()))
         }),
-        cmd!(
+        raw_cmd!(
             "photo.relink",
             "Locate Photo",
             [],
@@ -350,7 +350,7 @@ pub fn specs() -> Vec<CommandSpec> {
             always,
             relink
         ),
-        cmd!(
+        raw_cmd!(
             "library.findMissing",
             "Find Missing Photos",
             [],

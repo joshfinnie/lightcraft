@@ -32,6 +32,7 @@ mod merge;
 pub mod metadata;
 pub mod missing;
 mod organize;
+pub(crate) mod params;
 mod prefs;
 mod preset_files;
 pub mod previews;
@@ -67,6 +68,9 @@ pub struct CommandSpec {
     /// `id`, see [`names_photos`]) skips it, and the command validates those photos itself.
     /// Off unless a command opts in (`CommandSpec { explicit_targets: true, ..cmd!(…) }`).
     pub explicit_targets: bool,
+    /// The top-level keys `run` takes; `None` for any (a partial value it merges, or a command
+    /// still reading raw JSON).
+    pub keys: fn() -> Option<&'static [&'static str]>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -126,15 +130,47 @@ pub fn has_clipboard(s: &Session) -> std::result::Result<(), String> {
     if s.clipboard.is_none() { Err("no settings copied".into()) } else { Ok(()) }
 }
 
+/// A command: `cmd!("photo.rate", "Set Rating", ["Photo"], None, "{rating: 0..5, ids?}", Rate,
+/// has_selection, |s, p| …)`, where `Rate` is its [`params::params!`] struct and `run` takes it
+/// already read (an unknown key or a bad value is `BadParams` before `run`). `query` for one that
+/// isn't journaled.
 macro_rules! cmd {
-    ($id:literal, $label:literal, [$($m:literal),*], $sc:expr, $params:literal, $en:expr, $run:expr) => {
-        $crate::cmd::CommandSpec { id: $id, label: $label, menu: &[$($m),*], shortcut: $sc, params: $params, enabled: $en, run: $run, journal: true, explicit_targets: false }
+    ($id:literal, $label:literal, [$($m:literal),*], $sc:expr, $params:literal, $ty:ty, $en:expr, $run:expr) => {
+        $crate::cmd::cmd!(@spec true, $id, $label, [$($m),*], $sc, $params, $ty, $en, $run)
     };
-    (query $id:literal, $label:literal, [$($m:literal),*], $sc:expr, $params:literal, $en:expr, $run:expr) => {
-        $crate::cmd::CommandSpec { id: $id, label: $label, menu: &[$($m),*], shortcut: $sc, params: $params, enabled: $en, run: $run, journal: false, explicit_targets: false }
+    (query $id:literal, $label:literal, [$($m:literal),*], $sc:expr, $params:literal, $ty:ty, $en:expr, $run:expr) => {
+        $crate::cmd::cmd!(@spec false, $id, $label, [$($m),*], $sc, $params, $ty, $en, $run)
+    };
+    (@spec $journal:literal, $id:literal, $label:literal, [$($m:literal),*], $sc:expr, $params:literal, $ty:ty, $en:expr, $run:expr) => {
+        $crate::cmd::CommandSpec {
+            id: $id,
+            label: $label,
+            menu: &[$($m),*],
+            shortcut: $sc,
+            params: $params,
+            enabled: $en,
+            run: {
+                const RUN: fn(&mut $crate::Session, $ty) -> $crate::Result<serde_json::Value> = $run;
+                |s, p| RUN(s, $crate::cmd::params::parse(p)?)
+            },
+            journal: $journal,
+            explicit_targets: false,
+            keys: $crate::cmd::params::keys_of::<$ty>,
+        }
     };
 }
 pub(crate) use cmd;
+
+/// A command still reading raw JSON params; moving to [`cmd!`].
+macro_rules! raw_cmd {
+    ($id:literal, $label:literal, [$($m:literal),*], $sc:expr, $params:literal, $en:expr, $run:expr) => {
+        $crate::cmd::CommandSpec { id: $id, label: $label, menu: &[$($m),*], shortcut: $sc, params: $params, enabled: $en, run: $run, journal: true, explicit_targets: false, keys: || None }
+    };
+    (query $id:literal, $label:literal, [$($m:literal),*], $sc:expr, $params:literal, $en:expr, $run:expr) => {
+        $crate::cmd::CommandSpec { id: $id, label: $label, menu: &[$($m),*], shortcut: $sc, params: $params, enabled: $en, run: $run, journal: false, explicit_targets: false, keys: || None }
+    };
+}
+pub(crate) use raw_cmd;
 
 pub fn command_specs() -> &'static [CommandSpec] {
     static SPECS: std::sync::OnceLock<Vec<CommandSpec>> = std::sync::OnceLock::new();

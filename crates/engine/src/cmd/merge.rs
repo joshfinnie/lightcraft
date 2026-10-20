@@ -7,7 +7,7 @@
 use lightcraft_catalog::PhotoId;
 use serde_json::{Value, json};
 
-use super::{CommandSpec, bad, bool_or, cmd, str_param};
+use super::{CommandSpec, bad, bool_or, raw_cmd, str_param};
 use crate::{Result, Session};
 
 fn can_merge(s: &Session) -> std::result::Result<(), String> {
@@ -62,7 +62,7 @@ fn run_batch(s: &mut Session, p: &Value) -> Result<Value> {
 
 pub fn specs() -> Vec<CommandSpec> {
     vec![
-        cmd!(
+        raw_cmd!(
             "merge.hdr",
             "HDR Merge",
             [],
@@ -71,7 +71,7 @@ pub fn specs() -> Vec<CommandSpec> {
             can_merge,
             |s, p| run(s, "merge.hdr", p)
         ),
-        cmd!(
+        raw_cmd!(
             "merge.panorama",
             "Panorama Merge",
             [],
@@ -80,7 +80,7 @@ pub fn specs() -> Vec<CommandSpec> {
             can_merge,
             |s, p| run(s, "merge.panorama", p)
         ),
-        cmd!(
+        raw_cmd!(
             "merge.hdrPanorama",
             "HDR Panorama Merge",
             [],
@@ -89,7 +89,7 @@ pub fn specs() -> Vec<CommandSpec> {
             can_merge,
             |s, p| run(s, "merge.hdrPanorama", p)
         ),
-        cmd!(
+        raw_cmd!(
             "merge.hdrBatch",
             "HDR for Each Bracket Set",
             ["Photo", "Photo Merge"],

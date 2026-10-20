@@ -7,7 +7,7 @@ use std::path::Path;
 use lightcraft_catalog::{MediaKind, Op, Source};
 use serde_json::{Value, json};
 
-use super::{CommandSpec, bad, cmd, has_active, has_selection};
+use super::{CommandSpec, bad, has_active, has_selection, raw_cmd};
 use crate::{Result, Session};
 
 /// `<stem>.dng`, then `<stem>-2.dng`, `<stem>-3.dng`… next to `path`.
@@ -109,7 +109,7 @@ fn convert(s: &mut Session, p: &Value) -> Result<Value> {
 }
 
 pub fn specs() -> Vec<CommandSpec> {
-    vec![cmd!(
+    vec![raw_cmd!(
         "photo.convertToDng",
         "Convert to DNG",
         ["Photo"],
@@ -387,7 +387,7 @@ fn duplicate(s: &mut Session, p: &Value) -> Result<Value> {
 
 pub fn edit_specs() -> Vec<CommandSpec> {
     vec![
-        cmd!(
+        raw_cmd!(
             "photo.duplicate",
             "Duplicate",
             ["Photo"],
@@ -396,7 +396,7 @@ pub fn edit_specs() -> Vec<CommandSpec> {
             has_selection,
             duplicate
         ),
-        cmd!(
+        raw_cmd!(
             "photo.reload",
             "Reload from Disk",
             ["Photo"],
@@ -405,7 +405,7 @@ pub fn edit_specs() -> Vec<CommandSpec> {
             has_selection,
             reload
         ),
-        cmd!(
+        raw_cmd!(
             "photo.editExternal",
             "Edit Copy for External Editor",
             [],

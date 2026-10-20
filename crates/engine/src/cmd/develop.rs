@@ -5,7 +5,8 @@ use lightcraft_develop::{DevelopSettings, Preset, ProcessVersion, Section, Setti
 use lightcraft_geom::{CropGeometry, CropHandle, Point, Rect, crop_fit_angle, drag_crop};
 use serde_json::{Value, json};
 
-use super::{CommandSpec, always, bad, bool_or, cmd, f64_or, f64_req, has_active, has_clipboard, has_selection, index_req, ok, str_param};
+use super::params::{NoParams, params, whole};
+use super::{CommandSpec, always, bad, cmd, has_active, has_clipboard, has_selection, ok};
 use crate::{Result, Session, media::SourceLevel};
 
 fn active(s: &Session, c: &str) -> Result<PhotoId> {
@@ -19,18 +20,6 @@ fn edit(s: &mut Session, c: &str, label: &str, f: impl FnOnce(&mut DevelopSettin
     f(&mut d)?;
     s.set_develop(id, d, label)?;
     ok()
-}
-
-fn section_param(p: &Value, c: &str) -> Result<Section> {
-    let v = p.get("section").cloned().ok_or_else(|| bad(c, "missing `section`"))?;
-    serde_json::from_value(v).map_err(|e| bad(c, e.to_string()))
-}
-
-fn groups_param(p: &Value, c: &str) -> Result<Option<Vec<SettingsGroup>>> {
-    match p.get("groups") {
-        None | Some(Value::Null) => Ok(None),
-        Some(v) => serde_json::from_value(v.clone()).map(Some).map_err(|e| bad(c, format!("invalid `groups`: {e}"))),
-    }
 }
 
 fn crop_dims(s: &Session, id: PhotoId) -> (f64, f64) {
@@ -52,8 +41,8 @@ fn refit_crop_angle(touched: bool, before: CropGeometry, d: &mut DevelopSettings
 const CROP_ANGLE: &str = "crop.angle";
 
 /// `v` as a list of numbers; `None` unless it is an array of nothing but numbers.
-fn numbers(v: Option<&Value>) -> Option<Vec<f64>> {
-    v?.as_array()?.iter().map(Value::as_f64).collect()
+fn numbers(v: &Value) -> Option<Vec<f64>> {
+    v.as_array()?.iter().map(Value::as_f64).collect()
 }
 
 /// A width × height lock stored as hundredths. Rejects non-finite, non-positive and
@@ -109,31 +98,23 @@ fn has_outdated_process(s: &Session) -> std::result::Result<(), String> {
 
 /// The photos a call names (`ids`, or `id`), each of which must be in the library; `None` when it
 /// names none (the selection applies).
-fn named_photos(s: &Session, p: &Value, c: &str) -> Result<Option<Vec<PhotoId>>> {
-    if !super::names_photos(p) {
-        return Ok(None);
-    }
-    let given = match p.get("ids").filter(|v| !v.is_null()) {
-        Some(Value::Array(a)) => a.clone(),
-        Some(_) => return Err(bad(c, "`ids` must be a list of photo ids")),
-        None => p.get("id").cloned().into_iter().collect(),
+fn named_photos(s: &Session, p: &Targets, c: &str) -> Result<Option<Vec<PhotoId>>> {
+    let given = match (&p.ids, p.id) {
+        (Some(ids), _) => ids.clone(),
+        (None, Some(id)) => vec![id],
+        (None, None) => return Ok(None),
     };
     if given.is_empty() {
         return Err(bad(c, "`ids` names no photos"));
     }
-    let ids = given
-        .iter()
-        .map(|v| match v.as_u64().map(PhotoId) {
-            Some(id) if s.catalog.photo(id).is_some() => Ok(id),
-            _ => Err(bad(c, format!("no such photo {v}"))),
-        })
-        .collect::<Result<Vec<_>>>()?;
-    Ok(Some(ids))
+    if let Some(id) = given.iter().find(|id| s.catalog.photo(**id).is_none()) {
+        return Err(bad(c, format!("no such photo {}", id.0)));
+    }
+    Ok(Some(given))
 }
 
-/// The user preset named by `p.id` (built-ins can't be changed).
-fn user_preset<'a>(s: &'a mut Session, p: &Value, c: &str) -> Result<&'a mut Preset> {
-    let pid = str_param(p, "id").ok_or_else(|| bad(c, "missing id"))?;
+/// The user preset `pid` (built-ins can't be changed).
+fn user_preset<'a>(s: &'a mut Session, pid: &str, c: &str) -> Result<&'a mut Preset> {
     let pr = s.presets.iter_mut().find(|x| x.id == pid).ok_or_else(|| bad(c, format!("unknown preset `{pid}`")))?;
     if pr.builtin {
         return Err(bad(c, "built-in presets can't be changed"));
@@ -141,16 +122,292 @@ fn user_preset<'a>(s: &'a mut Session, p: &Value, c: &str) -> Result<&'a mut Pre
     Ok(pr)
 }
 
-/// Change version `p.index` of the active photo (`f` gets it and the current settings).
-fn edit_version(s: &mut Session, p: &Value, c: &str, label: &str, f: impl FnOnce(&mut Version, std::sync::Arc<DevelopSettings>)) -> Result<Value> {
+/// Change version `i` of the active photo (`f` gets it and the current settings).
+fn edit_version(s: &mut Session, i: usize, c: &str, label: &str, f: impl FnOnce(&mut Version, std::sync::Arc<DevelopSettings>)) -> Result<Value> {
     let id = active(s, c)?;
-    let i = index_req(p, "index", c)?;
     let ph = s.catalog.photo(id).ok_or_else(|| bad(c, "no photo"))?;
     let mut versions = ph.versions.clone();
     let v = versions.get_mut(i).ok_or_else(|| bad(c, "no such version"))?;
     f(v, ph.develop.clone());
     s.commit(label, Op::SetVersions { id, versions })?;
     ok()
+}
+
+params! {
+    /// `develop.set`
+    struct Set {
+        control: Option<String>,
+        value: Option<f64>,
+        values: Option<std::collections::BTreeMap<String, f64>>,
+        ids: Option<Vec<PhotoId>>,
+    }
+}
+
+params! {
+    /// `develop.adjust`
+    struct Nudge {
+        control: String,
+        delta: f64,
+    }
+}
+
+params! {
+    /// `develop.merge`: `settings` is a partial `DevelopSettings`, checked when merged.
+    struct Merge {
+        settings: Value,
+        label: Option<String>,
+    }
+}
+
+params! {
+    /// Develop commands that take only their targets.
+    struct Targets with targets {}
+}
+
+params! {
+    /// `develop.resetSection`
+    struct ResetSection {
+        section: Section,
+    }
+}
+
+params! {
+    /// `develop.resetControl`
+    struct Control {
+        control: String,
+    }
+}
+
+params! {
+    /// `develop.sectionEnabled`
+    struct SectionEnabled {
+        section: String,
+        enabled: Option<bool>,
+    }
+}
+
+params! {
+    /// `develop.wb`
+    struct Wb {
+        mode: Option<WbMode>,
+        temp: Option<f64>,
+        tint: Option<f64>,
+    }
+}
+
+params! {
+    /// A normalized image point.
+    struct Xy {
+        x: f64,
+        y: f64,
+    }
+}
+
+params! {
+    /// `develop.treatment`
+    struct TreatmentParams {
+        bw: Option<bool>,
+    }
+}
+
+params! {
+    /// `develop.profile`
+    struct Profile {
+        id: String,
+        amount: Option<f64>,
+    }
+}
+
+params! {
+    /// `profile.favorite`, `preset.favorite`
+    struct Favorite {
+        id: String,
+        favorite: Option<bool>,
+    }
+}
+
+params! {
+    /// `develop.curve`
+    struct Curve {
+        channel: Option<String>,
+        points: Vec<[f64; 2]>,
+    }
+}
+
+params! {
+    /// `crop.set`
+    struct CropSet {
+        rect: Option<[f64; 4]>,
+        angle: Option<f64>,
+    }
+}
+
+/// A crop handle by name or index (0..8).
+#[derive(Debug, serde::Deserialize)]
+#[serde(untagged)]
+enum HandleRef {
+    Name(String),
+    Index(u64),
+}
+
+params! {
+    /// `crop.drag`
+    struct CropDrag {
+        handle: HandleRef,
+        from: [f64; 2],
+        to: [f64; 2],
+        start: Option<[f64; 4]>,
+        #[serde(default)]
+        keep_ratio: bool,
+    }
+}
+
+params! {
+    /// `crop.straighten`
+    struct Straighten {
+        angle: f64,
+    }
+}
+
+params! {
+    /// `crop.aspect`: a name, `"WxH"` or `[w, h]`.
+    struct Aspect {
+        aspect: Option<Value>,
+    }
+}
+
+params! {
+    /// `develop.hdr`
+    struct HdrParams {
+        enabled: Option<bool>,
+        max_ev: Option<f64>,
+    }
+}
+
+params! {
+    /// `geometry.upright`
+    struct UprightParams {
+        mode: Option<Upright>,
+    }
+}
+
+params! {
+    /// `geometry.guides`
+    struct Guides {
+        #[serde(default)]
+        guides: Vec<[f64; 4]>,
+        #[serde(default)]
+        add: bool,
+    }
+}
+
+params! {
+    /// `develop.copy`, `develop.sync`
+    struct Groups {
+        groups: Option<Vec<SettingsGroup>>,
+    }
+}
+
+params! {
+    /// `develop.paste`, `develop.pastePrevious`
+    struct TargetGroups with targets {
+        groups: Option<Vec<SettingsGroup>>,
+    }
+}
+
+params! {
+    /// `develop.quickAdjust`
+    struct QuickAdjust with targets {
+        control: String,
+        delta: f64,
+    }
+}
+
+params! {
+    /// `develop.autoSync`
+    struct On {
+        on: Option<bool>,
+    }
+}
+
+params! {
+    /// `preset.apply`: `id` is the preset, the photos are `ids`.
+    struct PresetApply {
+        id: String,
+        amount: Option<f64>,
+        ids: Option<Vec<PhotoId>>,
+    }
+}
+
+params! {
+    /// `preset.create`
+    struct PresetCreate {
+        name: String,
+        group: Option<String>,
+        groups: Option<Vec<SettingsGroup>>,
+    }
+}
+
+params! {
+    /// `preset.delete`
+    struct PresetRef {
+        id: String,
+    }
+}
+
+params! {
+    /// `preset.rename`
+    struct PresetRename {
+        id: String,
+        name: Option<String>,
+    }
+}
+
+params! {
+    /// `preset.move`
+    struct PresetMove {
+        id: String,
+        group: Option<String>,
+    }
+}
+
+params! {
+    /// `preset.update`
+    struct PresetUpdate {
+        id: String,
+        groups: Option<Vec<SettingsGroup>>,
+    }
+}
+
+params! {
+    /// `version.create`
+    struct Name {
+        name: Option<String>,
+    }
+}
+
+params! {
+    /// A version or History step.
+    struct Index {
+        #[serde(deserialize_with = "whole")]
+        index: usize,
+    }
+}
+
+params! {
+    /// `version.rename`
+    struct VersionRename {
+        #[serde(deserialize_with = "whole")]
+        index: usize,
+        name: Option<String>,
+    }
+}
+
+params! {
+    /// `develop.beginInteraction`
+    struct Label {
+        label: Option<String>,
+    }
 }
 
 pub fn specs() -> Vec<CommandSpec> {
@@ -161,17 +418,16 @@ pub fn specs() -> Vec<CommandSpec> {
             [],
             None,
             "{control?: controlId, value?: number, values?: {controlId: number}, ids?: [photo]} — see develop.controls; `crop.angle` turns the crop as crop.straighten does (kept if it still fits, else the largest of its aspect inside the photo)",
+            Set,
             has_active,
             |s, p| {
                 let mut vals: Vec<(String, f64)> = Vec::new();
-                if let (Some(c), Some(v)) = (str_param(p, "control"), p.get("value").and_then(Value::as_f64)) {
-                    vals.push((c.to_string(), v));
+                match (p.control, p.value) {
+                    (Some(c), Some(v)) => vals.push((c, v)),
+                    (None, None) => {}
+                    _ => return Err(bad("develop.set", "`control` and `value` go together")),
                 }
-                if let Some(o) = p.get("values").and_then(Value::as_object) {
-                    for (k, v) in o {
-                        vals.push((k.clone(), v.as_f64().ok_or_else(|| bad("develop.set", format!("`{k}` must be a number")))?));
-                    }
-                }
+                vals.extend(p.values.into_iter().flatten());
                 if vals.is_empty() {
                     return Err(bad("develop.set", "give `control`+`value` or `values`"));
                 }
@@ -199,8 +455,7 @@ pub fn specs() -> Vec<CommandSpec> {
                     }
                     refit_crop_angle(angle, before, d, dims);
                 };
-                if let Some(ids) = p.get("ids").and_then(Value::as_array) {
-                    let ids: Vec<PhotoId> = ids.iter().filter_map(Value::as_u64).map(PhotoId).collect();
+                if let Some(ids) = p.ids {
                     let ops = ids
                         .iter()
                         .filter_map(|id| s.develop_of(*id).map(|d| (*id, d)))
@@ -223,10 +478,9 @@ pub fn specs() -> Vec<CommandSpec> {
                 })
             }
         ),
-        cmd!("develop.adjust", "Nudge Develop Value", [], None, "{control, delta}", has_active, |s, p| {
-            let c = str_param(p, "control").ok_or_else(|| bad("develop.adjust", "missing control"))?.to_string();
+        cmd!("develop.adjust", "Nudge Develop Value", [], None, "{control, delta}", Nudge, has_active, |s, p| {
+            let (c, delta) = (p.control, p.delta);
             let spec = controls::find(&c).ok_or_else(|| bad("develop.adjust", "unknown control"))?;
-            let delta = f64_req(p, "delta", "develop.adjust")?;
             let id = active(s, "develop.adjust")?;
             let (info, dims) = (s.source_info(id), crop_dims(s, id));
             edit(s, "develop.adjust", spec.label, |d| {
@@ -245,16 +499,17 @@ pub fn specs() -> Vec<CommandSpec> {
                 Ok(())
             })
         }),
-        cmd!("develop.merge", "Apply Settings JSON", [], None, "{settings: partial DevelopSettings JSON, label?}", has_active, |s, p| {
-            let partial = p.get("settings").cloned().ok_or_else(|| bad("develop.merge", "missing settings"))?;
-            let label = str_param(p, "label").unwrap_or("Edit").to_string();
+        cmd!("develop.merge", "Apply Settings JSON", [], None, "{settings: partial DevelopSettings JSON, label?}", Merge, has_active, |s, p| {
+            let partial = p.settings;
+            let label = p.label.unwrap_or_else(|| "Edit".into());
             edit(s, "develop.merge", &label, |d| {
+                super::params::check_merge(d, &partial)?;
                 *d = d.merged(&partial).map_err(|e| bad("develop.merge", e.to_string()))?;
                 Ok(())
             })
         }),
-        cmd!("develop.reset", "Reset Edits", ["Photo"], Some("Cmd+Shift+R"), "{ids?}", has_selection, |s, p| {
-            let ids = s.targets(p)?;
+        cmd!("develop.reset", "Reset Edits", ["Photo"], Some("Cmd+Shift+R"), "{ids?}", Targets, has_selection, |s, p| {
+            let ids = p.targets(s);
             let ops = ids
                 .iter()
                 .filter_map(|id| s.develop_of(*id).map(|d| (*id, d)))
@@ -297,14 +552,15 @@ pub fn specs() -> Vec<CommandSpec> {
                 ["Photo"],
                 None,
                 "{ids?}: moves the target photos (`ids`, else the selection) that are on an older rendering process to the current one, as one undo step (their look can change; the sliders keep their values; see docs/process-versions.md). Enabled while a selected photo is on an older process; named photos are checked themselves (each must exist, one must be on an older process) → {changed, process}",
+                Targets,
                 has_outdated_process,
                 |s, p| {
                     const C: &str = "develop.updateProcess";
                     const LABEL: &str = "Update to Current Process";
-                    let targets = match named_photos(s, p, C)? {
+                    let targets = match named_photos(s, &p, C)? {
                         Some(ids) if !ids.iter().any(|id| outdated(s, *id)) => return Err(crate::EngineError::Disabled(C.into(), already_current())),
                         Some(ids) => ids,
-                        None => s.targets(p)?,
+                        None => p.targets(s),
                     };
                     let ops: Vec<Op> = targets
                         .into_iter()
@@ -326,17 +582,18 @@ pub fn specs() -> Vec<CommandSpec> {
             [],
             None,
             "{section: light|curve|color|mixer|grading|effects|vignette|grain|detail|optics|geometry}",
+            ResetSection,
             has_active,
             |s, p| {
-                let sec = section_param(p, "develop.resetSection")?;
+                let sec = p.section;
                 edit(s, "develop.resetSection", &format!("Reset {}", sec.label()), |d| {
                     d.reset_section(sec);
                     Ok(())
                 })
             }
         ),
-        cmd!("develop.resetControl", "Reset Control", [], None, "{control}", has_active, |s, p| {
-            let c = str_param(p, "control").ok_or_else(|| bad("develop.resetControl", "missing control"))?.to_string();
+        cmd!("develop.resetControl", "Reset Control", [], None, "{control}", Control, has_active, |s, p| {
+            let c = p.control;
             let spec = controls::find(&c).ok_or_else(|| bad("develop.resetControl", "unknown control"))?;
             let dims = crop_dims(s, active(s, "develop.resetControl")?);
             edit(s, "develop.resetControl", spec.label, |d| {
@@ -346,9 +603,9 @@ pub fn specs() -> Vec<CommandSpec> {
                 Ok(())
             })
         }),
-        cmd!("develop.sectionEnabled", "Toggle Section", [], None, "{section: string, enabled: bool}", has_active, |s, p| {
-            let sec = str_param(p, "section").ok_or_else(|| bad("develop.sectionEnabled", "missing section"))?.to_string();
-            let on = bool_or(p, "enabled", true);
+        cmd!("develop.sectionEnabled", "Toggle Section", [], None, "{section: string, enabled: bool}", SectionEnabled, has_active, |s, p| {
+            let sec = p.section;
+            let on = p.enabled.unwrap_or(true);
             edit(s, "develop.sectionEnabled", "Toggle Section", |d| {
                 d.set_section_enabled(&sec, on);
                 Ok(())
@@ -360,6 +617,7 @@ pub fn specs() -> Vec<CommandSpec> {
             [],
             None,
             "{} — sets the black & white mix from the photo's colours (and switches to B&W)",
+            NoParams,
             has_active,
             |s, _| {
                 let id = active(s, "develop.autoBwMix")?;
@@ -376,7 +634,7 @@ pub fn specs() -> Vec<CommandSpec> {
                 Ok(json!({"mix": m}))
             }
         ),
-        cmd!("develop.auto", "Auto Settings", ["Photo"], Some("Shift+A"), "{}", has_active, |s, _| {
+        cmd!("develop.auto", "Auto Settings", ["Photo"], Some("Shift+A"), "{}", NoParams, has_active, |s, _| {
             let id = active(s, "develop.auto")?;
             let src = s.source_now(id, SourceLevel::Thumb).map_err(|e| bad("develop.auto", e))?;
             let info = s.source_info(id);
@@ -401,10 +659,10 @@ pub fn specs() -> Vec<CommandSpec> {
             [],
             None,
             "{mode: asShot|auto|daylight|cloudy|shade|tungsten|fluorescent|flash|custom, temp?, tint?}",
+            Wb,
             has_active,
             |s, p| {
-                let mode: WbMode =
-                    serde_json::from_value(p.get("mode").cloned().unwrap_or(json!("custom"))).map_err(|e| bad("develop.wb", e.to_string()))?;
+                let mode = p.mode.unwrap_or(WbMode::Custom);
                 let id = active(s, "develop.wb")?;
                 let info = s.source_info(id);
                 let (mut t, mut tint) = match mode {
@@ -421,8 +679,8 @@ pub fn specs() -> Vec<CommandSpec> {
                         })
                         .unwrap_or((info.as_shot_temp, info.as_shot_tint)),
                 };
-                t = f64_or(p, "temp", t);
-                tint = f64_or(p, "tint", tint);
+                t = p.temp.unwrap_or(t);
+                tint = p.tint.unwrap_or(tint);
                 // The resolved temperature/tint is stored, so rendering never depends on the mode; the
                 // mode is kept for the UI's WB dropdown.
                 edit(s, "develop.wb", "White Balance", |d| {
@@ -435,62 +693,80 @@ pub fn specs() -> Vec<CommandSpec> {
                 Ok(json!({"temp": t, "tint": tint}))
             }
         ),
-        cmd!("develop.wbPick", "White Balance Selector", [], Some("W"), "{x, y} normalized image coords of a neutral point", has_active, |s, p| {
-            let (x, y) = (f64_req(p, "x", "develop.wbPick")?, f64_req(p, "y", "develop.wbPick")?);
-            let id = active(s, "develop.wbPick")?;
-            let src = s.source_now(id, SourceLevel::Thumb).map_err(|e| bad("develop.wbPick", e))?;
-            let info = s.source_info(id);
-            let d = s.develop_of(id).unwrap_or_default();
-            // Sample a small neighbourhood in the oriented source.
-            let o = src.oriented(d.orientation);
-            let (cx, cy) = ((x.clamp(0.0, 1.0) * o.width as f64) as isize, (y.clamp(0.0, 1.0) * o.height as f64) as isize);
-            let mut acc = [0.0f32; 3];
-            for dy in -2..=2 {
-                for dx in -2..=2 {
-                    let c = o.get_clamped(cx + dx, cy + dy);
-                    for i in 0..3 {
-                        acc[i] += c[i] / 25.0;
+        cmd!(
+            "develop.wbPick",
+            "White Balance Selector",
+            [],
+            Some("W"),
+            "{x, y} normalized image coords of a neutral point",
+            Xy,
+            has_active,
+            |s, p| {
+                let (x, y) = (p.x, p.y);
+                let id = active(s, "develop.wbPick")?;
+                let src = s.source_now(id, SourceLevel::Thumb).map_err(|e| bad("develop.wbPick", e))?;
+                let info = s.source_info(id);
+                let d = s.develop_of(id).unwrap_or_default();
+                // Sample a small neighbourhood in the oriented source.
+                let o = src.oriented(d.orientation);
+                let (cx, cy) = ((x.clamp(0.0, 1.0) * o.width as f64) as isize, (y.clamp(0.0, 1.0) * o.height as f64) as isize);
+                let mut acc = [0.0f32; 3];
+                for dy in -2..=2 {
+                    for dx in -2..=2 {
+                        let c = o.get_clamped(cx + dx, cy + dy);
+                        for i in 0..3 {
+                            acc[i] += c[i] / 25.0;
+                        }
                     }
                 }
+                let patch = lightcraft_raster::Rgb32f::filled(4, 4, acc);
+                let (t, tint) = lightcraft_pipeline::auto::auto_wb(&patch, &info);
+                edit(s, "develop.wbPick", "White Balance", |d| {
+                    lightcraft_pipeline::local::normalize_wb(d, &info);
+                    d.wb.mode = WbMode::Custom;
+                    d.wb.temp = t;
+                    d.wb.tint = tint;
+                    Ok(())
+                })?;
+                Ok(json!({"temp": t, "tint": tint}))
             }
-            let patch = lightcraft_raster::Rgb32f::filled(4, 4, acc);
-            let (t, tint) = lightcraft_pipeline::auto::auto_wb(&patch, &info);
-            edit(s, "develop.wbPick", "White Balance", |d| {
-                lightcraft_pipeline::local::normalize_wb(d, &info);
-                d.wb.mode = WbMode::Custom;
-                d.wb.temp = t;
-                d.wb.tint = tint;
-                Ok(())
-            })?;
-            Ok(json!({"temp": t, "tint": tint}))
-        }),
-        cmd!("develop.treatment", "Black & White", ["Photo"], Some("V"), "{bw?: bool} (toggles when omitted)", has_active, |s, p| {
-            edit(s, "develop.treatment", "Treatment", |d| {
-                let bw = p.get("bw").and_then(Value::as_bool).unwrap_or(d.treatment != Treatment::Bw);
-                d.treatment = if bw { Treatment::Bw } else { Treatment::Color };
-                Ok(())
-            })
-        }),
-        cmd!("develop.profile", "Set Profile", [], None, "{id: profile id (see profiles.list), amount?: 0..200}", has_active, |s, p| {
-            let id = str_param(p, "id").ok_or_else(|| bad("develop.profile", "missing id"))?.to_string();
+        ),
+        cmd!(
+            "develop.treatment",
+            "Black & White",
+            ["Photo"],
+            Some("V"),
+            "{bw?: bool} (toggles when omitted)",
+            TreatmentParams,
+            has_active,
+            |s, p| {
+                edit(s, "develop.treatment", "Treatment", |d| {
+                    let bw = p.bw.unwrap_or(d.treatment != Treatment::Bw);
+                    d.treatment = if bw { Treatment::Bw } else { Treatment::Color };
+                    Ok(())
+                })
+            }
+        ),
+        cmd!("develop.profile", "Set Profile", [], None, "{id: profile id (see profiles.list), amount?: 0..200}", Profile, has_active, |s, p| {
+            let id = p.id;
             if !crate::presets::PROFILES.iter().any(|x| x.id == id) && !s.lut_profiles.iter().any(|x| x.id == id) {
                 return Err(bad("develop.profile", format!("unknown profile `{id}`")));
             }
             edit(s, "develop.profile", "Profile", |d| {
                 d.profile.id = id.clone();
-                d.profile.amount = f64_or(p, "amount", d.profile.amount).clamp(0.0, 200.0);
+                d.profile.amount = p.amount.unwrap_or(d.profile.amount).clamp(0.0, 200.0);
                 Ok(())
             })?;
             s.note_profile_used(&id);
             ok()
         }),
-        cmd!("profile.favorite", "Favorite Profile", [], None, "{id, favorite?: bool} (toggles when omitted)", always, |s, p| {
-            let id = str_param(p, "id").ok_or_else(|| bad("profile.favorite", "missing id"))?.to_string();
+        cmd!("profile.favorite", "Favorite Profile", [], None, "{id, favorite?: bool} (toggles when omitted)", Favorite, always, |s, p| {
+            let id = p.id;
             if crate::presets::profile(&id).is_none() && !s.lut_profiles.iter().any(|x| x.id == id) {
                 return Err(bad("profile.favorite", format!("unknown profile `{id}`")));
             }
             let on = s.profile_favorites.contains(&id);
-            let want = bool_or(p, "favorite", !on);
+            let want = p.favorite.unwrap_or(!on);
             if want && !on {
                 s.profile_favorites.push(id);
             } else if !want {
@@ -498,80 +774,77 @@ pub fn specs() -> Vec<CommandSpec> {
             }
             Ok(json!({"favorite": want}))
         }),
-        cmd!("develop.curve", "Set Point Curve", [], None, "{channel: master|red|green|blue, points: [[x,y],...] in 0..1}", has_active, |s, p| {
-            let ch = str_param(p, "channel").unwrap_or("master").to_string();
-            let mut pts: Vec<Point> = p
-                .get("points")
-                .and_then(Value::as_array)
-                .ok_or_else(|| bad("develop.curve", "missing points"))?
-                .iter()
-                .filter_map(|q| Some(Point::new(q.get(0)?.as_f64()?.clamp(0.0, 1.0), q.get(1)?.as_f64()?.clamp(0.0, 1.0))))
-                .collect();
-            // stored in the order the curve runs, as the editor draws and drags them
-            pts.sort_by(|a, b| a.x.total_cmp(&b.x));
-            edit(s, "develop.curve", "Tone Curve", |d| {
-                match ch.as_str() {
-                    "master" | "rgb" => d.curve.master = pts,
-                    "red" => d.curve.red = pts,
-                    "green" => d.curve.green = pts,
-                    "blue" => d.curve.blue = pts,
-                    other => return Err(bad("develop.curve", format!("unknown channel `{other}`"))),
-                }
-                Ok(())
-            })
-        }),
-        // ---- crop & rotate
-        cmd!("crop.set", "Set Crop", [], None, "{rect?: [x0,y0,x1,y1] normalized in the straightened frame, angle?: degrees}", has_active, |s, p| {
-            let id = active(s, "crop.set")?;
-            let (w, h) = crop_dims(s, id);
-            edit(s, "crop.set", "Crop", |d| {
-                if let Some(a) = p.get("rect").and_then(Value::as_array) {
-                    let v: Vec<f64> = a.iter().filter_map(Value::as_f64).collect();
-                    if v.len() != 4 {
-                        return Err(bad("crop.set", "rect needs 4 numbers"));
+        cmd!(
+            "develop.curve",
+            "Set Point Curve",
+            [],
+            None,
+            "{channel: master|red|green|blue, points: [[x,y],...] in 0..1}",
+            Curve,
+            has_active,
+            |s, p| {
+                let ch = p.channel.unwrap_or_else(|| "master".into());
+                let mut pts: Vec<Point> = p.points.iter().map(|[x, y]| Point::new(x.clamp(0.0, 1.0), y.clamp(0.0, 1.0))).collect();
+                // stored in the order the curve runs, as the editor draws and drags them
+                pts.sort_by(|a, b| a.x.total_cmp(&b.x));
+                edit(s, "develop.curve", "Tone Curve", |d| {
+                    match ch.as_str() {
+                        "master" | "rgb" => d.curve.master = pts,
+                        "red" => d.curve.red = pts,
+                        "green" => d.curve.green = pts,
+                        "blue" => d.curve.blue = pts,
+                        other => return Err(bad("develop.curve", format!("unknown channel `{other}`"))),
                     }
-                    d.crop.geometry.rect = Rect::new(v[0].min(v[2]), v[1].min(v[3]), v[0].max(v[2]), v[1].max(v[3]));
-                }
-                let angle = p.get("angle").and_then(Value::as_f64).map(|a| a.clamp(-45.0, 45.0));
-                d.crop.geometry = match (p.get("rect"), angle) {
-                    // a new angle alone turns the crop as Straighten does (issue #742)
-                    (None, Some(a)) => d.crop.geometry.with_angle(a, w, h),
-                    (_, a) => CropGeometry { angle: a.unwrap_or(d.crop.geometry.angle), ..d.crop.geometry }.constrained(w, h),
-                };
-                Ok(())
-            })
-        }),
+                    Ok(())
+                })
+            }
+        ),
+        // ---- crop & rotate
+        cmd!(
+            "crop.set",
+            "Set Crop",
+            [],
+            None,
+            "{rect?: [x0,y0,x1,y1] normalized in the straightened frame, angle?: degrees}",
+            CropSet,
+            has_active,
+            |s, p| {
+                let id = active(s, "crop.set")?;
+                let (w, h) = crop_dims(s, id);
+                edit(s, "crop.set", "Crop", |d| {
+                    if let Some([x0, y0, x1, y1]) = p.rect {
+                        d.crop.geometry.rect = Rect::new(x0.min(x1), y0.min(y1), x0.max(x1), y0.max(y1));
+                    }
+                    let angle = p.angle.map(|a| a.clamp(-45.0, 45.0));
+                    d.crop.geometry = match (p.rect, angle) {
+                        // a new angle alone turns the crop as Straighten does (issue #742)
+                        (None, Some(a)) => d.crop.geometry.with_angle(a, w, h),
+                        (_, a) => CropGeometry { angle: a.unwrap_or(d.crop.geometry.angle), ..d.crop.geometry }.constrained(w, h),
+                    };
+                    Ok(())
+                })
+            }
+        ),
         cmd!(
             "crop.drag",
             "Drag Crop Handle",
             [],
             None,
             "{handle: topLeft|topRight|bottomRight|bottomLeft|top|right|bottom|left|move | 0..8, from: [x,y], to: [x,y] (normalized, straightened frame), start?: [x0,y0,x1,y1] (default: the current crop), keepRatio?: bool (default false)} — drags a crop handle; stops at the image edge, keeps the opposite edges, honours the aspect lock; keepRatio holds the frame's current proportions for this drag even with the lock off (the UI sends it while Shift is held)",
+            CropDrag,
             has_active,
             |s, p| {
                 let id = active(s, "crop.drag")?;
                 let (w, h) = crop_dims(s, id);
-                let handle = match p.get("handle") {
-                    Some(Value::String(n)) => CropHandle::from_name(n),
-                    Some(v) => v.as_u64().and_then(|i| u8::try_from(i).ok()).and_then(CropHandle::from_index),
-                    None => None,
+                let handle = match &p.handle {
+                    HandleRef::Name(n) => CropHandle::from_name(n),
+                    HandleRef::Index(i) => u8::try_from(*i).ok().and_then(CropHandle::from_index),
                 }
                 .ok_or_else(|| bad("crop.drag", "unknown handle"))?;
-                let point = |k: &str| -> Result<Point> {
-                    match numbers(p.get(k)).as_deref() {
-                        Some([x, y]) if x.is_finite() && y.is_finite() => Ok(Point::new(*x, *y)),
-                        _ => Err(bad("crop.drag", format!("`{k}` needs [x, y]"))),
-                    }
-                };
-                let (from, to) = (point("from")?, point("to")?);
-                let given = match (p.get("start"), numbers(p.get("start")).as_deref()) {
-                    (None | Some(Value::Null), _) => None,
-                    (_, Some(&[x0, y0, x1, y1])) if [x0, y0, x1, y1].iter().all(|v| v.is_finite()) => {
-                        Some(Rect::new(x0.min(x1), y0.min(y1), x0.max(x1), y0.max(y1)))
-                    }
-                    _ => return Err(bad("crop.drag", "`start` needs 4 numbers")),
-                };
-                let keep_ratio = bool_or(p, "keepRatio", false);
+                let ([fx, fy], [tx, ty]) = (p.from, p.to);
+                let (from, to) = (Point::new(fx, fy), Point::new(tx, ty));
+                let given = p.start.map(|[x0, y0, x1, y1]| Rect::new(x0.min(x1), y0.min(y1), x0.max(x1), y0.max(y1)));
+                let keep_ratio = p.keep_ratio;
                 edit(s, "crop.drag", "Crop", |d| {
                     let start = CropGeometry { rect: given.unwrap_or(d.crop.geometry.rect), angle: d.crop.geometry.angle };
                     // A locked crop keeps the shape it has: the lock stores a width:height tuple whose
@@ -589,11 +862,12 @@ pub fn specs() -> Vec<CommandSpec> {
             [],
             None,
             "{angle: degrees -45..45} — keeps the crop if it still fits, else shrinks it about its centre (the largest crop of its aspect stays the largest)",
+            Straighten,
             has_active,
             |s, p| {
                 let id = active(s, "crop.straighten")?;
                 let (w, h) = crop_dims(s, id);
-                let angle = f64_req(p, "angle", "crop.straighten")?.clamp(-45.0, 45.0);
+                let angle = p.angle.clamp(-45.0, 45.0);
                 edit(s, "crop.straighten", "Straighten", |d| {
                     // keep the current crop if it still fits, else shrink it about its centre until it does
                     d.crop.geometry = d.crop.geometry.with_angle(angle, w, h);
@@ -607,6 +881,7 @@ pub fn specs() -> Vec<CommandSpec> {
             [],
             None,
             "{} — level the horizon (or plumb lines) with the crop angle",
+            NoParams,
             has_active,
             |s, _| {
                 let id = active(s, "crop.autoStraighten")?;
@@ -629,12 +904,13 @@ pub fn specs() -> Vec<CommandSpec> {
             [],
             None,
             "{aspect: \"original\"|\"free\"|\"current\" (lock the crop's present shape)|\"toggle\" (lock ↔ free)|\"1x1\"|\"4x5\"|\"8.5x11\"|\"5x7\"|\"2x3\"|\"4x3\"|\"16x9\"|\"16x10\"|[w,h]}",
+            Aspect,
             has_active,
             |s, p| {
                 let id = active(s, "crop.aspect")?;
                 let (w, h) = crop_dims(s, id);
                 let locked = s.develop_of(id).is_some_and(|d| d.crop.aspect.is_some());
-                let lock_current = match p.get("aspect").and_then(Value::as_str) {
+                let lock_current = match p.aspect.as_ref().and_then(Value::as_str) {
                     Some("current") => true,
                     Some("toggle") => !locked,
                     _ => false,
@@ -647,7 +923,7 @@ pub fn specs() -> Vec<CommandSpec> {
                         Ok(())
                     });
                 }
-                let aspect = match p.get("aspect") {
+                let aspect = match &p.aspect {
                     Some(Value::String(a)) if a == "toggle" => None,
                     Some(Value::String(a)) if a == "free" => None,
                     Some(Value::String(a)) if a == "original" => Some(((w * 100.0) as u32, (h * 100.0) as u32)),
@@ -657,7 +933,7 @@ pub fn specs() -> Vec<CommandSpec> {
                             (x.parse().map_err(|_| bad("crop.aspect", "bad number"))?, y.parse().map_err(|_| bad("crop.aspect", "bad number"))?);
                         Some(aspect_tuple("crop.aspect", x, y)?)
                     }
-                    Some(v @ Value::Array(_)) => match numbers(Some(v)).as_deref() {
+                    Some(v @ Value::Array(_)) => match numbers(v).as_deref() {
                         Some(&[x, y]) => Some(aspect_tuple("crop.aspect", x, y)?),
                         _ => return Err(bad("crop.aspect", "use [w, h] with two numbers")),
                     },
@@ -673,7 +949,7 @@ pub fn specs() -> Vec<CommandSpec> {
                 })
             }
         ),
-        cmd!("crop.rotateAspect", "Rotate Crop Aspect", [], Some("X"), "{}", has_active, |s, _| {
+        cmd!("crop.rotateAspect", "Rotate Crop Aspect", [], Some("X"), "{}", NoParams, has_active, |s, _| {
             let id = active(s, "crop.rotateAspect")?;
             let (w, h) = crop_dims(s, id);
             edit(s, "crop.rotateAspect", "Rotate Crop", |d| {
@@ -686,7 +962,7 @@ pub fn specs() -> Vec<CommandSpec> {
                 Ok(())
             })
         }),
-        cmd!("crop.reset", "Reset Crop", [], Some("Cmd+Alt+R"), "{}", has_active, |s, _| {
+        cmd!("crop.reset", "Reset Crop", [], Some("Cmd+Alt+R"), "{}", NoParams, has_active, |s, _| {
             edit(s, "crop.reset", "Reset Crop", |d| {
                 d.crop = Default::default();
                 Ok(())
@@ -699,15 +975,13 @@ pub fn specs() -> Vec<CommandSpec> {
             [],
             None,
             "{enabled?: bool (default: toggle), maxEv?: number 0..5 (headroom limit, stops above SDR white)} — HDR editing: highlights above SDR white for HDR exports and displays; every SDR render uses the SDR rendition (the hdr.sdr* controls)",
+            HdrParams,
             has_active,
             |s, p| {
                 let id = active(s, "develop.hdr")?;
                 let cur = s.develop_of(id).unwrap_or_default().hdr;
-                let enabled = bool_or(p, "enabled", !cur.enabled);
-                let max_ev = match p.get("maxEv") {
-                    None => None,
-                    Some(v) => Some(v.as_f64().filter(|x| x.is_finite()).ok_or_else(|| bad("develop.hdr", "`maxEv` must be a number"))?),
-                };
+                let enabled = p.enabled.unwrap_or(!cur.enabled);
+                let max_ev = p.max_ev;
                 let label = if enabled { "HDR On" } else { "HDR Off" };
                 edit(s, "develop.hdr", label, |d| {
                     d.hdr.enabled = enabled;
@@ -726,10 +1000,10 @@ pub fn specs() -> Vec<CommandSpec> {
             [],
             None,
             "{mode: off|auto|guided|level|vertical|full} — analyses the photo (line segments → vanishing points) and stores the correction; run again to update after lens changes",
+            UprightParams,
             has_active,
             |s, p| {
-                let mode: Upright =
-                    serde_json::from_value(p.get("mode").cloned().unwrap_or(json!("auto"))).map_err(|e| bad("geometry.upright", e.to_string()))?;
+                let mode = p.mode.unwrap_or(Upright::Auto);
                 let id = active(s, "geometry.upright")?;
                 let d = s.develop_of(id).unwrap_or_default();
                 let transform = match mode {
@@ -754,15 +1028,11 @@ pub fn specs() -> Vec<CommandSpec> {
             [],
             None,
             "{guides: [[x0,y0,x1,y1], …] (≤ 4, normalized coords of the lens-corrected image), add?: bool (append one guide, dropping the oldest beyond 4)} — switches Upright to Guided",
+            Guides,
             has_active,
             |s, p| {
-                let parse = |v: &Value| -> Option<(Point, Point)> {
-                    let a: Vec<f64> = v.as_array()?.iter().filter_map(Value::as_f64).collect();
-                    (a.len() == 4 && a.iter().all(|x| x.is_finite())).then(|| (Point::new(a[0], a[1]), Point::new(a[2], a[3])))
-                };
-                let guides: Vec<(Point, Point)> =
-                    p.get("guides").and_then(Value::as_array).map(|a| a.iter().filter_map(parse).collect()).unwrap_or_default();
-                let add = bool_or(p, "add", false);
+                let guides: Vec<(Point, Point)> = p.guides.iter().map(|[x0, y0, x1, y1]| (Point::new(*x0, *y0), Point::new(*x1, *y1))).collect();
+                let add = p.add;
                 edit(s, "geometry.guides", "Guided Upright", |d| {
                     if add {
                         d.geometry.guides.extend(guides);
@@ -786,11 +1056,12 @@ pub fn specs() -> Vec<CommandSpec> {
             ["Edit"],
             Some("Cmd+C"),
             "{groups?: [settingsGroup]} (default: all but crop, masks, remove)",
+            Groups,
             has_active,
             |s, p| {
                 let c = "develop.copy";
                 let id = active(s, c)?;
-                if let Some(g) = groups_param(p, c)? {
+                if let Some(g) = p.groups {
                     s.copy_groups = g;
                 }
                 let d = s.develop_of(id).unwrap_or_default();
@@ -804,14 +1075,15 @@ pub fn specs() -> Vec<CommandSpec> {
             ["Edit"],
             Some("Cmd+Alt+V"),
             "{ids?, groups?: [settingsGroup] (default: the copy groups)} — from the photo that was active before this one",
+            TargetGroups,
             has_active,
             |s, p| {
                 let c = "develop.pastePrevious";
                 let prev =
                     s.previous_active.filter(|id| s.catalog.photo(*id).is_some_and(|ph| !ph.deleted)).ok_or_else(|| bad(c, "no previous photo"))?;
-                let groups = groups_param(p, c)?.unwrap_or_else(|| s.copy_groups.clone());
+                let groups = p.groups.clone().unwrap_or_else(|| s.copy_groups.clone());
                 let partial = lightcraft_develop::extract_groups(&s.develop_of(prev).unwrap_or_default(), &groups);
-                let ids: Vec<PhotoId> = s.targets(p)?.into_iter().filter(|id| *id != prev).collect();
+                let ids: Vec<PhotoId> = p.targets(s).into_iter().filter(|id| *id != prev).collect();
                 let ops = ids
                     .iter()
                     .filter_map(|id| s.develop_of(*id).map(|d| (*id, d)))
@@ -828,17 +1100,17 @@ pub fn specs() -> Vec<CommandSpec> {
             ["Edit"],
             Some("Cmd+V"),
             "{ids?, groups?: [settingsGroup] (paste only these of the copied groups)}",
+            TargetGroups,
             has_clipboard,
             |s, p| {
-                let c = "develop.paste";
                 let mut clip = s.clipboard.clone().unwrap_or_default();
-                if let Some(only) = groups_param(p, c)? {
+                if let Some(only) = p.groups.clone() {
                     // the clipboard holds whole groups: rebuild it with just the chosen (copied) ones
                     let only: Vec<_> = only.into_iter().filter(|g| s.copy_groups.contains(g)).collect();
                     let full = lightcraft_develop::apply_partial(&DevelopSettings::default(), &clip, 1.0);
                     clip = lightcraft_develop::extract_groups(&full, &only);
                 }
-                let ids = s.targets(p)?;
+                let ids = p.targets(s);
                 let ops = ids
                     .iter()
                     .filter_map(|id| s.develop_of(*id).map(|d| (*id, d)))
@@ -855,11 +1127,12 @@ pub fn specs() -> Vec<CommandSpec> {
             [],
             None,
             "{groups?} — copy the active photo's settings to all selected photos",
+            Groups,
             has_selection,
             |s, p| {
                 let c = "develop.sync";
                 let id = active(s, c)?;
-                let groups = groups_param(p, c)?.unwrap_or_else(SettingsGroup::default_copy);
+                let groups = p.groups.unwrap_or_else(SettingsGroup::default_copy);
                 let d = s.develop_of(id).unwrap_or_default();
                 let partial = lightcraft_develop::extract_groups(&d, &groups);
                 let ops = s
@@ -882,15 +1155,16 @@ pub fn specs() -> Vec<CommandSpec> {
             [],
             None,
             "{control: develop control id, delta, ids?} — add `delta` to the control on every target photo (each from its own value; Quick Develop) in one undo step → {changed}",
+            QuickAdjust,
             has_selection,
             |s, p| {
                 let c = "develop.quickAdjust";
-                let ctl = str_param(p, "control").ok_or_else(|| bad(c, "missing control"))?.to_string();
+                let ctl = p.control.clone();
                 let spec = controls::find(&ctl).ok_or_else(|| bad(c, format!("unknown control `{ctl}`")))?;
-                let delta = f64_req(p, "delta", c)?;
+                let delta = p.delta;
                 let label = format!("Quick Develop: {}", spec.label);
-                let ops: Vec<Op> = s
-                    .targets(p)?
+                let ops: Vec<Op> = p
+                    .targets(s)
                     .into_iter()
                     .filter_map(|id| s.develop_of(id).map(|d| (id, d)))
                     .filter_map(|(id, d)| {
@@ -927,6 +1201,7 @@ pub fn specs() -> Vec<CommandSpec> {
             ["Photo"],
             None,
             "{ids?} — set each selected photo's Exposure so its total exposure (shutter × ISO ÷ aperture², plus the slider) equals the active photo's; photos without exposure data are skipped → {changed, skipped}",
+            Targets,
             has_selection,
             |s, p| {
                 let c = "develop.matchExposure";
@@ -943,7 +1218,7 @@ pub fn specs() -> Vec<CommandSpec> {
                 };
                 let r_ev = gathered(s, reference).ok_or_else(|| bad(c, "the active photo has no shutter / aperture / ISO"))?;
                 let r_slider = s.develop_of(reference).map(|d| d.light.exposure).unwrap_or(0.0);
-                let ids: Vec<PhotoId> = s.targets(p)?.into_iter().filter(|x| *x != reference).collect();
+                let ids: Vec<PhotoId> = p.targets(s).into_iter().filter(|x| *x != reference).collect();
                 let (mut ops, mut skipped) = (Vec::new(), Vec::new());
                 for id in ids {
                     let (Some(ev), Some(d)) = (gathered(s, id), s.develop_of(id)) else {
@@ -967,19 +1242,20 @@ pub fn specs() -> Vec<CommandSpec> {
             ["Edit"],
             Some("Cmd+Alt+Shift+A"),
             "{on?: bool} (toggles when omitted) — edits to the active photo also change the other selected photos (only the settings that changed; not spot removal / red eye) → {on}",
+            On,
             always,
             |s, p| {
-                s.auto_sync = p.get("on").and_then(Value::as_bool).unwrap_or(!s.auto_sync);
+                s.auto_sync = p.on.unwrap_or(!s.auto_sync);
                 Ok(json!({"on": s.auto_sync}))
             }
         ),
         // ---- presets
-        cmd!("preset.apply", "Apply Preset", [], None, "{id: presetId, amount?: 0..200 (percent), ids?}", has_selection, |s, p| {
-            let pid = str_param(p, "id").ok_or_else(|| bad("preset.apply", "missing id"))?;
+        cmd!("preset.apply", "Apply Preset", [], None, "{id: presetId, amount?: 0..200 (percent), ids?}", PresetApply, has_selection, |s, p| {
+            let pid = p.id;
             let preset = s.presets.iter().find(|x| x.id == pid).cloned().ok_or_else(|| bad("preset.apply", format!("unknown preset `{pid}`")))?;
-            let amount = f64_or(p, "amount", 100.0).clamp(0.0, 200.0) / 100.0;
+            let amount = p.amount.unwrap_or(100.0).clamp(0.0, 200.0) / 100.0;
             // `id` names the preset here: the photos are `ids`, else the selection
-            let ids = s.targets(&json!({"ids": p.get("ids")}))?;
+            let ids = s.targets_of(p.ids.as_deref(), None);
             let ops = ids
                 .iter()
                 .filter_map(|id| s.develop_of(*id).map(|d| (*id, d)))
@@ -988,19 +1264,19 @@ pub fn specs() -> Vec<CommandSpec> {
             s.commit(&format!("Preset: {}", preset.name), Op::Batch { ops })?;
             ok()
         }),
-        cmd!("preset.create", "Create Preset", ["Photo"], None, "{name, group?, groups?: [settingsGroup]}", has_active, |s, p| {
+        cmd!("preset.create", "Create Preset", ["Photo"], None, "{name, group?, groups?: [settingsGroup]}", PresetCreate, has_active, |s, p| {
             let c = "preset.create";
             let id = active(s, c)?;
-            let name = str_param(p, "name").ok_or_else(|| bad(c, "missing name"))?;
-            let group = str_param(p, "group").unwrap_or("User Presets");
-            let groups = groups_param(p, c)?.unwrap_or_else(SettingsGroup::default_copy);
+            let name = p.name;
+            let group = p.group.as_deref().unwrap_or("User Presets");
+            let groups = p.groups.unwrap_or_else(SettingsGroup::default_copy);
             let d = s.develop_of(id).unwrap_or_default();
             let pid = format!("user.{}.{}", s.presets.len(), name.to_lowercase().replace(' ', "-"));
-            s.presets.push(Preset::from_settings(&pid, name, group, &d, &groups));
+            s.presets.push(Preset::from_settings(&pid, &name, group, &d, &groups));
             Ok(json!({"id": pid}))
         }),
-        cmd!("preset.delete", "Delete Preset", [], None, "{id}", always, |s, p| {
-            let pid = str_param(p, "id").ok_or_else(|| bad("preset.delete", "missing id"))?;
+        cmd!("preset.delete", "Delete Preset", [], None, "{id}", PresetRef, always, |s, p| {
+            let pid = p.id;
             let i = s.presets.iter().position(|x| x.id == pid).ok_or_else(|| bad("preset.delete", "unknown preset"))?;
             if s.presets[i].builtin {
                 return Err(bad("preset.delete", "built-in presets can't be deleted"));
@@ -1008,22 +1284,21 @@ pub fn specs() -> Vec<CommandSpec> {
             s.presets.remove(i);
             ok()
         }),
-        cmd!("preset.favorite", "Favorite Preset", [], None, "{id, favorite?: bool}", always, |s, p| {
-            let pid = str_param(p, "id").ok_or_else(|| bad("preset.favorite", "missing id"))?;
-            let pr = s.presets.iter_mut().find(|x| x.id == pid).ok_or_else(|| bad("preset.favorite", "unknown preset"))?;
-            pr.favorite = bool_or(p, "favorite", !pr.favorite);
+        cmd!("preset.favorite", "Favorite Preset", [], None, "{id, favorite?: bool}", Favorite, always, |s, p| {
+            let pr = s.presets.iter_mut().find(|x| x.id == p.id).ok_or_else(|| bad("preset.favorite", "unknown preset"))?;
+            pr.favorite = p.favorite.unwrap_or(!pr.favorite);
             ok()
         }),
-        cmd!("preset.rename", "Rename Preset", [], None, "{id, name}", always, |s, p| {
+        cmd!("preset.rename", "Rename Preset", [], None, "{id, name}", PresetRename, always, |s, p| {
             let c = "preset.rename";
-            let name = str_param(p, "name").map(str::trim).filter(|n| !n.is_empty()).ok_or_else(|| bad(c, "missing name"))?.to_string();
-            user_preset(s, p, c)?.name = name;
+            let name = p.name.as_deref().map(str::trim).filter(|n| !n.is_empty()).ok_or_else(|| bad(c, "missing name"))?.to_string();
+            user_preset(s, &p.id, c)?.name = name;
             ok()
         }),
-        cmd!("preset.move", "Move Preset to Group", [], None, "{id, group}", always, |s, p| {
+        cmd!("preset.move", "Move Preset to Group", [], None, "{id, group}", PresetMove, always, |s, p| {
             let c = "preset.move";
-            let group = str_param(p, "group").map(str::trim).filter(|n| !n.is_empty()).ok_or_else(|| bad(c, "missing group"))?.to_string();
-            user_preset(s, p, c)?.group = group;
+            let group = p.group.as_deref().map(str::trim).filter(|n| !n.is_empty()).ok_or_else(|| bad(c, "missing group"))?.to_string();
+            user_preset(s, &p.id, c)?.group = group;
             ok()
         }),
         cmd!(
@@ -1032,13 +1307,14 @@ pub fn specs() -> Vec<CommandSpec> {
             [],
             None,
             "{id, groups?: [settingsGroup] (default: the groups the preset already sets)} — from the active photo",
+            PresetUpdate,
             has_active,
             |s, p| {
                 let c = "preset.update";
                 let id = active(s, c)?;
                 let current = s.develop_of(id).unwrap_or_default().to_json();
-                let groups = groups_param(p, c)?;
-                let pr = user_preset(s, p, c)?;
+                let groups = p.groups;
+                let pr = user_preset(s, &p.id, c)?;
                 pr.settings = match groups {
                     Some(g) => lightcraft_develop::extract_groups(&serde_json::from_value(current).unwrap_or_default(), &g),
                     // the same keys as before, with the current values
@@ -1051,25 +1327,25 @@ pub fn specs() -> Vec<CommandSpec> {
             }
         ),
         // ---- versions & history
-        cmd!("version.create", "Create Version", ["Photo"], Some("Cmd+Shift+S"), "{name?}", has_active, |s, p| {
+        cmd!("version.create", "Create Version", ["Photo"], Some("Cmd+Shift+S"), "{name?}", Name, has_active, |s, p| {
             let id = active(s, "version.create")?;
             let ph = s.catalog.photo(id).cloned().ok_or_else(|| bad("version.create", "no photo"))?;
             let mut versions = ph.versions.clone();
-            let name = str_param(p, "name").map(str::to_string).unwrap_or_else(|| format!("Version {}", versions.len() + 1));
+            let name = p.name.unwrap_or_else(|| format!("Version {}", versions.len() + 1));
             versions.push(Version { name, created: (s.clock)(), settings: ph.develop.clone(), auto: false });
             s.commit("Create Version", Op::SetVersions { id, versions })?;
             ok()
         }),
-        cmd!("version.restore", "Restore Version", [], None, "{index}", has_active, |s, p| {
+        cmd!("version.restore", "Restore Version", [], None, "{index}", Index, has_active, |s, p| {
             let id = active(s, "version.restore")?;
-            let i = index_req(p, "index", "version.restore")?;
+            let i = p.index;
             let v = s.catalog.photo(id).and_then(|ph| ph.versions.get(i).cloned()).ok_or_else(|| bad("version.restore", "no such version"))?;
             s.set_develop(id, (*v.settings).clone(), &format!("Restore {}", v.name))?;
             ok()
         }),
-        cmd!("version.delete", "Delete Version", [], None, "{index}", has_active, |s, p| {
+        cmd!("version.delete", "Delete Version", [], None, "{index}", Index, has_active, |s, p| {
             let id = active(s, "version.delete")?;
-            let i = index_req(p, "index", "version.delete")?;
+            let i = p.index;
             let mut versions = s.catalog.photo(id).map(|ph| ph.versions.clone()).unwrap_or_default();
             if i >= versions.len() {
                 return Err(bad("version.delete", "no such version"));
@@ -1078,15 +1354,15 @@ pub fn specs() -> Vec<CommandSpec> {
             s.commit("Delete Version", Op::SetVersions { id, versions })?;
             ok()
         }),
-        cmd!("version.rename", "Rename Version", [], None, "{index, name}", has_active, |s, p| {
+        cmd!("version.rename", "Rename Version", [], None, "{index, name}", VersionRename, has_active, |s, p| {
             let c = "version.rename";
-            let name = str_param(p, "name").map(str::trim).filter(|n| !n.is_empty()).ok_or_else(|| bad(c, "missing name"))?.to_string();
-            edit_version(s, p, c, "Rename Version", |v, _| v.name = name)
+            let name = p.name.as_deref().map(str::trim).filter(|n| !n.is_empty()).ok_or_else(|| bad(c, "missing name"))?.to_string();
+            edit_version(s, p.index, c, "Rename Version", |v, _| v.name = name)
         }),
-        cmd!("version.update", "Update Version with Current Settings", [], None, "{index}", has_active, |s, p| {
-            edit_version(s, p, "version.update", "Update Version", |v, current| v.settings = current)
+        cmd!("version.update", "Update Version with Current Settings", [], None, "{index}", Index, has_active, |s, p| {
+            edit_version(s, p.index, "version.update", "Update Version", |v, current| v.settings = current)
         }),
-        cmd!("history.clear", "Clear History", [], None, "{} — keeps the current settings as the only step", has_active, |s, _| {
+        cmd!("history.clear", "Clear History", [], None, "{} — keeps the current settings as the only step", NoParams, has_active, |s, _| {
             let id = active(s, "history.clear")?;
             let d = s.develop_of(id).unwrap_or_default();
             let history = vec![lightcraft_catalog::HistoryStep { label: "Cleared History".into(), settings: d }];
@@ -1099,46 +1375,65 @@ pub fn specs() -> Vec<CommandSpec> {
             [],
             None,
             "{index} — loads that step's settings and moves the History cursor there; later steps stay listed until a new edit",
+            Index,
             has_active,
             |s, p| {
                 let c = "history.restore";
                 let id = active(s, c)?;
-                let i = index_req(p, "index", c)?;
+                let i = p.index;
                 go_to_history_step(s, c, id, i)
             }
         ),
-        cmd!("history.previous", "Previous History Step", [], None, "{} — steps the History cursor back one step", has_history_before, |s, _| {
-            let c = "history.previous";
-            let id = active(s, c)?;
-            let i = s
-                .catalog
-                .photo(id)
-                .and_then(|ph| ph.history_index())
-                .and_then(|i| i.checked_sub(1))
-                .ok_or_else(|| bad(c, "at the first History step"))?;
-            go_to_history_step(s, c, id, i)
-        }),
-        cmd!("history.next", "Next History Step", [], None, "{} — steps the History cursor forward one step", has_history_after, |s, _| {
-            let c = "history.next";
-            let id = active(s, c)?;
-            let ph = s.catalog.photo(id).ok_or_else(|| bad(c, "no photo"))?;
-            let i = ph
-                .history_index()
-                .map(|i| i.saturating_add(1))
-                .filter(|i| *i < ph.history.len())
-                .ok_or_else(|| bad(c, "at the latest History step"))?;
-            go_to_history_step(s, c, id, i)
-        }),
+        cmd!(
+            "history.previous",
+            "Previous History Step",
+            [],
+            None,
+            "{} — steps the History cursor back one step",
+            NoParams,
+            has_history_before,
+            |s, _| {
+                let c = "history.previous";
+                let id = active(s, c)?;
+                let i = s
+                    .catalog
+                    .photo(id)
+                    .and_then(|ph| ph.history_index())
+                    .and_then(|i| i.checked_sub(1))
+                    .ok_or_else(|| bad(c, "at the first History step"))?;
+                go_to_history_step(s, c, id, i)
+            }
+        ),
+        cmd!(
+            "history.next",
+            "Next History Step",
+            [],
+            None,
+            "{} — steps the History cursor forward one step",
+            NoParams,
+            has_history_after,
+            |s, _| {
+                let c = "history.next";
+                let id = active(s, c)?;
+                let ph = s.catalog.photo(id).ok_or_else(|| bad(c, "no photo"))?;
+                let i = ph
+                    .history_index()
+                    .map(|i| i.saturating_add(1))
+                    .filter(|i| *i < ph.history.len())
+                    .ok_or_else(|| bad(c, "at the latest History step"))?;
+                go_to_history_step(s, c, id, i)
+            }
+        ),
         // ---- interactions (slider drags, brush strokes)
-        cmd!("develop.beginInteraction", "Begin Interaction", [], None, "{label}", has_active, |s, p| {
-            s.begin_interaction(str_param(p, "label").unwrap_or("Edit"))?;
+        cmd!("develop.beginInteraction", "Begin Interaction", [], None, "{label}", Label, has_active, |s, p| {
+            s.begin_interaction(p.label.as_deref().unwrap_or("Edit"))?;
             ok()
         }),
-        cmd!("develop.endInteraction", "End Interaction", [], None, "{}", always, |s, _| {
+        cmd!("develop.endInteraction", "End Interaction", [], None, "{}", NoParams, always, |s, _| {
             s.end_interaction()?;
             ok()
         }),
-        cmd!("develop.cancelInteraction", "Cancel Interaction", [], None, "{}", always, |s, _| {
+        cmd!("develop.cancelInteraction", "Cancel Interaction", [], None, "{}", NoParams, always, |s, _| {
             s.cancel_interaction()?;
             ok()
         }),

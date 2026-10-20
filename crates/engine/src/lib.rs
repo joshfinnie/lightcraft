@@ -1219,6 +1219,15 @@ impl Session {
         }
     }
 
+    /// Targets of a typed photo command: its `ids`, else its `id` (a photo), else [`Self::selected`].
+    pub fn targets_of(&self, ids: Option<&[PhotoId]>, id: Option<PhotoId>) -> Vec<PhotoId> {
+        match (ids, id) {
+            (Some(ids), _) => ids.to_vec(),
+            (None, Some(id)) => vec![id],
+            (None, None) => self.selected(),
+        }
+    }
+
     /// The photos commands act on when a call names none: the selection, else the active photo.
     pub fn selected(&self) -> Vec<PhotoId> {
         if self.selection.ids.is_empty() { self.selection.active.into_iter().collect() } else { self.selection.ids.clone() }

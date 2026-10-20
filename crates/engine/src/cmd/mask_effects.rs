@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 
 use super::mask_effect_files as files;
-use super::{CommandSpec, always, bad, cmd, has_active, str_param};
+use super::{CommandSpec, always, bad, has_active, raw_cmd, str_param};
 use crate::{Result, Session};
 
 /// The local sliders an effect can set (`LocalAdjustments` field names; Amount aside).
@@ -589,7 +589,7 @@ fn tool_effect(s: &mut Session, p: &Value) -> Result<Value> {
 
 pub fn specs() -> Vec<CommandSpec> {
     vec![
-        cmd!(
+        raw_cmd!(
             query "mask.effects",
             "Mask Effect Presets",
             [],
@@ -598,7 +598,7 @@ pub fn specs() -> Vec<CommandSpec> {
             always,
             |s, _| Ok(list(s))
         ),
-        cmd!(
+        raw_cmd!(
             "mask.applyEffect",
             "Apply Mask Effect",
             [],
@@ -607,7 +607,7 @@ pub fn specs() -> Vec<CommandSpec> {
             has_active,
             apply_effect
         ),
-        cmd!(
+        raw_cmd!(
             "mask.saveEffect",
             "Save Mask Effect",
             [],
@@ -616,7 +616,7 @@ pub fn specs() -> Vec<CommandSpec> {
             has_active,
             save_effect
         ),
-        cmd!(
+        raw_cmd!(
             "mask.updateEffect",
             "Update Mask Effect",
             [],
@@ -625,8 +625,8 @@ pub fn specs() -> Vec<CommandSpec> {
             has_active,
             update_effect
         ),
-        cmd!("mask.renameEffect", "Rename Mask Effect", [], None, "{name, to}", always, rename_effect),
-        cmd!(
+        raw_cmd!("mask.renameEffect", "Rename Mask Effect", [], None, "{name, to}", always, rename_effect),
+        raw_cmd!(
             "mask.duplicateEffect",
             "Duplicate Mask Effect",
             [],
@@ -635,10 +635,18 @@ pub fn specs() -> Vec<CommandSpec> {
             always,
             duplicate_effect
         ),
-        cmd!("mask.deleteEffect", "Delete Mask Effect", [], None, "{name | names: [name]} — removes effect presets", always, delete_effect),
-        cmd!("mask.favoriteEffect", "Favorite Mask Effect", [], None, "{name | names, favorite?: bool (default: toggle)}", always, favorite_effect),
-        cmd!("mask.setEffectGroup", "Move Mask Effect to Group", [], None, "{name | names, group: name (\"\" = none)}", always, set_group),
-        cmd!(
+        raw_cmd!("mask.deleteEffect", "Delete Mask Effect", [], None, "{name | names: [name]} — removes effect presets", always, delete_effect),
+        raw_cmd!(
+            "mask.favoriteEffect",
+            "Favorite Mask Effect",
+            [],
+            None,
+            "{name | names, favorite?: bool (default: toggle)}",
+            always,
+            favorite_effect
+        ),
+        raw_cmd!("mask.setEffectGroup", "Move Mask Effect to Group", [], None, "{name | names, group: name (\"\" = none)}", always, set_group),
+        raw_cmd!(
             "mask.renameEffectGroup",
             "Rename Mask Effect Group",
             [],
@@ -647,7 +655,7 @@ pub fn specs() -> Vec<CommandSpec> {
             always,
             rename_group
         ),
-        cmd!(
+        raw_cmd!(
             "mask.toolEffect",
             "Set Effect for New Masks",
             [],
@@ -656,7 +664,7 @@ pub fn specs() -> Vec<CommandSpec> {
             always,
             tool_effect
         ),
-        cmd!(
+        raw_cmd!(
             "mask.importEffects",
             "Import Mask Effects",
             [],
@@ -665,7 +673,7 @@ pub fn specs() -> Vec<CommandSpec> {
             always,
             files::import_effects
         ),
-        cmd!(
+        raw_cmd!(
             "mask.exportEffects",
             "Export Mask Effects",
             [],

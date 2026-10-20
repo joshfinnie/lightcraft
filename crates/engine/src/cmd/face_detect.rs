@@ -17,7 +17,7 @@ use lightcraft_faces::yunet::{Detector, Face, Options};
 use lightcraft_meta::{Region, RegionKind};
 use serde_json::{Value, json};
 
-use super::{CommandSpec, always, bad, cmd, has_selection};
+use super::{CommandSpec, always, bad, has_selection, raw_cmd};
 use crate::{AiModel, EngineError, Result, Session};
 
 const C: &str = "faces.detect";
@@ -299,7 +299,7 @@ fn detect(s: &mut Session, p: &Value) -> Result<Value> {
 
 pub fn specs() -> Vec<CommandSpec> {
     vec![
-        cmd!(
+        raw_cmd!(
             "faces.detect",
             "Detect Faces",
             ["Photo"],
@@ -308,7 +308,7 @@ pub fn specs() -> Vec<CommandSpec> {
             has_selection,
             detect
         ),
-        cmd!(
+        raw_cmd!(
             query "faces.gpu",
             "Face Models on the GPU",
             [],

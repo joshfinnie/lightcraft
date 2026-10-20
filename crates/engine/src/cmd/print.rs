@@ -11,7 +11,7 @@
 //! * `print.template.list|save|apply|delete`
 use serde_json::{Value, json};
 
-use super::{CommandSpec, always, bad, cmd, f64_req};
+use super::{CommandSpec, always, bad, f64_req, raw_cmd};
 use crate::print::layout::{Layout, MAX_PAGES, Rect, Snap, Stack, paper_names, paper_size};
 use crate::print::template::{MAX_TEMPLATES, PrintSettings, PrintTemplate, clean_name};
 use crate::{Result, Session};
@@ -320,34 +320,34 @@ fn template_delete(s: &mut Session, p: &Value) -> Result<Value> {
 
 pub fn specs() -> Vec<CommandSpec> {
     vec![
-        cmd!(query "print.get", "Print Settings", [], None,
+        raw_cmd!(query "print.get", "Print Settings", [], None,
             "{ids?} → {settings: {layout, image, page, guides, job}, papers, pageWidth, pageHeight, printable, pageCount, cellsPerPage, gridCells?, overlaps}; lengths are inches",
             always, get),
-        cmd!(query "print.set", "Set Print Settings", [], None,
+        raw_cmd!(query "print.set", "Set Print Settings", [], None,
             "{layout?: {style: singleImage|contactSheet|picturePackage|customPackage, page: {paper, customWidth, customHeight, orientation: portrait|landscape, margins: {top,right,bottom,left}}, grid: {columns, rows, spacingX, spacingY, keepSquare}, spacing}, image?: {zoomToFill, rotateToFit, borderEnabled, borderWidth, borderColor: [r,g,b], strokeEnabled, strokeWidthPt, strokeColor}, page?: {background: [r,g,b], pageNumbers, pageInfo, cropMarks} (Page Options: single image and contact sheet only), guides?: {showRulers, units: in|cm|mm|pt, snap: off|cells|grid, gridSize, showMargins, showBleed, showPageGrid, showCells, showDimensions}, job?: {ppi: 72..720, color?: {profile: {kind: managed, space: srgb|adobeRgb} | {kind: icc, path}, intent: perceptual|relative, blackPointCompensation, brightness: -100..100, contrast: -100..100, sharpen: off|low|standard|high, media: matte|glossy, sixteenBit}}} — merges into the current print; cells and pages change with print.cell.* / print.layout.*; → print.get",
             always, set),
-        cmd!(query "print.reset", "Reset Print Settings", [], None, "{} → print.get", always, reset),
-        cmd!(query "print.cell.add", "Add Print Cell", [], None,
+        raw_cmd!(query "print.reset", "Reset Print Settings", [], None, "{} → print.get", always, reset),
+        raw_cmd!(query "print.cell.add", "Add Print Cell", [], None,
             "{width, height, x?, y?, page?, photo?} inches; picture/custom package → {id, cell, pages}; the cell goes to the first free spot unless x and y are given",
             always, cell_add),
-        cmd!(query "print.cell.move", "Move Print Cell", [], None, "{id, x, y, snap?: bool, threshold?: inches} → {id, rect}; snap uses the guides' snap mode", always, cell_move),
-        cmd!(query "print.cell.resize", "Resize Print Cell", [], None,
+        raw_cmd!(query "print.cell.move", "Move Print Cell", [], None, "{id, x, y, snap?: bool, threshold?: inches} → {id, rect}; snap uses the guides' snap mode", always, cell_move),
+        raw_cmd!(query "print.cell.resize", "Resize Print Cell", [], None,
             "{id, width?, height?, x?, y?, snap?: bool, threshold?} → {id, rect}", always, cell_resize),
-        cmd!(query "print.cell.delete", "Delete Print Cell", [], None, "{id}", always, cell_delete),
-        cmd!(query "print.cell.stack", "Arrange Print Cell", [], None, "{id, order: toBack|backward|forward|toFront} → {order: cell ids back to front}", always, cell_stack),
-        cmd!(query "print.cell.photo", "Set Print Cell Photo", [], None, "{id, photo: photo id | null} (custom package: the photo printed in the cell)", always, cell_photo),
-        cmd!(query "print.cell.page", "Move Print Cell to Page", [], None, "{id, page: zero-based}", always, cell_page),
-        cmd!(query "print.layout.autoLayout", "Auto Layout", [], None, "{} — packs the package's cells onto as few pages as possible → {pages, cells}", always, auto_layout),
-        cmd!(query "print.layout.newPage", "New Print Page", [], None, "{} → {page, pages}", always, new_page),
-        cmd!(query "print.layout.clear", "Clear Print Layout", [], None, "{} — removes every cell and extra page", always, clear),
-        cmd!(query "print.exportPdf", "Print to PDF", [], None,
+        raw_cmd!(query "print.cell.delete", "Delete Print Cell", [], None, "{id}", always, cell_delete),
+        raw_cmd!(query "print.cell.stack", "Arrange Print Cell", [], None, "{id, order: toBack|backward|forward|toFront} → {order: cell ids back to front}", always, cell_stack),
+        raw_cmd!(query "print.cell.photo", "Set Print Cell Photo", [], None, "{id, photo: photo id | null} (custom package: the photo printed in the cell)", always, cell_photo),
+        raw_cmd!(query "print.cell.page", "Move Print Cell to Page", [], None, "{id, page: zero-based}", always, cell_page),
+        raw_cmd!(query "print.layout.autoLayout", "Auto Layout", [], None, "{} — packs the package's cells onto as few pages as possible → {pages, cells}", always, auto_layout),
+        raw_cmd!(query "print.layout.newPage", "New Print Page", [], None, "{} → {page, pages}", always, new_page),
+        raw_cmd!(query "print.layout.clear", "Clear Print Layout", [], None, "{} — removes every cell and extra page", always, clear),
+        raw_cmd!(query "print.exportPdf", "Print to PDF", [], None,
             "{path, ids?: photo ids (default selection)} → {path, pages, photos, bytes}; prints the current print.get settings; replaces an existing output, never an original",
             always, export_pdf),
-        cmd!(query "print.template.list", "Print Templates", [], None, "{} → {templates: [{name, style, settings}]}", always, |s, _| Ok(template_list(s))),
-        cmd!(query "print.template.save", "Save Print Template", [], None,
+        raw_cmd!(query "print.template.list", "Print Templates", [], None, "{} → {templates: [{name, style, settings}]}", always, |s, _| Ok(template_list(s))),
+        raw_cmd!(query "print.template.save", "Save Print Template", [], None,
             "{name} — saves the layout, image settings, page and job (not the cells' photos or the guides); an existing name (any case) is replaced → print.template.list",
             always, template_save),
-        cmd!(query "print.template.apply", "Apply Print Template", [], None, "{name} → print.get", always, template_apply),
-        cmd!(query "print.template.delete", "Delete Print Template", [], None, "{name} → print.template.list", always, template_delete),
+        raw_cmd!(query "print.template.apply", "Apply Print Template", [], None, "{name} → print.get", always, template_apply),
+        raw_cmd!(query "print.template.delete", "Delete Print Template", [], None, "{name} → print.template.list", always, template_delete),
     ]
 }

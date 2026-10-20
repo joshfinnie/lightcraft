@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use serde_json::{Value, json};
 
-use super::{CommandSpec, always, bad, cmd, str_param};
+use super::{CommandSpec, always, bad, raw_cmd, str_param};
 use crate::activity::{Cancel, TaskGuard};
 use crate::media::{RenderJob, THUMB_SIZES};
 use crate::{Result, Session};
@@ -483,7 +483,7 @@ pub fn has_smart_preview(s: &Session, id: lightcraft_catalog::PhotoId) -> bool {
 pub fn specs() -> Vec<CommandSpec> {
     vec![
         #[cfg(not(target_arch = "wasm32"))]
-        cmd!(
+        raw_cmd!(
             "library.smartPreviews",
             "Build Smart Previews",
             [],
@@ -493,7 +493,7 @@ pub fn specs() -> Vec<CommandSpec> {
             smart
         ),
         #[cfg(not(target_arch = "wasm32"))]
-        cmd!(
+        raw_cmd!(
             "library.smartPreviewsLocation",
             "Smart Previews Location",
             [],
@@ -502,7 +502,7 @@ pub fn specs() -> Vec<CommandSpec> {
             always,
             smart_location
         ),
-        cmd!(query "photo.smartPreview", "Smart Preview Status", [], None, "{id?} → {smartPreview: bool, originalOnline: bool}", always, |s, p| {
+        raw_cmd!(query "photo.smartPreview", "Smart Preview Status", [], None, "{id?} → {smartPreview: bool, originalOnline: bool}", always, |s, p| {
             let id = s.targets(p)?.first().copied().ok_or_else(|| bad("photo.smartPreview", "no photo"))?;
             let online = match s.catalog.photo(id).map(|p| p.source.clone()) {
                 Some(lightcraft_catalog::Source::File { path }) => std::path::Path::new(&path).exists(),
@@ -510,7 +510,7 @@ pub fn specs() -> Vec<CommandSpec> {
             };
             Ok(json!({"smartPreview": has_smart_preview(s, id), "originalOnline": online}))
         }),
-        cmd!(
+        raw_cmd!(
             "library.buildPreviews",
             "Build Previews",
             [],
@@ -519,10 +519,10 @@ pub fn specs() -> Vec<CommandSpec> {
             always,
             build
         ),
-        cmd!(query "library.previewProgress", "Preview Build Progress", [], None, "{} → {total, done, failed, repaired, running, cancelled, what, error} | null", always, |s, _| {
+        raw_cmd!(query "library.previewProgress", "Preview Build Progress", [], None, "{} → {total, done, failed, repaired, running, cancelled, what, error} | null", always, |s, _| {
             Ok(s.preview_build.as_ref().map_or(Value::Null, |b| b.json()))
         }),
-        cmd!("library.cancelPreviews", "Cancel Preview Build", [], None, "{}", always, |s, _| {
+        raw_cmd!("library.cancelPreviews", "Cancel Preview Build", [], None, "{}", always, |s, _| {
             if let Some(b) = &s.preview_build {
                 b.cancel.store(true, Ordering::Relaxed);
             }

@@ -14,7 +14,7 @@ use serde_json::{Value, json};
 use lightcraft_catalog::{Op, PhotoId};
 use lightcraft_geocode::{GEONAMES_ATTRIBUTION, GEONAMES_FILES, GeoNames, LatLon};
 
-use super::{CommandSpec, always, bad, bool_or, cmd, has_selection, str_param};
+use super::{CommandSpec, always, bad, bool_or, has_selection, raw_cmd, str_param};
 use crate::activity::Cancel;
 use crate::{Result, Session};
 
@@ -266,7 +266,7 @@ mod download {
 pub fn specs() -> Vec<CommandSpec> {
     #[allow(unused_mut)]
     let mut v = vec![
-        cmd!(
+        raw_cmd!(
             "metadata.reverseGeocode",
             "Fill Location from GPS",
             ["Photo"],
@@ -275,10 +275,10 @@ pub fn specs() -> Vec<CommandSpec> {
             has_selection,
             reverse
         ),
-        cmd!(query "metadata.placeNamesStatus", "Place Names Status", [], None, "{dataset?: folder} → {downloaded, bytes, path, attribution, source}", always, status),
+        raw_cmd!(query "metadata.placeNamesStatus", "Place Names Status", [], None, "{dataset?: folder} → {downloaded, bytes, path, attribution, source}", always, status),
     ];
     #[cfg(not(target_arch = "wasm32"))]
-    v.push(cmd!(
+    v.push(raw_cmd!(
         "metadata.downloadPlaceNames",
         "Download Place Names (GeoNames)",
         ["Photo"],

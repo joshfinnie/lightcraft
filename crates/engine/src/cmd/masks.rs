@@ -4,7 +4,7 @@ use lightcraft_develop::{BrushStroke, LocalAdjustments, Mask, MaskComponent, Mas
 use lightcraft_geom::Point;
 use serde_json::{Value, json};
 
-use super::{CommandSpec, bad, bool_or, cmd, f64_or, has_active, ok, point, str_param};
+use super::{CommandSpec, bad, bool_or, f64_or, has_active, ok, point, raw_cmd, str_param};
 use crate::segment::{Click, MAX_CLICKS};
 use crate::{Result, Session};
 
@@ -229,7 +229,7 @@ fn find(masks: &mut [Mask], id: u32, c: &str) -> Result<usize> {
 
 pub fn specs() -> Vec<CommandSpec> {
     vec![
-        cmd!(
+        raw_cmd!(
             "mask.add",
             "Create New Mask",
             [],
@@ -263,7 +263,7 @@ pub fn specs() -> Vec<CommandSpec> {
                 queue_later(s, later, next, 0, out)
             }
         ),
-        cmd!(
+        raw_cmd!(
             "mask.addComponent",
             "Add/Subtract/Intersect Mask",
             [],
@@ -297,7 +297,7 @@ pub fn specs() -> Vec<CommandSpec> {
                 queue_later(s, later, mid, comp, out)
             }
         ),
-        cmd!(
+        raw_cmd!(
             "mask.brushStroke",
             "Brush Stroke",
             [],
@@ -380,7 +380,7 @@ pub fn specs() -> Vec<CommandSpec> {
                 Ok(out)
             }
         ),
-        cmd!("mask.update", "Update Mask Shape", [], None, "{id?, component?: index (0), shape: MaskShape JSON}", has_active, |s, p| {
+        raw_cmd!("mask.update", "Update Mask Shape", [], None, "{id?, component?: index (0), shape: MaskShape JSON}", has_active, |s, p| {
             let shape: MaskShape =
                 serde_json::from_value(p.get("shape").cloned().unwrap_or_default()).map_err(|e| bad("mask.update", e.to_string()))?;
             let comp = optional_index(p, "component", "mask.update")?.unwrap_or(0);
@@ -392,7 +392,7 @@ pub fn specs() -> Vec<CommandSpec> {
                 Ok(())
             })
         }),
-        cmd!(
+        raw_cmd!(
             "mask.sampleColor",
             "Sample Mask Color",
             [],
@@ -433,7 +433,7 @@ pub fn specs() -> Vec<CommandSpec> {
                 Ok(json!({"samples": out}))
             }
         ),
-        cmd!(
+        raw_cmd!(
             "mask.objectPoint",
             "Add Object Click",
             [],
@@ -489,7 +489,7 @@ pub fn specs() -> Vec<CommandSpec> {
                 Ok(out)
             }
         ),
-        cmd!(
+        raw_cmd!(
             "mask.refineDetail",
             "Refine AI Mask Detail",
             [],
@@ -514,7 +514,7 @@ pub fn specs() -> Vec<CommandSpec> {
                 Ok(json!({"started": started}))
             }
         ),
-        cmd!(
+        raw_cmd!(
             query "segment.prepare",
             "Prepare AI Masks",
             [],
@@ -528,7 +528,7 @@ pub fn specs() -> Vec<CommandSpec> {
                 Ok(json!({"busy": s.segmenter.busy()}))
             }
         ),
-        cmd!(
+        raw_cmd!(
             query "segment.model.status",
             "AI Mask Model Status",
             [],
@@ -553,7 +553,7 @@ pub fn specs() -> Vec<CommandSpec> {
                 }))
             }
         ),
-        cmd!(
+        raw_cmd!(
             query "segment.model.download",
             "Download AI Mask Model",
             [],
@@ -577,7 +577,7 @@ pub fn specs() -> Vec<CommandSpec> {
                 Ok(json!({"started": started, "installed": s.segmenter.installed(), "downloading": s.segmenter.download_status().running}))
             }
         ),
-        cmd!(
+        raw_cmd!(
             query "segment.model.cancel",
             "Cancel AI Mask Model Download",
             [],
@@ -586,7 +586,7 @@ pub fn specs() -> Vec<CommandSpec> {
             super::always,
             |s, _| Ok(json!({"cancelled": s.segmenter.cancel_download()}))
         ),
-        cmd!(
+        raw_cmd!(
             "mask.refine",
             "Refine Mask Edges",
             [],
@@ -603,7 +603,7 @@ pub fn specs() -> Vec<CommandSpec> {
                 })
             }
         ),
-        cmd!(
+        raw_cmd!(
             "mask.adjust",
             "Set Mask Adjustments",
             [],
@@ -623,11 +623,11 @@ pub fn specs() -> Vec<CommandSpec> {
                 })
             }
         ),
-        cmd!("mask.select", "Select Mask", [], None, "{id|null}", has_active, |s, p| {
+        raw_cmd!("mask.select", "Select Mask", [], None, "{id|null}", has_active, |s, p| {
             s.active_mask = optional_mask_id(p, "mask.select")?;
             ok()
         }),
-        cmd!("mask.delete", "Delete Mask", [], None, "{id?}", has_active, |s, p| {
+        raw_cmd!("mask.delete", "Delete Mask", [], None, "{id?}", has_active, |s, p| {
             let mid = mask_id(p, s.active_mask, "mask.delete")?;
             masks_edit(s, "mask.delete", "Delete Mask", |masks, active| {
                 let i = find(masks, mid, "mask.delete")?;
@@ -636,14 +636,14 @@ pub fn specs() -> Vec<CommandSpec> {
                 Ok(())
             })
         }),
-        cmd!("mask.deleteAll", "Delete All Masks", [], None, "{}", has_active, |s, _| {
+        raw_cmd!("mask.deleteAll", "Delete All Masks", [], None, "{}", has_active, |s, _| {
             masks_edit(s, "mask.deleteAll", "Delete All Masks", |masks, active| {
                 masks.clear();
                 *active = None;
                 Ok(())
             })
         }),
-        cmd!("mask.rename", "Rename Mask", [], None, "{id?, name}", has_active, |s, p| {
+        raw_cmd!("mask.rename", "Rename Mask", [], None, "{id?, name}", has_active, |s, p| {
             let name = str_param(p, "name").ok_or_else(|| bad("mask.rename", "missing name"))?.to_string();
             let mid = mask_id(p, s.active_mask, "mask.rename")?;
             masks_edit(s, "mask.rename", "Rename Mask", |masks, _| {
@@ -652,7 +652,7 @@ pub fn specs() -> Vec<CommandSpec> {
                 Ok(())
             })
         }),
-        cmd!("mask.invert", "Invert Mask", [], None, "{id?}", has_active, |s, p| {
+        raw_cmd!("mask.invert", "Invert Mask", [], None, "{id?}", has_active, |s, p| {
             let mid = mask_id(p, s.active_mask, "mask.invert")?;
             masks_edit(s, "mask.invert", "Invert Mask", |masks, _| {
                 let i = find(masks, mid, "mask.invert")?;
@@ -660,7 +660,7 @@ pub fn specs() -> Vec<CommandSpec> {
                 Ok(())
             })
         }),
-        cmd!("mask.visible", "Show/Hide Mask", [], None, "{id?, visible?: bool}", has_active, |s, p| {
+        raw_cmd!("mask.visible", "Show/Hide Mask", [], None, "{id?, visible?: bool}", has_active, |s, p| {
             let mid = mask_id(p, s.active_mask, "mask.visible")?;
             masks_edit(s, "mask.visible", "Toggle Mask", |masks, _| {
                 let i = find(masks, mid, "mask.visible")?;
@@ -668,7 +668,7 @@ pub fn specs() -> Vec<CommandSpec> {
                 Ok(())
             })
         }),
-        cmd!(
+        raw_cmd!(
             "mask.duplicate",
             "Duplicate Mask",
             [],
@@ -694,7 +694,7 @@ pub fn specs() -> Vec<CommandSpec> {
                 })
             }
         ),
-        cmd!(
+        raw_cmd!(
             "mask.component",
             "Edit Mask Component",
             [],
@@ -742,7 +742,7 @@ pub fn specs() -> Vec<CommandSpec> {
                 })
             }
         ),
-        cmd!("mask.move", "Move Mask", [], None, "{id?, to?: index (0 = top), delta?: ±n} — reorder the masks list", has_active, |s, p| {
+        raw_cmd!("mask.move", "Move Mask", [], None, "{id?, to?: index (0 = top), delta?: ±n} — reorder the masks list", has_active, |s, p| {
             let mid = mask_id(p, s.active_mask, "mask.move")?;
             let mut masks = s.active().and_then(|id| s.develop_of(id)).map(|d| d.masks.clone()).unwrap_or_default();
             let i = find(&mut masks, mid, "mask.move")?;
@@ -764,7 +764,7 @@ pub fn specs() -> Vec<CommandSpec> {
             })
         }),
         // ---- Remove tool (spots)
-        cmd!(
+        raw_cmd!(
             "spot.findDust",
             "Find Dust Spots",
             [],
@@ -800,7 +800,7 @@ pub fn specs() -> Vec<CommandSpec> {
                 Ok(json!({"spots": out, "added": found.len()}))
             }
         ),
-        cmd!(
+        raw_cmd!(
             "spot.findBlemishes",
             "Find Blemishes",
             [],
@@ -857,7 +857,7 @@ pub fn specs() -> Vec<CommandSpec> {
                 Ok(json!({"faces": boxes.len(), "spots": out, "added": found.len()}))
             }
         ),
-        cmd!(
+        raw_cmd!(
             "spot.add",
             "Add Remove Spot",
             [],
@@ -897,7 +897,7 @@ pub fn specs() -> Vec<CommandSpec> {
                 Ok(json!({"index": n - 1}))
             }
         ),
-        cmd!("spot.select", "Select Spot", [], None, "{index|null}", has_active, |s, p| {
+        raw_cmd!("spot.select", "Select Spot", [], None, "{index|null}", has_active, |s, p| {
             let n = spots_len(s);
             s.active_spot = match optional_index(p, "index", "spot.select")? {
                 Some(i) if i < n => Some(i),
@@ -906,7 +906,7 @@ pub fn specs() -> Vec<CommandSpec> {
             };
             Ok(json!({"activeSpot": s.active_spot}))
         }),
-        cmd!(
+        raw_cmd!(
             "spot.update",
             "Edit Spot",
             [],
@@ -950,7 +950,7 @@ pub fn specs() -> Vec<CommandSpec> {
                 Ok(json!({"index": i}))
             }
         ),
-        cmd!(
+        raw_cmd!(
             "spot.refreshSource",
             "Refresh Source",
             [],
@@ -971,7 +971,7 @@ pub fn specs() -> Vec<CommandSpec> {
                 Ok(json!({"index": i, "source": [next.x, next.y]}))
             }
         ),
-        cmd!("spot.delete", "Delete Spot", [], None, "{index? (the selected spot)}", has_active, |s, p| {
+        raw_cmd!("spot.delete", "Delete Spot", [], None, "{index? (the selected spot)}", has_active, |s, p| {
             let c = "spot.delete";
             let i = spot_index(s, p, c)?;
             spots_edit(s, c, "Delete Spot", |spots| {
@@ -986,7 +986,7 @@ pub fn specs() -> Vec<CommandSpec> {
             ok()
         }),
         // ---- Red eye / pet eye
-        cmd!(
+        raw_cmd!(
             "redeye.add",
             "Add Red Eye Correction",
             [],
@@ -1014,7 +1014,7 @@ pub fn specs() -> Vec<CommandSpec> {
                 Ok(json!({"index": n - 1}))
             }
         ),
-        cmd!(
+        raw_cmd!(
             "redeye.catchlight",
             "Pet Eye Catchlight",
             [],
@@ -1036,7 +1036,7 @@ pub fn specs() -> Vec<CommandSpec> {
                 ok()
             }
         ),
-        cmd!("redeye.delete", "Delete Red Eye Correction", [], None, "{index}", has_active, |s, p| {
+        raw_cmd!("redeye.delete", "Delete Red Eye Correction", [], None, "{index}", has_active, |s, p| {
             let c = "redeye.delete";
             let i = super::index_req(p, "index", c)?;
             let id = s.active().ok_or_else(|| bad(c, "no active photo"))?;

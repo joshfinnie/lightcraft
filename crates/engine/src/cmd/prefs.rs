@@ -3,7 +3,7 @@
 
 use serde_json::{Value, json};
 
-use super::{CommandSpec, always, bad, cmd};
+use super::{CommandSpec, always, bad, raw_cmd};
 use crate::import::{CameraDefault, ImportDefaults};
 use crate::{Result, Session};
 
@@ -105,7 +105,7 @@ fn prefs(s: &mut Session, p: &Value) -> Result<Value> {
 }
 
 pub fn specs() -> Vec<CommandSpec> {
-    vec![cmd!(
+    vec![raw_cmd!(
         "library.preferences",
         "Library Preferences",
         [],

@@ -2,11 +2,11 @@
 
 use serde_json::{Value, json};
 
-use super::{CommandSpec, always, bad, cmd};
+use super::{CommandSpec, always, bad, raw_cmd};
 
 pub fn specs() -> Vec<CommandSpec> {
     vec![
-        cmd!(
+        raw_cmd!(
             query "activity.list",
             "Background Tasks",
             [],
@@ -15,7 +15,7 @@ pub fn specs() -> Vec<CommandSpec> {
             always,
             |s, _| Ok(json!({"tasks": s.activity.list()}))
         ),
-        cmd!(
+        raw_cmd!(
             "activity.cancel",
             "Cancel Background Task",
             [],

@@ -7,7 +7,7 @@ use lightcraft_geom::Point;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-use super::{CommandSpec, always, bad, cmd, has_active, str_param};
+use super::{CommandSpec, always, bad, has_active, raw_cmd, str_param};
 use crate::{Result, Session};
 
 /// Channels `curve.reset` accepts.
@@ -51,7 +51,7 @@ fn reset(s: &mut Session, p: &Value) -> Result<Value> {
 
 pub fn specs() -> Vec<CommandSpec> {
     vec![
-        cmd!(
+        raw_cmd!(
             "curve.reset",
             "Reset Tone Curve",
             [],
@@ -60,7 +60,7 @@ pub fn specs() -> Vec<CommandSpec> {
             has_active,
             reset
         ),
-        cmd!(
+        raw_cmd!(
             query "curve.presets",
             "Point Curve Presets",
             [],
@@ -69,7 +69,7 @@ pub fn specs() -> Vec<CommandSpec> {
             always,
             |s, _| Ok(list(s))
         ),
-        cmd!(
+        raw_cmd!(
             "curve.applyPreset",
             "Apply Point Curve Preset",
             [],
@@ -78,7 +78,7 @@ pub fn specs() -> Vec<CommandSpec> {
             has_active,
             apply_preset
         ),
-        cmd!(
+        raw_cmd!(
             "curve.savePreset",
             "Save Point Curve Preset",
             [],
@@ -87,7 +87,7 @@ pub fn specs() -> Vec<CommandSpec> {
             has_active,
             save_preset
         ),
-        cmd!(
+        raw_cmd!(
             "curve.deletePreset",
             "Delete Point Curve Preset",
             [],
@@ -96,7 +96,7 @@ pub fn specs() -> Vec<CommandSpec> {
             always,
             delete_preset
         ),
-        cmd!(
+        raw_cmd!(
             "curve.importPresets",
             "Import Point Curve Presets",
             [],
@@ -105,7 +105,7 @@ pub fn specs() -> Vec<CommandSpec> {
             always,
             import_presets
         ),
-        cmd!(
+        raw_cmd!(
             "curve.exportPresets",
             "Export Point Curve Presets",
             [],

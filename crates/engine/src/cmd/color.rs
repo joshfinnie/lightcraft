@@ -14,7 +14,7 @@ use lightcraft_develop::{DevelopSettings, MAX_POINT_COLORS, MIXER_BANDS, PointCo
 use lightcraft_geom::Point;
 use serde_json::{Value, json};
 
-use super::{CommandSpec, bad, cmd, f64_req, has_active};
+use super::{CommandSpec, bad, f64_req, has_active, raw_cmd};
 use crate::media::SourceLevel;
 use crate::{Result, Session};
 
@@ -161,7 +161,7 @@ fn index(p: &Value, c: &str) -> Result<usize> {
 
 pub fn specs() -> Vec<CommandSpec> {
     vec![
-        cmd!(
+        raw_cmd!(
             "pointColor.pick",
             "Add Point Color Sample",
             [],
@@ -184,7 +184,7 @@ pub fn specs() -> Vec<CommandSpec> {
                 Ok(json!({"index": i, "lum": sample.lum, "chroma": sample.chroma, "hue": sample.hue}))
             }
         ),
-        cmd!(
+        raw_cmd!(
             "develop.targeted",
             "Targeted Adjustment",
             [],
@@ -193,7 +193,7 @@ pub fn specs() -> Vec<CommandSpec> {
             has_active,
             targeted
         ),
-        cmd!("pointColor.delete", "Delete Point Color Sample", [], None, "{index}", has_active, |s, p| {
+        raw_cmd!("pointColor.delete", "Delete Point Color Sample", [], None, "{index}", has_active, |s, p| {
             let c = "pointColor.delete";
             let i = index(p, c)?;
             let id = s.active().ok_or_else(|| bad(c, "no active photo"))?;

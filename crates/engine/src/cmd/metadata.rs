@@ -5,7 +5,7 @@ use lightcraft_catalog::{CopyrightStatus, Meta};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 
-use super::{CommandSpec, always, bad, cmd, str_param};
+use super::{CommandSpec, always, bad, raw_cmd, str_param};
 use crate::{Result, Session};
 
 /// The fields a metadata preset can hold (photo.setMeta names).
@@ -159,8 +159,8 @@ fn apply(s: &mut Session, p: &Value) -> Result<Value> {
 
 pub fn specs() -> Vec<CommandSpec> {
     vec![
-        cmd!(query "metadata.presets", "Metadata Presets", [], None, "{} → [{name, fields}]", always, |s, _| Ok(list(s))),
-        cmd!(
+        raw_cmd!(query "metadata.presets", "Metadata Presets", [], None, "{} → [{name, fields}]", always, |s, _| Ok(list(s))),
+        raw_cmd!(
             "metadata.savePreset",
             "Save Metadata Preset",
             [],
@@ -169,8 +169,8 @@ pub fn specs() -> Vec<CommandSpec> {
             always,
             save
         ),
-        cmd!("metadata.deletePreset", "Delete Metadata Preset", [], None, "{name}", always, delete),
-        cmd!(
+        raw_cmd!("metadata.deletePreset", "Delete Metadata Preset", [], None, "{name}", always, delete),
+        raw_cmd!(
             "metadata.applyPreset",
             "Apply Metadata Preset",
             [],

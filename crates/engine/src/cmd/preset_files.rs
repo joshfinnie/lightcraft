@@ -3,7 +3,7 @@
 use serde_json::{Value, json};
 
 use super::mask_effect_files as mef;
-use super::{CommandSpec, always, bad, cmd, str_param};
+use super::{CommandSpec, always, bad, raw_cmd, str_param};
 use crate::preset_import::{group_from_dir, read_presets};
 use crate::presets::{LCPRESET_EXT, expand_preset_paths, to_lcpreset};
 use crate::{Result, Session};
@@ -113,7 +113,7 @@ fn export(s: &mut Session, p: &Value) -> Result<Value> {
 
 pub fn specs() -> Vec<CommandSpec> {
     vec![
-        cmd!(
+        raw_cmd!(
             "preset.import",
             "Import Presets",
             [],
@@ -122,7 +122,7 @@ pub fn specs() -> Vec<CommandSpec> {
             always,
             import
         ),
-        cmd!(
+        raw_cmd!(
             "preset.export",
             "Export Presets",
             [],

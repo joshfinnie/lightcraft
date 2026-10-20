@@ -16,7 +16,7 @@ use lightcraft_catalog::query::in_folder;
 use lightcraft_catalog::{Op, PhotoId, Source};
 use serde_json::{Value, json};
 
-use super::{CommandSpec, always, bad, bool_or, cmd, str_param};
+use super::{CommandSpec, always, bad, bool_or, raw_cmd, str_param};
 use crate::import::{ImportMode, ImportOptions, import_with, is_supported};
 use crate::{Browse, LibrarySource, Result, Session};
 
@@ -236,7 +236,7 @@ fn add_to_library(s: &mut Session, p: &Value) -> Result<Value> {
 
 pub fn specs() -> Vec<CommandSpec> {
     vec![
-        cmd!(
+        raw_cmd!(
             "folder.rename",
             "Rename Folder",
             [],
@@ -254,7 +254,7 @@ pub fn specs() -> Vec<CommandSpec> {
                 Ok(json!({"path": to, "relinked": n}))
             }
         ),
-        cmd!(
+        raw_cmd!(
             "folder.move",
             "Move Folder",
             [],
@@ -270,7 +270,7 @@ pub fn specs() -> Vec<CommandSpec> {
                 Ok(json!({"path": to, "relinked": n}))
             }
         ),
-        cmd!(
+        raw_cmd!(
             "folder.create",
             "New Folder on Disk",
             [],
@@ -279,7 +279,7 @@ pub fn specs() -> Vec<CommandSpec> {
             always,
             create_folder
         ),
-        cmd!(
+        raw_cmd!(
             "photo.moveToFolder",
             "Move to Folder",
             [],
@@ -288,7 +288,7 @@ pub fn specs() -> Vec<CommandSpec> {
             always,
             move_to_folder
         ),
-        cmd!(
+        raw_cmd!(
             "library.browse",
             "Browse Folder",
             [],
@@ -297,7 +297,7 @@ pub fn specs() -> Vec<CommandSpec> {
             always,
             browse
         ),
-        cmd!(
+        raw_cmd!(
             "library.forgetLocal",
             "Forget Unchanged Local Photos",
             [],
@@ -306,7 +306,15 @@ pub fn specs() -> Vec<CommandSpec> {
             always,
             forget_local
         ),
-        cmd!("photo.addToLibrary", "Add to My Photos", ["Photo"], None, "{ids?} — browsed (Local) photos join the library", always, add_to_library),
+        raw_cmd!(
+            "photo.addToLibrary",
+            "Add to My Photos",
+            ["Photo"],
+            None,
+            "{ids?} — browsed (Local) photos join the library",
+            always,
+            add_to_library
+        ),
     ]
 }
 

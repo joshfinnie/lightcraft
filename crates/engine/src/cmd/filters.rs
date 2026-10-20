@@ -5,7 +5,7 @@ use lightcraft_catalog::Filter;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-use super::{CommandSpec, always, bad, cmd, str_param};
+use super::{CommandSpec, always, bad, raw_cmd, str_param};
 use crate::{Result, Session};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -55,8 +55,8 @@ fn delete(s: &mut Session, p: &Value) -> Result<Value> {
 
 pub fn specs() -> Vec<CommandSpec> {
     vec![
-        cmd!(query "filter.presets", "Filter Presets", [], None, "{} → [{name, filter}]", always, |s, _| Ok(list(s))),
-        cmd!(
+        raw_cmd!(query "filter.presets", "Filter Presets", [], None, "{} → [{name, filter}]", always, |s, _| Ok(list(s))),
+        raw_cmd!(
             "filter.savePreset",
             "Save Filter Preset",
             [],
@@ -65,7 +65,7 @@ pub fn specs() -> Vec<CommandSpec> {
             always,
             save
         ),
-        cmd!("filter.applyPreset", "Apply Filter Preset", [], None, "{name} — replaces the current filter → {photos}", always, apply),
-        cmd!("filter.deletePreset", "Delete Filter Preset", [], None, "{name}", always, delete),
+        raw_cmd!("filter.applyPreset", "Apply Filter Preset", [], None, "{name} — replaces the current filter → {photos}", always, apply),
+        raw_cmd!("filter.deletePreset", "Delete Filter Preset", [], None, "{name}", always, delete),
     ]
 }

@@ -35,6 +35,8 @@ lightcraft-slideshow = { workspace = true }
 rayon = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+serde_ignored = { workspace = true }
+serde_path_to_error = { workspace = true }
 thiserror = { workspace = true }
 log = { workspace = true }
 ab_glyph = { workspace = true }

@@ -4,7 +4,7 @@ use serde_json::{Value, json};
 
 use lightcraft_catalog::{ColorLabel, Op};
 
-use super::{CommandSpec, always, bad, bool_or, cmd, f64_or, has_selection, str_param};
+use super::{CommandSpec, always, bad, bool_or, f64_or, has_selection, raw_cmd, str_param};
 use crate::Result;
 
 fn rename_args(s: &crate::Session, p: &Value, c: &str) -> Result<(Vec<lightcraft_catalog::PhotoId>, String, usize)> {
@@ -157,14 +157,14 @@ fn auto_tag_tracklog(s: &mut crate::Session, p: &Value) -> Result<Value> {
 
 pub fn specs() -> Vec<CommandSpec> {
     vec![
-        cmd!(query "photo.renameTokens", "Rename Template Tags", [], None, "{} → {tokens: [{tag, aliases, meaning, example}], dateDirectives: [{directive, meaning}], notes: [..], sample} — the file-name template tags shared by photo.rename, library.import (rename) and app.export (naming); examples are for a sample photo", always, |_, _| {
+        raw_cmd!(query "photo.renameTokens", "Rename Template Tags", [], None, "{} → {tokens: [{tag, aliases, meaning, example}], dateDirectives: [{directive, meaning}], notes: [..], sample} — the file-name template tags shared by photo.rename, library.import (rename) and app.export (naming); examples are for a sample photo", always, |_, _| {
             Ok(crate::rename::token_help_json())
         }),
-        cmd!(query "photo.renamePreview", "Rename Preview", [], None, "{template: e.g. `{date}_{name}`, `Trip-{seq:3}` (tokens: {name} {num} {seq} {seq:N} {date} {date:%Y%m%d} {folder} {camera} {lens} {iso} {rating} {title} {creator} {ext}; photo.renameTokens explains each), start?: first sequence number (1), ids?} — renames the files on disk (sidecars too, never overwriting: collisions get -1, -2…); undoable", has_selection, |s, p| {
+        raw_cmd!(query "photo.renamePreview", "Rename Preview", [], None, "{template: e.g. `{date}_{name}`, `Trip-{seq:3}` (tokens: {name} {num} {seq} {seq:N} {date} {date:%Y%m%d} {folder} {camera} {lens} {iso} {rating} {title} {creator} {ext}; photo.renameTokens explains each), start?: first sequence number (1), ids?} — renames the files on disk (sidecars too, never overwriting: collisions get -1, -2…); undoable", has_selection, |s, p| {
             let (ids, template, start) = rename_args(s, p, "photo.renamePreview")?;
             Ok(serde_json::to_value(s.plan_rename(&ids, &template, start)).unwrap_or_default())
         }),
-        cmd!(
+        raw_cmd!(
             "photo.rename",
             "Rename Photos",
             [],
@@ -178,7 +178,7 @@ pub fn specs() -> Vec<CommandSpec> {
                 Ok(json!({"renamed": n, "plans": plans}))
             }
         ),
-        cmd!(
+        raw_cmd!(
             "photo.setCaptureTime",
             "Edit Capture Time",
             [],
@@ -247,7 +247,7 @@ pub fn specs() -> Vec<CommandSpec> {
                 Ok(json!({"changed": n, "captured": out}))
             }
         ),
-        cmd!(
+        raw_cmd!(
             "photo.autoTagTracklog",
             "Auto-Tag Photos from Tracklog",
             [],
@@ -256,13 +256,13 @@ pub fn specs() -> Vec<CommandSpec> {
             has_selection,
             auto_tag_tracklog
         ),
-        cmd!(query "label.names", "Color Label Names", [], None, "{} → [{label, name, custom}]", always, |s, _| {
+        raw_cmd!(query "label.names", "Color Label Names", [], None, "{} → [{label, name, custom}]", always, |s, _| {
             Ok(json!(ColorLabel::ALL
                 .iter()
                 .map(|l| json!({"label": format!("{l:?}").to_lowercase(), "name": s.catalog.label_name(*l), "custom": s.catalog.custom_label_name(*l)}))
                 .collect::<Vec<_>>()))
         }),
-        cmd!(
+        raw_cmd!(
             "label.setNames",
             "Edit Color Label Names",
             [],
@@ -287,8 +287,8 @@ pub fn specs() -> Vec<CommandSpec> {
                 Ok(json!({"changed": n}))
             }
         ),
-        cmd!(query "label.sets", "Color Label Sets", [], None, "{} → {sets: [{name, names: [red, yellow, green, blue, purple], builtin}], current: name|null}", always, |s, _| Ok(label_sets_json(s))),
-        cmd!("label.applySet", "Apply Color Label Set", [], None, "{name} — use a set's label names (undoable)", always, |s, p| {
+        raw_cmd!(query "label.sets", "Color Label Sets", [], None, "{} → {sets: [{name, names: [red, yellow, green, blue, purple], builtin}], current: name|null}", always, |s, _| Ok(label_sets_json(s))),
+        raw_cmd!("label.applySet", "Apply Color Label Set", [], None, "{name} — use a set's label names (undoable)", always, |s, p| {
             let name = str_param(p, "name").ok_or_else(|| bad("label.applySet", "missing `name`"))?;
             let set = all_label_sets(s)
                 .into_iter()
@@ -301,7 +301,7 @@ pub fn specs() -> Vec<CommandSpec> {
             }
             Ok(json!({"changed": n}))
         }),
-        cmd!(
+        raw_cmd!(
             "label.saveSet",
             "Save Color Label Set",
             [],
@@ -323,7 +323,7 @@ pub fn specs() -> Vec<CommandSpec> {
                 Ok(json!({"name": name}))
             }
         ),
-        cmd!("label.deleteSet", "Delete Color Label Set", [], None, "{name} — user sets only", always, |s, p| {
+        raw_cmd!("label.deleteSet", "Delete Color Label Set", [], None, "{name} — user sets only", always, |s, p| {
             let name = str_param(p, "name").ok_or_else(|| bad("label.deleteSet", "missing `name`"))?;
             let before = s.label_sets.len();
             s.label_sets.retain(|x| !x.name.eq_ignore_ascii_case(name));

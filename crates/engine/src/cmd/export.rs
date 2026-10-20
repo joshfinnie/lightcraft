@@ -4,7 +4,7 @@
 
 use serde_json::{Value, json};
 
-use super::{CommandSpec, always, bad, cmd};
+use super::{CommandSpec, always, bad, raw_cmd};
 use crate::export::{ExportPreset, builtin_presets};
 use crate::{Result, Session};
 
@@ -148,7 +148,7 @@ fn photos_imports(s: &mut Session, p: &Value) -> Result<Value> {
 pub fn specs() -> Vec<CommandSpec> {
     #[allow(unused_mut)]
     let mut v = vec![
-        cmd!(query "export.contactSheet", "Export Contact Sheet PDF", [], None,
+        raw_cmd!(query "export.contactSheet", "Export Contact Sheet PDF", [], None,
             "{path, ids?: photo ids (default selection), paper?: a4|letter, landscape?: bool, columns?: 1..8, rows?: 1..10, captions?: bool} → {path, pages, photos, bytes}; replaces an existing output, never an original",
             always, |s, p| {
                 let path = p.get("path").and_then(Value::as_str).filter(|s| !s.trim().is_empty()).ok_or_else(|| bad("export.contactSheet", "missing path"))?;
@@ -159,7 +159,7 @@ pub fn specs() -> Vec<CommandSpec> {
                 Ok(json!({"path": path, "pages": doc.pages, "photos": doc.photos, "bytes": doc.bytes.len()}))
             }
         ),
-        cmd!(
+        raw_cmd!(
             "export.presets",
             "Export Presets",
             [],
@@ -168,7 +168,7 @@ pub fn specs() -> Vec<CommandSpec> {
             always,
             |s, _| Ok(list(s))
         ),
-        cmd!(
+        raw_cmd!(
             "export.savePreset",
             "Save Export Preset",
             [],
@@ -177,8 +177,8 @@ pub fn specs() -> Vec<CommandSpec> {
             always,
             save
         ),
-        cmd!("export.deletePreset", "Delete Export Preset", [], None, "{name} — removes a user preset → presets", always, delete),
-        cmd!(
+        raw_cmd!("export.deletePreset", "Delete Export Preset", [], None, "{name} — removes a user preset → presets", always, delete),
+        raw_cmd!(
             query "export.checkTarget",
             "Check Output Path",
             [],
@@ -195,7 +195,7 @@ pub fn specs() -> Vec<CommandSpec> {
     // Apple Events to Photos' import command (macOS); not in the web build. Not journaled: a
     // replay must not import again.
     #[cfg(not(target_arch = "wasm32"))]
-    v.push(cmd!(
+    v.push(raw_cmd!(
         query "export.addToPhotos",
         "Add to Apple Photos",
         [],
@@ -205,7 +205,7 @@ pub fn specs() -> Vec<CommandSpec> {
         add_to_photos
     ));
     #[cfg(not(target_arch = "wasm32"))]
-    v.push(cmd!(
+    v.push(raw_cmd!(
         query "export.photosImports",
         "Apple Photos Imports",
         [],

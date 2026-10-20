@@ -10,7 +10,7 @@
 use lightcraft_catalog::Op;
 use serde_json::{Value, json};
 
-use super::{CommandSpec, bad, cmd};
+use super::{CommandSpec, bad, raw_cmd};
 use crate::{Result, Session};
 
 /// The `name` parameter of the naming commands: a name, or none (`null`, empty) to clear it.
@@ -1107,7 +1107,7 @@ mod imp {
 
 pub fn specs() -> Vec<CommandSpec> {
     vec![
-        cmd!(
+        raw_cmd!(
             "faces.index",
             "Index Faces",
             [],
@@ -1116,7 +1116,7 @@ pub fn specs() -> Vec<CommandSpec> {
             super::always,
             imp::index
         ),
-        cmd!(
+        raw_cmd!(
             "faces.suggest",
             "Suggest Names for Faces",
             [],
@@ -1125,7 +1125,7 @@ pub fn specs() -> Vec<CommandSpec> {
             super::always,
             imp::suggest
         ),
-        cmd!(
+        raw_cmd!(
             query "faces.pump",
             "Index Faces in the Background",
             [],
@@ -1134,7 +1134,7 @@ pub fn specs() -> Vec<CommandSpec> {
             super::always,
             imp::pump
         ),
-        cmd!(
+        raw_cmd!(
             "faces.evaluate",
             "Evaluate Face Recognition",
             [],
@@ -1143,7 +1143,7 @@ pub fn specs() -> Vec<CommandSpec> {
             super::always,
             imp::evaluate
         ),
-        cmd!(
+        raw_cmd!(
             query "faces.unnamed",
             "Unnamed Faces",
             [],
@@ -1152,7 +1152,7 @@ pub fn specs() -> Vec<CommandSpec> {
             super::always,
             unnamed
         ),
-        cmd!(
+        raw_cmd!(
             "faces.nameFaces",
             "Name Faces",
             [],
@@ -1161,7 +1161,7 @@ pub fn specs() -> Vec<CommandSpec> {
             super::always,
             name_faces
         ),
-        cmd!(
+        raw_cmd!(
             query "faces.person",
             "Faces of a Person",
             [],
@@ -1170,7 +1170,7 @@ pub fn specs() -> Vec<CommandSpec> {
             super::always,
             person
         ),
-        cmd!(
+        raw_cmd!(
             "faces.setName",
             "Name Face",
             [],
@@ -1179,7 +1179,7 @@ pub fn specs() -> Vec<CommandSpec> {
             super::always,
             set_name
         ),
-        cmd!(
+        raw_cmd!(
             "faces.renamePerson",
             "Rename Person",
             [],

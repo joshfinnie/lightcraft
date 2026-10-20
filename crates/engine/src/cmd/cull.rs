@@ -6,7 +6,7 @@
 use lightcraft_catalog::{Analysis, Flag, Op, PhotoId};
 use serde_json::{Value, json};
 
-use super::{CommandSpec, always, cmd};
+use super::{CommandSpec, always, raw_cmd};
 use crate::{Result, Session};
 
 /// Seconds between shots of the same burst at most.
@@ -119,7 +119,7 @@ fn find_similar(s: &mut Session, p: &Value) -> Result<Value> {
 
 pub fn specs() -> Vec<CommandSpec> {
     vec![
-        cmd!(
+        raw_cmd!(
             "library.findSimilar",
             "Find Similar Photos",
             ["Photo"],
@@ -128,7 +128,7 @@ pub fn specs() -> Vec<CommandSpec> {
             always,
             find_similar
         ),
-        cmd!(
+        raw_cmd!(
             "photo.analyze",
             "Assisted Culling",
             [],

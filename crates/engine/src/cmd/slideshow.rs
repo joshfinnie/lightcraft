@@ -15,7 +15,7 @@
 use lightcraft_catalog::PhotoId;
 use serde_json::{Value, json};
 
-use super::{CommandSpec, always, bad, cmd, str_param};
+use super::{CommandSpec, always, bad, raw_cmd, str_param};
 use crate::slide_template::{self as tpl, SlideLook};
 use crate::{Result, Session};
 
@@ -374,7 +374,7 @@ fn export_status(s: &mut Session, _: &Value) -> Result<Value> {
 
 pub fn specs() -> Vec<CommandSpec> {
     vec![
-        cmd!(
+        raw_cmd!(
             "slideshow.playback",
             "Slideshow Playback Settings",
             [],
@@ -383,7 +383,7 @@ pub fn specs() -> Vec<CommandSpec> {
             always,
             playback
         ),
-        cmd!(
+        raw_cmd!(
             "slideshow.layout",
             "Slideshow Layout Settings",
             [],
@@ -392,7 +392,7 @@ pub fn specs() -> Vec<CommandSpec> {
             always,
             layout
         ),
-        cmd!(
+        raw_cmd!(
             "slideshow.overlays",
             "Slideshow Overlay Settings",
             [],
@@ -401,7 +401,7 @@ pub fn specs() -> Vec<CommandSpec> {
             always,
             overlays
         ),
-        cmd!(
+        raw_cmd!(
             "slideshow.titles",
             "Slideshow Title Settings",
             [],
@@ -410,7 +410,7 @@ pub fn specs() -> Vec<CommandSpec> {
             always,
             titles
         ),
-        cmd!(
+        raw_cmd!(
             query "slideshow.templates.list",
             "Slideshow Templates",
             [],
@@ -419,7 +419,7 @@ pub fn specs() -> Vec<CommandSpec> {
             always,
             tpl_list
         ),
-        cmd!(
+        raw_cmd!(
             "slideshow.templates.apply",
             "Apply Slideshow Template",
             [],
@@ -428,7 +428,7 @@ pub fn specs() -> Vec<CommandSpec> {
             always,
             tpl_apply
         ),
-        cmd!(
+        raw_cmd!(
             "slideshow.templates.save",
             "Save Slideshow Template",
             [],
@@ -437,7 +437,7 @@ pub fn specs() -> Vec<CommandSpec> {
             always,
             tpl_save
         ),
-        cmd!(
+        raw_cmd!(
             "slideshow.templates.update",
             "Update Slideshow Template",
             [],
@@ -446,7 +446,7 @@ pub fn specs() -> Vec<CommandSpec> {
             always,
             tpl_update
         ),
-        cmd!(
+        raw_cmd!(
             "slideshow.templates.rename",
             "Rename Slideshow Template",
             [],
@@ -455,7 +455,7 @@ pub fn specs() -> Vec<CommandSpec> {
             always,
             tpl_rename
         ),
-        cmd!(
+        raw_cmd!(
             "slideshow.templates.delete",
             "Delete Slideshow Template",
             [],
@@ -464,7 +464,7 @@ pub fn specs() -> Vec<CommandSpec> {
             always,
             tpl_delete
         ),
-        cmd!(
+        raw_cmd!(
             "slideshow.templates.import",
             "Import Slideshow Template",
             [],
@@ -473,7 +473,7 @@ pub fn specs() -> Vec<CommandSpec> {
             always,
             tpl_import
         ),
-        cmd!(
+        raw_cmd!(
             "slideshow.templates.export",
             "Export Slideshow Template",
             [],
@@ -482,7 +482,7 @@ pub fn specs() -> Vec<CommandSpec> {
             always,
             tpl_export
         ),
-        cmd!(
+        raw_cmd!(
             query "slideshow.preview",
             "Slideshow Slide Preview",
             [],
@@ -491,7 +491,7 @@ pub fn specs() -> Vec<CommandSpec> {
             always,
             preview
         ),
-        cmd!(
+        raw_cmd!(
             query "slideshow.export",
             "Export Slideshow",
             [],
@@ -500,7 +500,7 @@ pub fn specs() -> Vec<CommandSpec> {
             always,
             export
         ),
-        cmd!(
+        raw_cmd!(
             query "slideshow.exportStatus",
             "Slideshow Export Status",
             [],

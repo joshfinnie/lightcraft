@@ -3,7 +3,7 @@
 
 use serde_json::Value;
 
-use super::{CommandSpec, cmd};
+use super::{CommandSpec, raw_cmd};
 use crate::{Result, Session};
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -28,7 +28,7 @@ fn pump(_: &mut Session, _: &Value) -> Result<Value> {
 
 pub fn specs() -> Vec<CommandSpec> {
     vec![
-        cmd!(
+        raw_cmd!(
             "photo.readFocusPoints",
             "Read Focus Points",
             ["Photo"],
@@ -37,7 +37,7 @@ pub fn specs() -> Vec<CommandSpec> {
             super::always,
             read_points
         ),
-        cmd!(
+        raw_cmd!(
             query "focus.pump",
             "Read Focus Points in the Background",
             [],

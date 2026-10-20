@@ -4,7 +4,7 @@
 use lightcraft_catalog::keywords::{KeywordInfo, clean, closest, is_under, reparent};
 use serde_json::{Value, json};
 
-use super::{CommandSpec, always, bad, bool_or, cmd, str_param};
+use super::{CommandSpec, always, bad, bool_or, raw_cmd, str_param};
 use crate::{Result, Session};
 
 fn strs(p: &Value, key: &str) -> Vec<String> {
@@ -150,8 +150,8 @@ pub fn keyword_sets_json(s: &Session) -> Value {
 
 pub fn specs() -> Vec<CommandSpec> {
     vec![
-        cmd!(query "keyword.sets", "Keyword Sets", [], None, "{} → {sets: [{name, keywords}], current, keywords: the nine ⌥1–⌥9 apply}", always, |s, _| Ok(keyword_sets_json(s))),
-        cmd!("keyword.useSet", "Use Keyword Set", [], None, "{name} (\"Recent Keywords\" = the recently added ones)", always, |s, p| {
+        raw_cmd!(query "keyword.sets", "Keyword Sets", [], None, "{} → {sets: [{name, keywords}], current, keywords: the nine ⌥1–⌥9 apply}", always, |s, _| Ok(keyword_sets_json(s))),
+        raw_cmd!("keyword.useSet", "Use Keyword Set", [], None, "{name} (\"Recent Keywords\" = the recently added ones)", always, |s, p| {
             let name = str_param(p, "name").map(str::trim).unwrap_or(RECENT);
             s.keyword_set = if same_set(name, RECENT) || name.is_empty() {
                 None
@@ -168,7 +168,7 @@ pub fn specs() -> Vec<CommandSpec> {
             s.save_prefs()?;
             Ok(keyword_sets_json(s))
         }),
-        cmd!(
+        raw_cmd!(
             "keyword.saveSet",
             "Save Keyword Set",
             [],
@@ -226,7 +226,7 @@ pub fn specs() -> Vec<CommandSpec> {
                 Ok(keyword_sets_json(s))
             }
         ),
-        cmd!("keyword.deleteSet", "Delete Keyword Set", [], None, "{name}", always, |s, p| {
+        raw_cmd!("keyword.deleteSet", "Delete Keyword Set", [], None, "{name}", always, |s, p| {
             let name = str_param(p, "name").ok_or_else(|| bad("keyword.deleteSet", "missing `name`"))?;
             let before = s.keyword_sets.len();
             s.keyword_sets.retain(|x| !same_set(&x.name, name));
@@ -239,7 +239,7 @@ pub fn specs() -> Vec<CommandSpec> {
             s.save_prefs()?;
             Ok(keyword_sets_json(s))
         }),
-        cmd!(
+        raw_cmd!(
             "keyword.toggleFromSet",
             "Toggle Keyword from Set",
             [],
@@ -276,10 +276,10 @@ pub fn specs() -> Vec<CommandSpec> {
                 Ok(r)
             }
         ),
-        cmd!(query "keyword.list", "Keywords", [], None, "{} → [{name, path, count, children}] keyword tree (`a|b|c` keywords are hierarchical)", always, |s, _| {
+        raw_cmd!(query "keyword.list", "Keywords", [], None, "{} → [{name, path, count, children}] keyword tree (`a|b|c` keywords are hierarchical)", always, |s, _| {
             Ok(serde_json::to_value(s.catalog.keyword_tree()).unwrap_or_default())
         }),
-        cmd!(
+        raw_cmd!(
             query "keyword.suggest",
             "Keyword Suggestions",
             [],
@@ -297,7 +297,7 @@ pub fn specs() -> Vec<CommandSpec> {
                 Ok(json!(s.catalog.keyword_suggestions(&current, str_param(p, "prefix").unwrap_or(""), n)))
             }
         ),
-        cmd!(
+        raw_cmd!(
             query "keyword.info",
             "Keyword Info",
             [],
@@ -318,7 +318,7 @@ pub fn specs() -> Vec<CommandSpec> {
                 Ok(v)
             }
         ),
-        cmd!(
+        raw_cmd!(
             "keyword.create",
             "Create Keyword",
             [],
@@ -348,7 +348,7 @@ pub fn specs() -> Vec<CommandSpec> {
                 Ok(json!({"keyword": path}))
             }
         ),
-        cmd!(
+        raw_cmd!(
             "keyword.edit",
             "Edit Keyword",
             [],
@@ -369,7 +369,7 @@ pub fn specs() -> Vec<CommandSpec> {
                 commit_keywords(s, "Edit Keyword", op, |k| Some(if is_under(k, &from) { reparent(k, &from, &to) } else { k.to_string() }))
             }
         ),
-        cmd!(
+        raw_cmd!(
             "keyword.move",
             "Move Keyword",
             [],
@@ -396,7 +396,7 @@ pub fn specs() -> Vec<CommandSpec> {
                 commit_keywords(s, "Move Keyword", op, |k| Some(if is_under(k, &from) { reparent(k, &from, &to) } else { k.to_string() }))
             }
         ),
-        cmd!(
+        raw_cmd!(
             "keyword.purgeUnused",
             "Purge Unused Keywords",
             [],
@@ -409,7 +409,7 @@ pub fn specs() -> Vec<CommandSpec> {
                 Ok(json!({"purged": r["listed"]}))
             }
         ),
-        cmd!(
+        raw_cmd!(
             "keyword.setDefaultParent",
             "Put New Keywords Inside",
             [],
@@ -426,7 +426,7 @@ pub fn specs() -> Vec<CommandSpec> {
                 Ok(json!({"keyword": s.catalog.default_keyword_parent()}))
             }
         ),
-        cmd!(
+        raw_cmd!(
             "keyword.export",
             "Export Keywords",
             [],
@@ -453,7 +453,7 @@ pub fn specs() -> Vec<CommandSpec> {
                 Ok(r)
             }
         ),
-        cmd!(
+        raw_cmd!(
             "keyword.import",
             "Import Keywords",
             [],
@@ -475,7 +475,7 @@ pub fn specs() -> Vec<CommandSpec> {
                 Ok(json!({"added": added, "updated": updated}))
             }
         ),
-        cmd!(
+        raw_cmd!(
             "keyword.rename",
             "Rename Keyword",
             [],
@@ -490,7 +490,7 @@ pub fn specs() -> Vec<CommandSpec> {
                 commit_keywords(s, "Rename Keyword", op, |k| Some(if is_under(k, &f) { reparent(k, &f, &t) } else { k.to_string() }))
             }
         ),
-        cmd!(
+        raw_cmd!(
             "keyword.delete",
             "Delete Keyword",
             [],
@@ -504,7 +504,7 @@ pub fn specs() -> Vec<CommandSpec> {
                 commit_keywords(s, "Delete Keyword", op, |f| (!is_under(f, &c)).then(|| f.to_string()))
             }
         ),
-        cmd!(
+        raw_cmd!(
             "keyword.merge",
             "Merge Keywords",
             [],

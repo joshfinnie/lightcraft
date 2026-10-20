@@ -4,7 +4,7 @@
 use lightcraft_catalog::{HistoryStep, Op, PhotoId, Stack, StackId};
 use serde_json::{Value, json};
 
-use super::{CommandSpec, always, bad, bool_or, cmd, f64_or, has_selection, str_param};
+use super::{CommandSpec, always, bad, bool_or, f64_or, has_selection, raw_cmd, str_param};
 use crate::{Result, Selection, Session};
 
 /// Stacks containing any of `targets`, in first-seen order.
@@ -103,7 +103,7 @@ fn virtual_copy(s: &mut Session, src: PhotoId, name: Option<&str>) -> Result<Opt
 
 pub fn specs() -> Vec<CommandSpec> {
     vec![
-        cmd!(
+        raw_cmd!(
             "photo.virtualCopy",
             "Create Virtual Copy",
             ["Photo"],
@@ -126,7 +126,7 @@ pub fn specs() -> Vec<CommandSpec> {
                 Ok(json!({"ids": made.iter().map(|i| i.0).collect::<Vec<_>>()}))
             }
         ),
-        cmd!(
+        raw_cmd!(
             "stack.group",
             "Group into Stack",
             ["Photo", "Stack"],
@@ -152,30 +152,38 @@ pub fn specs() -> Vec<CommandSpec> {
                 Ok(json!({"stack": st.0, "count": st.1}))
             }
         ),
-        cmd!("stack.ungroup", "Ungroup Stack", ["Photo", "Stack"], Some("Cmd+Shift+G"), "{ids?}", in_stack, |s, p| {
+        raw_cmd!("stack.ungroup", "Ungroup Stack", ["Photo", "Stack"], Some("Cmd+Shift+G"), "{ids?}", in_stack, |s, p| {
             let ops = s.catalog.ungroup_ops(&s.targets(p)?);
             Ok(json!({"ungrouped": commit_ops(s, "Ungroup Stack", ops)?}))
         }),
-        cmd!("stack.remove", "Remove from Stack", ["Photo", "Stack"], None, "{ids?}", in_stack, |s, p| {
+        raw_cmd!("stack.remove", "Remove from Stack", ["Photo", "Stack"], None, "{ids?}", in_stack, |s, p| {
             let ops = s.catalog.remove_from_stacks_ops(&s.targets(p)?);
             Ok(json!({"changed": commit_ops(s, "Remove from Stack", ops)?}))
         }),
-        cmd!("stack.setTop", "Set as Top of Stack", ["Photo", "Stack"], Some("Shift+S"), "{id?} (default: the active photo)", in_stack, |s, p| {
-            let id = p.get("id").and_then(Value::as_u64).map(PhotoId).or(s.active()).ok_or_else(|| bad("stack.setTop", "no photo"))?;
-            let op = s.catalog.set_top_ops(id);
-            Ok(json!({"changed": commit_ops(s, "Set Top of Stack", op.into_iter().collect())?}))
-        }),
-        cmd!("stack.moveUp", "Move Up in Stack", ["Photo", "Stack"], None, "{id?} — one place towards the top", in_stack, |s, p| {
+        raw_cmd!(
+            "stack.setTop",
+            "Set as Top of Stack",
+            ["Photo", "Stack"],
+            Some("Shift+S"),
+            "{id?} (default: the active photo)",
+            in_stack,
+            |s, p| {
+                let id = p.get("id").and_then(Value::as_u64).map(PhotoId).or(s.active()).ok_or_else(|| bad("stack.setTop", "no photo"))?;
+                let op = s.catalog.set_top_ops(id);
+                Ok(json!({"changed": commit_ops(s, "Set Top of Stack", op.into_iter().collect())?}))
+            }
+        ),
+        raw_cmd!("stack.moveUp", "Move Up in Stack", ["Photo", "Stack"], None, "{id?} — one place towards the top", in_stack, |s, p| {
             let id = p.get("id").and_then(Value::as_u64).map(PhotoId).or(s.active()).ok_or_else(|| bad("stack.moveUp", "no photo"))?;
             let op = s.catalog.move_in_stack_ops(id, -1);
             Ok(json!({"changed": commit_ops(s, "Move in Stack", op.into_iter().collect())?}))
         }),
-        cmd!("stack.moveDown", "Move Down in Stack", ["Photo", "Stack"], None, "{id?} — one place away from the top", in_stack, |s, p| {
+        raw_cmd!("stack.moveDown", "Move Down in Stack", ["Photo", "Stack"], None, "{id?} — one place away from the top", in_stack, |s, p| {
             let id = p.get("id").and_then(Value::as_u64).map(PhotoId).or(s.active()).ok_or_else(|| bad("stack.moveDown", "no photo"))?;
             let op = s.catalog.move_in_stack_ops(id, 1);
             Ok(json!({"changed": commit_ops(s, "Move in Stack", op.into_iter().collect())?}))
         }),
-        cmd!(
+        raw_cmd!(
             "stack.split",
             "Split Stack",
             ["Photo", "Stack"],
@@ -188,21 +196,21 @@ pub fn specs() -> Vec<CommandSpec> {
                 Ok(json!({"changed": commit_ops(s, "Split Stack", vec![op])?}))
             }
         ),
-        cmd!("stack.toggle", "Expand/Collapse Stack", ["Photo", "Stack"], Some("S"), "{ids?, collapsed?: bool}", in_stack, |s, p| {
+        raw_cmd!("stack.toggle", "Expand/Collapse Stack", ["Photo", "Stack"], Some("S"), "{ids?, collapsed?: bool}", in_stack, |s, p| {
             let stacks = stacks_of(s, &s.targets(p)?);
             let first = stacks.first().and_then(|id| s.catalog.stack(*id)).map(|st| st.collapsed).unwrap_or(false);
             let collapsed = bool_or(p, "collapsed", !first);
             set_collapsed(s, stacks, collapsed, if collapsed { "Collapse Stack" } else { "Expand Stack" })
         }),
-        cmd!("stack.expandAll", "Expand All Stacks", ["View", "Stacks"], None, "{}", has_stacks, |s, _| {
+        raw_cmd!("stack.expandAll", "Expand All Stacks", ["View", "Stacks"], None, "{}", has_stacks, |s, _| {
             let all: Vec<StackId> = s.catalog.stacks().map(|st| st.id).collect();
             set_collapsed(s, all, false, "Expand All Stacks")
         }),
-        cmd!("stack.collapseAll", "Collapse All Stacks", ["View", "Stacks"], None, "{}", has_stacks, |s, _| {
+        raw_cmd!("stack.collapseAll", "Collapse All Stacks", ["View", "Stacks"], None, "{}", has_stacks, |s, _| {
             let all: Vec<StackId> = s.catalog.stacks().map(|st| st.id).collect();
             set_collapsed(s, all, true, "Collapse All Stacks")
         }),
-        cmd!(
+        raw_cmd!(
             "stack.auto",
             "Auto-Stack by Capture Time",
             [],

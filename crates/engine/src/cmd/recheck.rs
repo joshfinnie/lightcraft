@@ -13,7 +13,7 @@
 use lightcraft_catalog::{Catalog, Op, Photo, PhotoId};
 use serde_json::{Value, json};
 
-use super::{CommandSpec, always, bad, cmd};
+use super::{CommandSpec, always, bad, raw_cmd};
 use crate::media::{FileProbe, ProbeInfo};
 use crate::{Result, Session};
 
@@ -117,7 +117,7 @@ fn recheck(s: &mut Session, p: &Value) -> Result<Value> {
 }
 
 pub fn specs() -> Vec<CommandSpec> {
-    vec![cmd!(
+    vec![raw_cmd!(
         "library.recheckPreviewOnly",
         "Recheck Preview-Only Raws",
         [],

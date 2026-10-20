@@ -9,7 +9,7 @@ use lightcraft_catalog::Photo;
 use lightcraft_develop::DevelopSettings;
 use serde_json::{Value, json};
 
-use super::{CommandSpec, bad, cmd, has_active};
+use super::{CommandSpec, bad, has_active, raw_cmd};
 use crate::{Result, Session};
 
 impl Session {
@@ -71,7 +71,7 @@ fn before_to_after(s: &mut Session, swap: bool) -> Result<Value> {
 
 pub fn specs() -> Vec<CommandSpec> {
     vec![
-        cmd!(
+        raw_cmd!(
             "beforeAfter.setBefore",
             "Set Before",
             [],
@@ -80,7 +80,7 @@ pub fn specs() -> Vec<CommandSpec> {
             has_active,
             set_before
         ),
-        cmd!(
+        raw_cmd!(
             "beforeAfter.copyAfterToBefore",
             "Copy After's Settings to Before",
             ["View", "Before/After Settings"],
@@ -89,7 +89,7 @@ pub fn specs() -> Vec<CommandSpec> {
             has_active,
             |s, _| { set_before(s, &json!({"source": "current"})) }
         ),
-        cmd!(
+        raw_cmd!(
             "beforeAfter.copyBeforeToAfter",
             "Copy Before's Settings to After",
             ["View", "Before/After Settings"],
@@ -98,10 +98,10 @@ pub fn specs() -> Vec<CommandSpec> {
             has_active,
             |s, _| { before_to_after(s, false) }
         ),
-        cmd!("beforeAfter.swap", "Swap Before and After Settings", ["View", "Before/After Settings"], None, "{}", has_active, |s, _| {
+        raw_cmd!("beforeAfter.swap", "Swap Before and After Settings", ["View", "Before/After Settings"], None, "{}", has_active, |s, _| {
             before_to_after(s, true)
         }),
-        cmd!("beforeAfter.resetBefore", "Reset Before to Import State", ["View", "Before/After Settings"], None, "{}", has_active, |s, _| {
+        raw_cmd!("beforeAfter.resetBefore", "Reset Before to Import State", ["View", "Before/After Settings"], None, "{}", has_active, |s, _| {
             set_before(s, &json!({"source": "import"}))
         }),
     ]

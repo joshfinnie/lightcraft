@@ -2,7 +2,7 @@
 
 use serde_json::{Value, json};
 
-use super::{CommandSpec, always, bad, bool_or, cmd, str_param};
+use super::{CommandSpec, always, bad, bool_or, raw_cmd, str_param};
 use crate::sync::{SyncChoice, scan, synchronize};
 use crate::{Result, Session};
 
@@ -12,7 +12,7 @@ fn path(p: &Value, c: &str) -> Result<String> {
 
 pub fn specs() -> Vec<CommandSpec> {
     vec![
-        cmd!(
+        raw_cmd!(
             query "folder.scanChanges",
             "Scan Folder for Changes",
             [],
@@ -28,7 +28,7 @@ pub fn specs() -> Vec<CommandSpec> {
                 Ok(v)
             }
         ),
-        cmd!(
+        raw_cmd!(
             "folder.synchronize",
             "Synchronize Folder",
             [],

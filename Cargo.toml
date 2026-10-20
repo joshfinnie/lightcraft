@@ -48,6 +48,9 @@ thiserror = "2"
 sha2 = "0.10"
 serde = { version = "1", features = ["derive", "rc"] }
 serde_json = { version = "1", features = ["float_roundtrip"] }
+# command params: unknown keys and the path of a bad value (`crates/engine/src/cmd/params.rs`)
+serde_ignored = "0.1"
+serde_path_to_error = "0.1"
 log = "0.4"
 # the control port token (`apps/lightcraft`)
 getrandom = "0.3"
