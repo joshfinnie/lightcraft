@@ -102,8 +102,15 @@ pub fn language_from_command(id: &str) -> Option<crate::i18n::Locale> {
 }
 
 pub const UI_COMMANDS: &[UiCommand] = &[
-    ui!("ui.dock", "Arrange Panel", None, "", raw crate::commands::view::dock),
-    ui!("ui.dock.reset", "Reset Panel Layout", None, "Window", raw crate::commands::view::dock),
+    ui!("ui.dock", "Arrange Panel", None, "", lightcraft_engine::cmd::params::Keys<crate::commands::view::DockKeys>, crate::commands::view::dock),
+    ui!(
+        "ui.dock.reset",
+        "Reset Panel Layout",
+        None,
+        "Window",
+        lightcraft_engine::cmd::params::Keys<crate::commands::view::DockKeys>,
+        crate::commands::view::dock
+    ),
     ui!("modelSetup.cancel", "Cancel Pending Photo Action", None, "", raw crate::commands::app::model_setup_cancel),
     ui!("view.photoGrid", "Photo Grid", None, "View", NoParams, crate::commands::view::view_photo_grid),
     ui!("view.squareGrid", "Square Grid", None, "View", NoParams, crate::commands::view::view_square_grid),
@@ -117,19 +124,19 @@ pub const UI_COMMANDS: &[UiCommand] = &[
         NoParams,
         crate::commands::app::library_select_only_active
     ),
-    ui!("tool.guidedUpright", "Guided Upright", Some("Shift+G"), "Window>Tools", raw crate::commands::view::tool),
+    ui!("tool.guidedUpright", "Guided Upright", Some("Shift+G"), "Window>Tools", crate::commands::view::Tool, crate::commands::view::tool),
     ui!("view.detail", "Detail", Some("D"), "View", NoParams, crate::commands::view::view_detail),
     ui!("view.compare", "Compare", Some("Shift+C"), "View", NoParams, crate::commands::view::view_compare),
     ui!("view.survey", "Survey", Some("N"), "View", NoParams, crate::commands::view::view_survey),
     ui!("view.people", "People", None, "View", NoParams, crate::commands::view::view_people),
-    ui!("view.person", "Show Person", None, "", raw crate::commands::view::view_person),
-    ui!("view.faceBoxes", "Face Boxes", None, "View", raw crate::commands::view::view_face_boxes),
-    ui!("view.focusPoint", "Show Focus Point", Some("Alt+F"), "View", raw crate::commands::view::view_focus_point),
-    ui!("view.zoomToFocus", "Zoom to Focus Point", None, "View", raw crate::commands::view::view_zoom_to_focus),
+    ui!("view.person", "Show Person", None, "", crate::commands::view::Person, crate::commands::view::view_person),
+    ui!("view.faceBoxes", "Face Boxes", None, "View", crate::commands::view::Show, crate::commands::view::view_face_boxes),
+    ui!("view.focusPoint", "Show Focus Point", Some("Alt+F"), "View", crate::commands::view::On, crate::commands::view::view_focus_point),
+    ui!("view.zoomToFocus", "Zoom to Focus Point", None, "View", crate::commands::view::On, crate::commands::view::view_zoom_to_focus),
     ui!("view.reference", "Reference View", Some("Shift+R"), "View", NoParams, crate::commands::view::view_reference),
     ui!("photo.setReference", "Set as Reference Photo", None, "", raw crate::commands::app::photo_set_reference),
     ui!("compare.swap", "Swap Compare Photos", None, "View", NoParams, crate::commands::view::compare_swap),
-    ui!("compare.set", "Show in Compare", None, "", raw crate::commands::view::compare_set),
+    ui!("compare.set", "Show in Compare", None, "", crate::commands::view::CompareSet, crate::commands::view::compare_set),
     ui!("compare.makeSelect", "Make Candidate the Select", None, "View", NoParams, crate::commands::view::compare_make_select),
     ui!("view.autoAdvance", "Auto Advance", None, "Photo", NoParams, crate::commands::view::view_auto_advance),
     ui!("view.filmstrip", "Filmstrip", Some("/"), "View", NoParams, crate::commands::view::view_filmstrip),
@@ -148,31 +155,38 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     ui!("view.showOriginal", "Show Original", Some("\\"), "View", NoParams, crate::commands::view::view_show_original),
     ui!("view.zoomFit", "Zoom to Fit", Some("Cmd+0"), "View", NoParams, crate::commands::view::view_zoom_fit),
     ui!("view.zoom100", "Zoom 100%", Some("Cmd+Alt+0"), "View", NoParams, crate::commands::view::view_zoom100),
-    ui!("view.zoomToggle", "Toggle Zoom", Some("Z"), "View", raw crate::commands::view::view_zoom_toggle),
+    ui!("view.zoomToggle", "Toggle Zoom", Some("Z"), "View", NoParams, crate::commands::view::view_zoom_toggle),
     // the ratio a click (and Z / Space) zooms to
-    ui!("view.clickZoom", "Click Zoom Ratio", None, "", raw crate::commands::view::view_click_zoom),
-    ui!("view.navigate", "Set Image Zoom and Pan", None, "", raw crate::commands::view::view_navigate),
-    ui!("view.zoomIn", "Zoom In", Some("Cmd+="), "View", raw crate::commands::view::view_zoom_in),
-    ui!("view.zoomOut", "Zoom Out", Some("Cmd+-"), "View", raw crate::commands::view::view_zoom_in),
+    ui!("view.clickZoom", "Click Zoom Ratio", None, "", crate::commands::view::ClickZoom, crate::commands::view::view_click_zoom),
+    ui!("view.navigate", "Set Image Zoom and Pan", None, "", crate::commands::view::Navigate, crate::commands::view::view_navigate),
+    ui!("view.zoomIn", "Zoom In", Some("Cmd+="), "View", NoParams, crate::commands::view::view_zoom_in),
+    ui!("view.zoomOut", "Zoom Out", Some("Cmd+-"), "View", NoParams, crate::commands::view::view_zoom_in),
     // Library grids only (Photo Grid, Square Grid, People): the bottom-bar slider's step by key
     ui!("view.thumbSizeUp", "Increase Grid Thumbnail Size", Some("="), "View", NoParams, crate::commands::view::view_thumb_size_up),
     ui!("view.thumbSizeDown", "Decrease Grid Thumbnail Size", Some("-"), "View", NoParams, crate::commands::view::view_thumb_size_up),
     ui!("view.clipping", "Show Clipping", Some("J"), "View", NoParams, crate::commands::view::view_clipping),
-    ui!("view.visualizeHdr", "Visualize HDR", None, "View", raw crate::commands::view::view_visualize_hdr),
+    ui!("view.visualizeHdr", "Visualize HDR", None, "View", crate::commands::view::On, crate::commands::view::view_visualize_hdr),
     // in grids S expands/collapses stacks (the engine command it shadows)
-    ui!("view.softProof", "Soft Proofing", Some("S"), "View", raw crate::commands::view::view_soft_proof),
+    ui!("view.softProof", "Soft Proofing", Some("S"), "View", crate::commands::view::SoftProof, crate::commands::view::view_soft_proof),
     ui!("view.histogram", "Histogram", Some("Cmd+Shift+H"), "View", NoParams, crate::commands::view::view_histogram),
-    ui!("view.maskOverlay", "Show Mask Overlay", Some("O"), "View", raw crate::commands::view::view_mask_overlay),
+    ui!("view.maskOverlay", "Show Mask Overlay", Some("O"), "View", crate::commands::view::Show, crate::commands::view::view_mask_overlay),
     // Ctrl+Shift+O / Cmd+Shift+O: every mask's region at once, not just the selected one
     ui!("view.maskOverlayAll", "Show All Mask Overlays", Some("Cmd+Shift+O"), "View", NoParams, crate::commands::view::view_mask_overlay_all),
     // Shift+O in the Masking panel (elsewhere it cycles the crop overlay)
-    ui!("view.maskOverlayMode", "Cycle Mask Overlay Mode", None, "View", raw crate::commands::view::view_mask_overlay_mode),
-    ui!("view.maskOverlayColor", "Cycle Mask Overlay Color", None, "View", raw crate::commands::view::view_mask_overlay_color),
-    ui!("view.maskPins", "Show Mask Pins", None, "View", raw crate::commands::view::view_mask_pins),
+    ui!("view.maskOverlayMode", "Cycle Mask Overlay Mode", None, "View", crate::commands::view::Mode, crate::commands::view::view_mask_overlay_mode),
+    ui!(
+        "view.maskOverlayColor",
+        "Cycle Mask Overlay Color",
+        None,
+        "View",
+        crate::commands::view::MaskOverlayColor,
+        crate::commands::view::view_mask_overlay_color
+    ),
+    ui!("view.maskPins", "Show Mask Pins", None, "View", crate::commands::view::Show, crate::commands::view::view_mask_pins),
     // {mode?: auto | always | selected | never}: when spot and mask pins show (steps to the next
     // mode when omitted; Shift+H, like Classic's H for pins, since H opens Remove). View ▸ Tool
     // Overlay and the Remove panel list the modes.
-    ui!("view.toolOverlay", "Cycle Tool Overlay", Some("Shift+H"), "", raw crate::commands::view::view_tool_overlay),
+    ui!("view.toolOverlay", "Cycle Tool Overlay", Some("Shift+H"), "", crate::commands::view::Mode, crate::commands::view::view_tool_overlay),
     ui!("view.visualizeSpots", "Visualize Spots", Some("A"), "View", NoParams, crate::commands::view::view_visualize_spots),
     ui!("view.cropOverlay", "Cycle Crop Overlay", Some("Shift+O"), "View", NoParams, crate::commands::view::view_crop_overlay),
     ui!(
@@ -186,17 +200,52 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     ui!("view.back", "Back to Grid", Some("Escape"), "", NoParams, crate::commands::view::view_back),
     ui!("tool.done", "Done", Some("Enter"), "", NoParams, crate::commands::view::tool_done),
     ui!("view.filterBar", "Filter Bar", Some("Shift+F"), "View", NoParams, crate::commands::view::view_filter_bar),
-    ui!("local.addRoot", "Add Folder to Local", None, "", raw crate::commands::view::local_add_root),
-    ui!("local.hide", "Remove from Local", None, "", raw crate::commands::view::local_hide),
-    ui!("local.restoreHidden", "Show Hidden Local Locations", None, "", raw crate::commands::view::local_restore_hidden),
+    ui!("local.addRoot", "Add Folder to Local", None, "", crate::commands::view::PathParam, crate::commands::view::local_add_root),
+    ui!("local.hide", "Remove from Local", None, "", crate::commands::view::PathParam, crate::commands::view::local_hide),
+    ui!(
+        "local.restoreHidden",
+        "Show Hidden Local Locations",
+        None,
+        "",
+        crate::commands::view::PathParam,
+        crate::commands::view::local_restore_hidden
+    ),
     ui!("view.fullScreenPreview", "Full Screen Preview", Some("F"), "View", NoParams, crate::commands::view::view_full_screen_preview),
-    ui!("view.lightsOut", "Lights Out", Some("Shift+L"), "View", raw crate::commands::view::view_lights_out),
-    ui!("view.enterFullScreen", "Enter Full Screen", Some("Cmd+Shift+F"), "View", raw crate::commands::view::view_enter_full_screen),
-    ui!("view.infoOverlay", "Cycle Info Overlay", Some("Cmd+I"), "View", raw crate::commands::view::view_info_overlay),
-    ui!("view.chooseLayoutImage", "Choose Layout Image…", None, "View", raw crate::commands::view::view_choose_layout_image),
-    ui!("view.layoutImage", "Show Layout Image", Some("Cmd+Alt+O"), "View", raw crate::commands::view::view_layout_image),
-    ui!("view.layoutImageOpacity", "Layout Image Opacity", None, "", raw crate::commands::view::view_layout_image_opacity),
-    ui!("view.layoutImageMatte", "Layout Image Matte", None, "", raw crate::commands::view::view_layout_image_opacity),
+    ui!("view.lightsOut", "Lights Out", Some("Shift+L"), "View", crate::commands::view::Mode, crate::commands::view::view_lights_out),
+    ui!(
+        "view.enterFullScreen",
+        "Enter Full Screen",
+        Some("Cmd+Shift+F"),
+        "View",
+        crate::commands::view::On,
+        crate::commands::view::view_enter_full_screen
+    ),
+    ui!("view.infoOverlay", "Cycle Info Overlay", Some("Cmd+I"), "View", crate::commands::view::Mode, crate::commands::view::view_info_overlay),
+    ui!(
+        "view.chooseLayoutImage",
+        "Choose Layout Image…",
+        None,
+        "View",
+        crate::commands::view::PathParam,
+        crate::commands::view::view_choose_layout_image
+    ),
+    ui!("view.layoutImage", "Show Layout Image", Some("Cmd+Alt+O"), "View", crate::commands::view::Show, crate::commands::view::view_layout_image),
+    ui!(
+        "view.layoutImageOpacity",
+        "Layout Image Opacity",
+        None,
+        "",
+        crate::commands::view::LayoutImageLevel,
+        crate::commands::view::view_layout_image_opacity
+    ),
+    ui!(
+        "view.layoutImageMatte",
+        "Layout Image Matte",
+        None,
+        "",
+        crate::commands::view::LayoutImageLevel,
+        crate::commands::view::view_layout_image_opacity
+    ),
     ui!("view.navigator", "Navigator", None, "View", NoParams, crate::commands::view::view_navigator),
     ui!("panel.edit", "Edit", Some("E"), "Window", NoParams, crate::commands::view::panel_edit),
     ui!("panel.profiles", "Profile Browser", None, "Window", NoParams, crate::commands::view::panel_profiles),
@@ -211,19 +260,19 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     ui!("panel.activity", "History", None, "Window", NoParams, crate::commands::view::panel_activity),
     ui!("panel.close", "Close Panel", None, "", NoParams, crate::commands::view::panel_close),
     // {solo?}: true opens just that section (⌥-click on its header); otherwise opens or closes it
-    ui!("section.light", "Light", Some("Cmd+1"), "Window>Edit Sections", raw crate::commands::view::section),
-    ui!("section.color", "Color", Some("Cmd+2"), "Window>Edit Sections", raw crate::commands::view::section),
-    ui!("section.effects", "Effects", Some("Cmd+3"), "Window>Edit Sections", raw crate::commands::view::section),
-    ui!("section.detail", "Detail", Some("Cmd+4"), "Window>Edit Sections", raw crate::commands::view::section),
-    ui!("section.optics", "Optics", Some("Cmd+5"), "Window>Edit Sections", raw crate::commands::view::section),
-    ui!("section.calibration", "Calibration", None, "", raw crate::commands::view::section),
+    ui!("section.light", "Light", Some("Cmd+1"), "Window>Edit Sections", crate::commands::view::Section, crate::commands::view::section),
+    ui!("section.color", "Color", Some("Cmd+2"), "Window>Edit Sections", crate::commands::view::Section, crate::commands::view::section),
+    ui!("section.effects", "Effects", Some("Cmd+3"), "Window>Edit Sections", crate::commands::view::Section, crate::commands::view::section),
+    ui!("section.detail", "Detail", Some("Cmd+4"), "Window>Edit Sections", crate::commands::view::Section, crate::commands::view::section),
+    ui!("section.optics", "Optics", Some("Cmd+5"), "Window>Edit Sections", crate::commands::view::Section, crate::commands::view::section),
+    ui!("section.calibration", "Calibration", None, "", crate::commands::view::Section, crate::commands::view::section),
     // {on?}; no params toggles. Opening one Edit section closes the others.
-    ui!("view.soloSections", "Solo Mode", None, "Window>Edit Sections", raw crate::commands::view::view_solo_sections),
-    ui!("tool.brush", "Brush", Some("B"), "Window>Tools", raw crate::commands::view::tool),
-    ui!("tool.linear", "Linear Gradient", Some("L"), "Window>Tools", raw crate::commands::view::tool),
-    ui!("tool.radial", "Radial Gradient", Some("R"), "Window>Tools", raw crate::commands::view::tool),
-    ui!("tool.wbPicker", "White Balance Selector", Some("W"), "Window>Tools", raw crate::commands::view::tool),
-    ui!("tool.none", "No Tool", None, "", raw crate::commands::view::tool),
+    ui!("view.soloSections", "Solo Mode", None, "Window>Edit Sections", crate::commands::view::On, crate::commands::view::view_solo_sections),
+    ui!("tool.brush", "Brush", Some("B"), "Window>Tools", crate::commands::view::Tool, crate::commands::view::tool),
+    ui!("tool.linear", "Linear Gradient", Some("L"), "Window>Tools", crate::commands::view::Tool, crate::commands::view::tool),
+    ui!("tool.radial", "Radial Gradient", Some("R"), "Window>Tools", crate::commands::view::Tool, crate::commands::view::tool),
+    ui!("tool.wbPicker", "White Balance Selector", Some("W"), "Window>Tools", crate::commands::view::Tool, crate::commands::view::tool),
+    ui!("tool.none", "No Tool", None, "", crate::commands::view::Tool, crate::commands::view::tool),
     // brush size / feather of the active brush (Masking brush, Remove tool and its selected spot)
     ui!("brush.smaller", "Decrease Brush Size", Some("["), "Window>Tools", NoParams, crate::commands::view::brush_smaller),
     ui!("brush.larger", "Increase Brush Size", Some("]"), "Window>Tools", NoParams, crate::commands::view::brush_smaller),
@@ -232,11 +281,25 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     ui!("dialog.newAlbum", "New Album…", Some("Cmd+N"), "File", raw crate::commands::dialogs::dialog_new_album),
     ui!("dialog.newFolder", "New Folder…", Some("Cmd+Shift+N"), "File", raw crate::commands::dialogs::dialog_new_folder),
     ui!("dialog.smartAlbum", "New Smart Album…", None, "File", raw crate::commands::dialogs::dialog_smart_album),
-    ui!("view.photoCounts", "Show Photo Counts", None, "View", raw crate::commands::view::view_photo_counts),
-    ui!("view.sidebarSection", "Show Sidebar Section", None, "", raw crate::commands::view::view_sidebar_section),
-    ui!("view.sidebarMoveSection", "Move Sidebar Section", None, "", raw crate::commands::view::view_sidebar_move_section),
+    ui!("view.photoCounts", "Show Photo Counts", None, "View", crate::commands::view::Show, crate::commands::view::view_photo_counts),
+    ui!("view.sidebarSection", "Show Sidebar Section", None, "", crate::commands::view::SidebarSection, crate::commands::view::view_sidebar_section),
+    ui!(
+        "view.sidebarMoveSection",
+        "Move Sidebar Section",
+        None,
+        "",
+        crate::commands::view::SidebarMove,
+        crate::commands::view::view_sidebar_move_section
+    ),
     ui!("view.sidebarReset", "Reset Sidebar Sections", None, "", NoParams, crate::commands::view::view_sidebar_reset),
-    ui!("view.slideshow", "Slideshow", Some("Cmd+Alt+Enter"), "View", raw crate::commands::view::view_slideshow),
+    ui!(
+        "view.slideshow",
+        "Slideshow",
+        Some("Cmd+Alt+Enter"),
+        "View",
+        lightcraft_engine::cmd::params::Keys<crate::commands::view::SlideshowKeys>,
+        crate::commands::view::view_slideshow
+    ),
     ui!("view.slideshowOptions", "Slideshow Options…", None, "View", NoParams, crate::commands::view::view_slideshow_options),
     ui!("dialog.slideshowExport", "Export Slideshow…", None, "View", raw crate::commands::dialogs::dialog_slideshow_export),
     ui!("app.slideshowExport", "Export Slideshow", None, "", raw crate::commands::app::app_slideshow_export),
@@ -245,14 +308,14 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     ui!("slideshow.next", "Next Slide", None, "", NoParams, crate::commands::view::slideshow_toggle_pause),
     ui!("slideshow.previous", "Previous Slide", None, "", NoParams, crate::commands::view::slideshow_toggle_pause),
     ui!("slideshow.end", "End Slideshow", None, "", NoParams, crate::commands::view::slideshow_toggle_pause),
-    ui!("view.secondWindow", "Second Window", Some("Cmd+F11"), "Window", raw crate::commands::view::view_second_window),
-    ui!("tool.keywordPainter", "Keyword Painter", None, "", raw crate::commands::view::tool_keyword_painter),
-    ui!("view.gridInfo", "Grid Info", None, "", raw crate::commands::view::view_grid_info),
+    ui!("view.secondWindow", "Second Window", Some("Cmd+F11"), "Window", crate::commands::view::Show, crate::commands::view::view_second_window),
+    ui!("tool.keywordPainter", "Keyword Painter", None, "", crate::commands::view::KeywordPainter, crate::commands::view::tool_keyword_painter),
+    ui!("view.gridInfo", "Grid Info", None, "", crate::commands::view::GridInfo, crate::commands::view::view_grid_info),
     // {mode?: auto | light | dark}: Appearance Mode (cycles Auto, Light, Dark when omitted; the
     // top bar's appearance button). View ▸ Appearance lists the modes.
-    ui!("view.appearance", "Next Appearance Mode", None, "", raw crate::commands::view::view_appearance),
+    ui!("view.appearance", "Next Appearance Mode", None, "", crate::commands::view::Mode, crate::commands::view::view_appearance),
     // {theme: charcoal | midnight | silver | paper}: pick a theme and fix the mode to its family.
-    ui!("view.theme", "Theme", None, "", raw crate::commands::view::view_theme),
+    ui!("view.theme", "Theme", None, "", crate::commands::view::Theme, crate::commands::view::view_theme),
     ui!("dialog.allMetadata", "All Metadata…", None, "Photo", raw crate::commands::dialogs::dialog_all_metadata),
     ui!("dialog.faceModel", "Add Face Model…", None, "", raw crate::commands::dialogs::dialog_face_model),
     ui!("dialog.newSmartAlbum", "New Smart Album from Filter…", Some("Cmd+Alt+N"), "File", raw crate::commands::dialogs::dialog_new_smart_album),
@@ -431,27 +494,6 @@ pub fn parse_rgb(v: &Value) -> Option<[u8; 3]> {
 }
 
 /// The left-sidebar section a `view.sidebar*` command names (`section`), which this build must have.
-pub(crate) fn sidebar_section_param(command: &str, p: &Value) -> Result<crate::sidebar::SidebarSection, String> {
-    use crate::sidebar::SidebarSection;
-    let Some(name) = p.get("section").and_then(Value::as_str) else {
-        return Err(format!("{command}: `section` is needed ({})", SidebarSection::ids()));
-    };
-    let section = SidebarSection::from_id(name).ok_or_else(|| format!("{command}: unknown section `{name}` ({})", SidebarSection::ids()))?;
-    if !section.available() {
-        return Err(format!("{command}: there is no `{name}` section here"));
-    }
-    Ok(section)
-}
-
-/// An optional true / false parameter: absent or null is `None`, anything else is refused.
-pub(crate) fn bool_param(command: &str, p: &Value, key: &str) -> Result<Option<bool>, String> {
-    match p.get(key) {
-        None | Some(Value::Null) => Ok(None),
-        Some(Value::Bool(b)) => Ok(Some(*b)),
-        Some(other) => Err(format!("{command}: `{key}` must be true or false, not {other}")),
-    }
-}
-
 /// What Shift+H says it switched to (the pins themselves may be off screen).
 pub(crate) fn tool_overlay_toast(mode: crate::state::ToolOverlay) -> String {
     use crate::state::ToolOverlay;
@@ -471,25 +513,23 @@ pub(crate) fn appearance_json(app: &LightcraftApp) -> Value {
 
 /// `view.appearance {mode?}`: set Appearance Mode, or step to the next one (Auto, Light, Dark).
 /// The theme follows on the next frame ([`LightcraftApp::sync_theme`]).
-pub(crate) fn appearance_command(app: &mut LightcraftApp, p: &Value) -> Result<Value, String> {
+pub(crate) fn appearance_command(app: &mut LightcraftApp, mode: Option<&str>) -> Result<Value, String> {
     use crate::state::AppearanceMode;
-    let mode = match p.get("mode") {
-        None | Some(Value::Null) => app.ui.settings.appearance_mode.next(),
-        Some(v) => match v.as_str() {
-            Some("auto") => AppearanceMode::Auto,
-            Some("light") => AppearanceMode::Light,
-            Some("dark") => AppearanceMode::Dark,
-            _ => return Err(format!("view.appearance: unknown mode {v} (auto|light|dark)")),
-        },
+    let mode = match mode {
+        None => app.ui.settings.appearance_mode.next(),
+        Some("auto") => AppearanceMode::Auto,
+        Some("light") => AppearanceMode::Light,
+        Some("dark") => AppearanceMode::Dark,
+        Some(m) => return Err(format!("view.appearance: unknown mode {m:?} (auto|light|dark)")),
     };
     app.ui.settings.appearance_mode = mode;
     Ok(appearance_json(app))
 }
 
 /// `view.theme {theme}`: pick a theme; the mode becomes its family's (Dark or Light).
-pub(crate) fn theme_command(app: &mut LightcraftApp, p: &Value) -> Result<Value, String> {
+pub(crate) fn theme_command(app: &mut LightcraftApp, theme: Option<&str>) -> Result<Value, String> {
     let ids = crate::theme::ThemeKind::ALL.map(|k| k.id()).join("|");
-    let Some(id) = p.get("theme").and_then(Value::as_str) else {
+    let Some(id) = theme else {
         return Err(format!("view.theme: `theme` is required ({ids})"));
     };
     let Some(kind) = crate::theme::ThemeKind::ALL.into_iter().find(|k| k.id() == id) else {

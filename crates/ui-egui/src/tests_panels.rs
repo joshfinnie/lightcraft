@@ -418,10 +418,11 @@ fn sidebar_commands_refuse_what_they_cannot_read() {
     let mut h = demo([1400.0, 900.0], json!({"view": "photoGrid", "leftPanel": true}));
     for (params, says) in [
         (json!({}), "`section` is needed (albums|local|byDate|folders|keywords)"),
-        (json!({"section": 3}), "`section` is needed"),
+        (json!({"section": 3}), "`section`: invalid type"),
         (json!({"section": "map"}), "unknown section `map`"),
-        (json!({"section": "albums", "show": "no"}), "`show` must be true or false"),
-        (json!({"section": "albums", "collapsed": 1}), "`collapsed` must be true or false"),
+        (json!({"section": "albums", "show": "no"}), "`show`: invalid type"),
+        (json!({"section": "albums", "collapsed": 1}), "`collapsed`: invalid type"),
+        (json!({"section": "albums", "shw": true}), "unknown parameter `shw`"), // unknown on purpose
     ] {
         let r = h.request("engine.execute", json!({"command": "view.sidebarSection", "params": params}), T);
         assert_eq!(r["ok"], false, "{params}: {r}");

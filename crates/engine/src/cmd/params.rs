@@ -44,6 +44,58 @@ impl Patch {
     }
 }
 
+/// The keys of a command that reads its params itself (handing them on to code that parses
+/// them): [`Keys`] refuses any other key, checking no value.
+pub trait KeyList {
+    const KEYS: &'static [&'static str];
+}
+
+/// Params checked for their keys only ([`KeyList`]); the command reads the raw JSON.
+pub struct Keys<K: KeyList>(std::marker::PhantomData<K>);
+impl<K: KeyList> Params for Keys<K> {}
+
+impl<K: KeyList> std::fmt::Debug for Keys<K> {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "Keys{:?}", K::KEYS)
+    }
+}
+
+impl<'de, K: KeyList> serde::Deserialize<'de> for Keys<K> {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> std::result::Result<Self, D::Error> {
+        struct V<K>(std::marker::PhantomData<K>);
+        impl<'de, K: KeyList> Visitor<'de> for V<K> {
+            type Value = Keys<K>;
+            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                f.write_str("an object")
+            }
+            fn visit_map<A: serde::de::MapAccess<'de>>(self, mut map: A) -> std::result::Result<Keys<K>, A::Error> {
+                while let Some(k) = map.next_key::<String>()? {
+                    if !K::KEYS.contains(&k.as_str()) {
+                        let takes = K::KEYS.iter().map(|k| format!("`{k}`")).collect::<Vec<_>>().join(", ");
+                        return Err(serde::de::Error::custom(format!("unknown parameter `{k}` (takes {takes})")));
+                    }
+                    // read, not skipped: an `IgnoredAny` would count as an ignored key
+                    map.next_value::<Value>()?;
+                }
+                Ok(Keys(std::marker::PhantomData))
+            }
+        }
+        d.deserialize_struct("Keys", K::KEYS, V(std::marker::PhantomData))
+    }
+}
+
+/// Declares a [`KeyList`]: `key_list! { pub struct DockKeys = ["panel", "operation"] }`.
+#[macro_export]
+macro_rules! key_list {
+    ($(#[$m:meta])* $vis:vis struct $name:ident = [$($k:literal),* $(,)?]) => {
+        $(#[$m])*
+        $vis struct $name;
+        impl $crate::cmd::params::KeyList for $name {
+            const KEYS: &'static [&'static str] = &[$($k),*];
+        }
+    };
+}
+
 /// One string or a list of them (`"a"` is `["a"]`).
 #[derive(Debug, serde::Deserialize)]
 #[serde(untagged)]
@@ -318,6 +370,18 @@ mod tests {
             assert!(index(json!(u64::from(u32::MAX) + 1)).is_err());
             assert_eq!(index(json!(f64::from(u32::MAX))).unwrap(), usize::MAX);
         }
+    }
+
+    crate::key_list! {
+        struct Two = ["a", "b"]
+    }
+
+    #[test]
+    fn a_key_list_refuses_other_keys_and_checks_no_values() {
+        assert!(parse::<super::Keys<Two>>(&json!({"a": 1, "b": [true]})).is_ok());
+        let m = parse::<super::Keys<Two>>(&json!({"a": 1, "c": 2})).unwrap_err().to_string();
+        assert!(m.contains("`c`") && m.contains("`a`, `b`"), "{m}");
+        assert_eq!(super::keys_of::<super::Keys<Two>>(), Some(&["a", "b"][..]));
     }
 
     #[test]
