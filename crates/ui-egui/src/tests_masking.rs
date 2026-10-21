@@ -473,12 +473,12 @@ fn mask_list_rename_hide_and_overlay_colour() {
     let r = h.request("ui.clickWidget", json!({"id": format!("mask:{first}"), "count": 2}), T);
     assert_eq!(r["ok"], true, "{r}");
     h.settle(Duration::from_secs(5));
-    assert_eq!(h.app.ui.renaming_mask.as_ref().map(|r| r.0), Some(first), "double-click starts renaming");
+    assert_eq!(h.app.ui.mask_edit.renaming_mask.as_ref().map(|r| r.0), Some(first), "double-click starts renaming");
     h.request("ui.key", json!({"key": "A", "cmd": true}), T);
     h.request("ui.text", json!({"text": "Sky"}), T);
     h.request("ui.key", json!({"key": "Enter"}), T);
     h.settle(Duration::from_secs(5));
-    assert!(h.app.ui.renaming_mask.is_none());
+    assert!(h.app.ui.mask_edit.renaming_mask.is_none());
     assert_eq!(develop(&h).masks[0].name, "Sky");
     // hover the row, then click its eye
     let r = h.request("ui.hoverWidget", json!({"id": format!("mask:{first}")}), T);
@@ -1004,11 +1004,11 @@ fn geometry_slider_drag_marks_the_grid() {
     let spec = lightcraft_develop::controls::find("geometry.vertical").unwrap();
     let start = crate::widgets::SliderOut { value: None, drag_started: true, drag_stopped: false, reset: false };
     crate::panels::edit::apply_slider_out(&mut h.app, spec, start, |_, _| Ok(serde_json::Value::Null));
-    assert_eq!(h.app.ui.dragging_control.as_deref(), Some("geometry.vertical"));
+    assert_eq!(h.app.ui.drag.control.as_deref(), Some("geometry.vertical"));
     h.step();
     let stop = crate::widgets::SliderOut { value: None, drag_started: false, drag_stopped: true, reset: false };
     crate::panels::edit::apply_slider_out(&mut h.app, spec, stop, |_, _| Ok(serde_json::Value::Null));
-    assert!(h.app.ui.dragging_control.is_none());
+    assert!(h.app.ui.drag.control.is_none());
     h.settle(SETTLE);
 }
 
@@ -1488,7 +1488,7 @@ fn ai_masks_without_the_model_offer_the_download() {
     let r = h.request("ui.clickWidget", json!({"id": "maskNew:prompt"}), T);
     assert_eq!(r["ok"], true, "{r}");
     assert_eq!(h.app.ui.dialog, Some(Dialog::SamModel { then: Some(("prompt".into(), "new".into())), error: None }));
-    assert_eq!(h.app.ui.describe, None);
+    assert_eq!(h.app.ui.mask_edit.describe, None);
     // a click command from an agent gets the not-installed error at once, and the app offers the model
     let e = h.app.run("mask.add", json!({"kind": "prompt", "text": "sky"})).unwrap_err();
     assert!(e.starts_with(lightcraft_engine::segment::NOT_INSTALLED), "{e}");

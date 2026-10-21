@@ -92,17 +92,17 @@ fn rename_person_from_the_card_and_the_page() {
 
     let Some(Dialog::RenamePerson { to, .. }) = &mut h.app.ui.dialog else { panic!("dialog closed") };
     *to = "Ada Lovelace".into();
-    h.app.ui.last_person = Some("Jane Doe".into());
-    h.app.ui.person_from = Some((Some("Jane Doe".into()), ids[0].0));
+    h.app.ui.people.last_person = Some("Jane Doe".into());
+    h.app.ui.people.person_from = Some((Some("Jane Doe".into()), ids[0].0));
     h.app.session.execute("library.filter", &json!({"person": "jane doe"})).unwrap();
     h.step();
     click(&mut h, "button:dialogOk");
     assert!(h.app.ui.dialog.is_none(), "{:?}", h.app.ui.dialog);
     assert!(stored(&h, ids[0]).iter().all(|n| n.as_deref() == Some("Ada Lovelace")));
     assert_eq!(stored(&h, ids[1])[0].as_deref(), Some("Ada Lovelace"));
-    assert_eq!(h.app.ui.person_page.as_deref(), Some("Ada Lovelace"));
-    assert_eq!(h.app.ui.last_person.as_deref(), Some("Ada Lovelace"));
-    assert_eq!(h.app.ui.person_from.as_ref().and_then(|(n, _)| n.as_deref()), Some("Ada Lovelace"));
+    assert_eq!(h.app.ui.people.person_page.as_deref(), Some("Ada Lovelace"));
+    assert_eq!(h.app.ui.people.last_person.as_deref(), Some("Ada Lovelace"));
+    assert_eq!(h.app.ui.people.person_from.as_ref().and_then(|(n, _)| n.as_deref()), Some("Ada Lovelace"));
     assert_eq!(h.app.session.filter.person.as_deref(), Some("Ada Lovelace"));
     h.app.session.execute("edit.undo", &json!({})).unwrap();
     assert_eq!(stored(&h, ids[0]), vec![Some("Jane Doe".into()), Some("jane doe".into())]);
@@ -129,7 +129,7 @@ fn rename_person_asks_before_merging() {
     click(&mut h, "button:dialogOk");
     assert!(h.app.ui.dialog.is_none());
     assert_eq!(stored(&h, ids[0])[0].as_deref(), Some("John Roe"));
-    assert_eq!(h.app.ui.person_page.as_deref(), Some("John Roe"));
+    assert_eq!(h.app.ui.people.person_page.as_deref(), Some("John Roe"));
     let names: Vec<String> = h.app.session.catalog.people().into_iter().map(|p| p.name).collect();
     assert_eq!(names, vec!["John Roe".to_string()]);
     h.app.session.execute("edit.undo", &json!({})).unwrap();

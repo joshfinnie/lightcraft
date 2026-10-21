@@ -13,10 +13,10 @@ pub const LABEL: &str = "Checking raw files";
 /// Once per opened library (called every frame): start the recheck when it has stale photos.
 pub fn tick(app: &mut LightcraftApp) {
     let library = app.session.library_generation();
-    if app.ui.rechecked_library == Some(library) {
+    if app.ui.upkeep.rechecked_library == Some(library) {
         return;
     }
-    app.ui.rechecked_library = Some(library);
+    app.ui.upkeep.rechecked_library = Some(library);
     // a demo or browser session has no files to read
     let Some(probe) = recheck::file_probe(&app.session) else { return };
     let stale = recheck::stale(&app.session.catalog, false);

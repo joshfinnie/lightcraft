@@ -1751,7 +1751,7 @@ pub fn confirm_dialog(app: &mut LightcraftApp, dlg: &Dialog) -> Result<serde_jso
             }
             let r = app.run("segment.model.download", json!({"acknowledged": true}));
             if r.is_ok() {
-                app.ui.sam_downloading = true;
+                app.ui.mask_edit.sam_downloading = true;
             }
             r
         }

@@ -72,7 +72,7 @@ pub fn faces(app: &mut LightcraftApp, now: f64) -> Arc<Unnamed> {
     let list = Arc::new(parse(&v));
     // what was selected and has since been named (or removed) is no longer selected
     let present: std::collections::HashSet<(u64, usize)> = list.faces.iter().map(|f| (f.photo, f.index)).collect();
-    app.ui.unnamed_selected.retain(|k| present.contains(k));
+    app.ui.people.unnamed_selected.retain(|k| present.contains(k));
     app.caches.unnamed = Some((rev, indexed, now, list.clone()));
     list
 }
@@ -80,22 +80,22 @@ pub fn faces(app: &mut LightcraftApp, now: f64) -> Arc<Unnamed> {
 /// A click on face number `i` of `list`: select it (or deselect it), or with Shift every face from the last one clicked.
 fn click(app: &mut LightcraftApp, list: &Unnamed, i: usize, shift: bool) {
     let Some(f) = list.faces.get(i) else { return };
-    match app.ui.unnamed_anchor.filter(|_| shift) {
+    match app.ui.people.unnamed_anchor.filter(|_| shift) {
         Some(a) => {
             for f in list.faces.get(a.min(i)..=a.max(i)).unwrap_or_default() {
-                app.ui.unnamed_selected.insert((f.photo, f.index));
+                app.ui.people.unnamed_selected.insert((f.photo, f.index));
             }
         }
         None => {
             let key = (f.photo, f.index);
-            if !app.ui.unnamed_selected.remove(&key) {
-                app.ui.unnamed_selected.insert(key);
+            if !app.ui.people.unnamed_selected.remove(&key) {
+                app.ui.people.unnamed_selected.insert(key);
             }
-            app.ui.unnamed_anchor = Some(i);
+            app.ui.people.unnamed_anchor = Some(i);
         }
     }
     // typing goes to the name box at once
-    app.ui.unnamed_focus = !app.ui.unnamed_selected.is_empty();
+    app.ui.people.unnamed_focus = !app.ui.people.unnamed_selected.is_empty();
 }
 
 /// Name `faces` (photo, region) `name`, as one undo step.
@@ -106,13 +106,13 @@ fn name(app: &mut LightcraftApp, faces: &[(u64, usize)], name: &str) {
 
 /// The bar above the faces while some are selected: how many, a box to name them all, and the people already named.
 pub fn naming_bar(app: &mut LightcraftApp, ui: &mut egui::Ui) {
-    if app.ui.unnamed_selected.is_empty() {
-        app.ui.unnamed_name.clear();
+    if app.ui.people.unnamed_selected.is_empty() {
+        app.ui.people.unnamed_name.clear();
         return;
     }
     let t = Tokens::get(ui.ctx());
     let selected: Vec<(u64, usize)> = {
-        let mut v: Vec<_> = app.ui.unnamed_selected.iter().copied().collect();
+        let mut v: Vec<_> = app.ui.people.unnamed_selected.iter().copied().collect();
         v.sort_unstable();
         v
     };
@@ -121,7 +121,7 @@ pub fn naming_bar(app: &mut LightcraftApp, ui: &mut egui::Ui) {
         let list = app.caches.unnamed.as_ref().map(|c| c.3.clone());
         list.and_then(|l| {
             let names: std::collections::BTreeSet<Option<&str>> =
-                l.faces.iter().filter(|f| app.ui.unnamed_selected.contains(&(f.photo, f.index))).map(|f| f.suggestion.as_deref()).collect();
+                l.faces.iter().filter(|f| app.ui.people.unnamed_selected.contains(&(f.photo, f.index))).map(|f| f.suggestion.as_deref()).collect();
             (names.len() == 1).then(|| names.into_iter().next().flatten().map(str::to_string)).flatten()
         })
     };
@@ -132,12 +132,12 @@ pub fn naming_bar(app: &mut LightcraftApp, ui: &mut egui::Ui) {
         let n = selected.len();
         ui.label(RichText::new(if n == 1 { "1 face selected".to_string() } else { format!("{n} faces selected") }).color(t.text));
         let hint = suggested.clone().unwrap_or_else(|| "Name…".to_string());
-        let field = crate::text_field::TextField::singleline("field:unnamedName", &mut app.ui.unnamed_name).hint(hint).width(240.0).show(ui);
+        let field = crate::text_field::TextField::singleline("field:unnamedName", &mut app.ui.people.unnamed_name).hint(hint).width(240.0).show(ui);
         let edit = &field.response;
-        if std::mem::take(&mut app.ui.unnamed_focus) {
+        if std::mem::take(&mut app.ui.people.unnamed_focus) {
             edit.request_focus();
         }
-        let typed = app.ui.unnamed_name.trim().to_string();
+        let typed = app.ui.people.unnamed_name.trim().to_string();
         let chosen = if typed.is_empty() { suggested.clone().unwrap_or_default() } else { typed.clone() };
         if field.ending == Some(crate::text_field::Ending::Return) && !chosen.is_empty() {
             submit = Some(chosen.clone());
@@ -153,7 +153,7 @@ pub fn naming_bar(app: &mut LightcraftApp, ui: &mut egui::Ui) {
         clear = c.clicked() || field.cancelled();
     });
     // the people already named, matching what is typed (a click names the faces)
-    let typed = app.ui.unnamed_name.trim().to_lowercase();
+    let typed = app.ui.people.unnamed_name.trim().to_lowercase();
     if !typed.is_empty() {
         let people = app.caches.person_names(&app.session.catalog);
         let matching: Vec<&String> = people.iter().filter(|p| p.to_lowercase().starts_with(&typed) && p.to_lowercase() != typed).take(6).collect();
@@ -172,13 +172,13 @@ pub fn naming_bar(app: &mut LightcraftApp, ui: &mut egui::Ui) {
     }
     if let Some(who) = submit {
         name(app, &selected, &who);
-        app.ui.unnamed_selected.clear();
-        app.ui.unnamed_name.clear();
-        app.ui.unnamed_anchor = None;
+        app.ui.people.unnamed_selected.clear();
+        app.ui.people.unnamed_name.clear();
+        app.ui.people.unnamed_anchor = None;
     } else if clear {
-        app.ui.unnamed_selected.clear();
-        app.ui.unnamed_name.clear();
-        app.ui.unnamed_anchor = None;
+        app.ui.people.unnamed_selected.clear();
+        app.ui.people.unnamed_name.clear();
+        app.ui.people.unnamed_anchor = None;
     }
 }
 
@@ -210,14 +210,14 @@ pub fn section_header(app: &mut LightcraftApp, ui: &mut egui::Ui, list: &Unnamed
         }
     } else if !list.faces.is_empty() {
         let r = Rect::from_min_size(pos2(right - 130.0, at.y + 12.0), vec2(130.0, 22.0));
-        let all = app.ui.unnamed_selected.len() == list.faces.len();
+        let all = app.ui.people.unnamed_selected.len() == list.faces.len();
         let b = ui.put(r, egui::Button::new(crate::i18n::tr(if all { "Select none" } else { "Select all" })));
         register(ui.ctx(), "unnamed:selectAll", b.rect);
         if b.clicked() {
-            app.ui.unnamed_selected.clear();
+            app.ui.people.unnamed_selected.clear();
             if !all {
-                app.ui.unnamed_selected.extend(list.faces.iter().map(|f| (f.photo, f.index)));
-                app.ui.unnamed_focus = true;
+                app.ui.people.unnamed_selected.extend(list.faces.iter().map(|f| (f.photo, f.index)));
+                app.ui.people.unnamed_focus = true;
             }
         }
     }
@@ -227,7 +227,7 @@ pub fn section_header(app: &mut LightcraftApp, ui: &mut egui::Ui, list: &Unnamed
 pub fn tile(app: &mut LightcraftApp, ui: &mut egui::Ui, list: &Unnamed, i: usize, r: Rect, f: &UnnamedFace, ppp: f32) {
     let t = Tokens::get(ui.ctx());
     let key = (f.photo, f.index);
-    let selected = app.ui.unnamed_selected.contains(&key);
+    let selected = app.ui.people.unnamed_selected.contains(&key);
     let resp = ui.interact(r, egui::Id::new(("unnamed-face", f.photo, f.index)), Sense::click());
     crate::widgets::announce_selected(&resp, crate::i18n::tr("Unnamed face"), selected);
     register(ui.ctx(), format!("unnamed-face:{}:{}", f.photo, f.index), r);
@@ -272,7 +272,7 @@ pub fn tile(app: &mut LightcraftApp, ui: &mut egui::Ui, list: &Unnamed, i: usize
         let _ = app.run("library.select", json!({"ids": [f.photo], "active": f.photo}));
         let _ = app.run("view.detail", json!({}));
         // Escape comes back to the faces
-        app.ui.person_from = Some((None, f.photo));
+        app.ui.people.person_from = Some((None, f.photo));
     } else if resp.clicked() {
         let shift = ui.input(|i| i.modifiers.shift);
         click(app, list, i, shift);

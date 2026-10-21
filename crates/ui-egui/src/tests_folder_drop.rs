@@ -118,7 +118,7 @@ fn photos_dropped_on_a_folder_move_there_on_disk() {
     let from = widget(&h, &format!("thumb:{beach}")).unwrap().center();
     press(&mut h, from);
     glide(&mut h, from, parent.center());
-    assert_eq!(h.app.ui.dragging_photos, Some(vec![beach]));
+    assert_eq!(h.app.ui.drag.photos, Some(vec![beach]));
     for _ in 0..60 {
         h.step();
     }
@@ -138,7 +138,7 @@ fn photos_dropped_on_a_folder_move_there_on_disk() {
     let photo = h.app.session.catalog.photo(lightcraft_catalog::PhotoId(beach)).unwrap();
     assert!(matches!(&photo.source, lightcraft_catalog::Source::File { path } if Path::new(path) == home.join("beach.png")));
     assert!(toast(&h).starts_with("Moved 1 photo to “home”. Edit → Undo moves them back."), "{}", toast(&h));
-    assert!(h.app.ui.dragging_photos.is_none(), "the drag ended");
+    assert!(h.app.ui.drag.photos.is_none(), "the drag ended");
     // and one Undo moves it back
     h.app.run("edit.undo", json!({})).unwrap();
     assert!(trip.join("beach.png").is_file() && !home.join("beach.png").exists(), "back where it was");
@@ -192,7 +192,7 @@ fn photos_already_in_the_folder_stay_put() {
     release(&mut h, toggle.center());
     let target = folder_row(&h, &home).expect("opened");
     let garden = id_of(&h, "garden.png");
-    h.app.ui.dragging_photos = Some(vec![garden]);
+    h.app.ui.drag.photos = Some(vec![garden]);
     h.app.synthetic.push(egui::Event::PointerMoved(target.center()));
     h.app.synthetic.push(egui::Event::PointerButton {
         pos: target.center(),

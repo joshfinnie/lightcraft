@@ -122,13 +122,13 @@ fn masking_contents_fit_the_right_panel_at_any_width() {
     assert_eq!(r["ok"], true, "{r}");
     for width in [RIGHT_WIDTH.min, RIGHT_WIDTH.default, 330.0, RIGHT_WIDTH.max] {
         // a long Describe prompt being typed: the field and its Select button stay in the panel
-        h.app.ui.describe = Some(("new".into(), long.repeat(2)));
+        h.app.ui.mask_edit.describe = Some(("new".into(), long.repeat(2)));
         h.step();
         h.step();
         assert_inside_right_panel(&h, &format!("width {width}, describing"));
         let (field, go) = (widget(&h, "maskDescribe"), widget(&h, "button:maskDescribeGo"));
         assert!(field.right() <= go.left() && go.right() <= widget(&h, "panel:right_panel").right(), "width {width}: {field:?} {go:?}");
-        h.app.ui.describe = None;
+        h.app.ui.mask_edit.describe = None;
         // the painted text, not just the widgets: tile labels inside their tiles, a long mask
         // name cut short before the eye
         h.step();
@@ -483,7 +483,7 @@ fn dragging_a_header_moves_its_section() {
         h.step();
     }
     h.step();
-    assert_eq!(h.app.ui.dragging_section, Some(crate::sidebar::SidebarSection::Folders));
+    assert_eq!(h.app.ui.drag.section, Some(crate::sidebar::SidebarSection::Folders));
     let line = widget(&h, "sidebarSectionDrop");
     assert!(
         line.center().y < header(&h, "albums").top() && line.center().y > header(&h, "albums").top() - 10.0,
@@ -498,7 +498,7 @@ fn dragging_a_header_moves_its_section() {
     h.step();
     h.step();
     h.step();
-    assert_eq!(h.app.ui.dragging_section, None);
+    assert_eq!(h.app.ui.drag.section, None);
     assert!(!has(&h, "sidebarSectionDrop"));
     assert_eq!(sections_drawn(&h), listed(&["folders", "albums", "local", "byDate", "keywords"]));
     // dragged below everything: last
@@ -522,10 +522,10 @@ fn a_section_drag_that_is_given_up_moves_nothing() {
     let (from, to) = (header(&h, "keywords").center(), header(&h, "albums").center() - egui::vec2(0.0, 12.0));
     let esc = egui::Event::Key { key: egui::Key::Escape, physical_key: None, pressed: true, repeat: false, modifiers: egui::Modifiers::NONE };
     drag_between(&mut h, from, to, vec![esc]);
-    assert_eq!((sections_drawn(&h), h.app.ui.dragging_section), (usual.clone(), None), "Esc");
+    assert_eq!((sections_drawn(&h), h.app.ui.drag.section), (usual.clone(), None), "Esc");
     // released over the photos
     drag_between(&mut h, from, egui::pos2(800.0, to.y), Vec::new());
-    assert_eq!((sections_drawn(&h), h.app.ui.dragging_section), (usual.clone(), None), "released outside");
+    assert_eq!((sections_drawn(&h), h.app.ui.drag.section), (usual.clone(), None), "released outside");
     assert!(h.app.ui.sidebar.is_default());
 }
 
@@ -546,7 +546,7 @@ fn dragging_a_section_is_not_dragging_an_album() {
     h.app.synthetic.push(egui::Event::PointerMoved(from + (to - from) * 0.5));
     h.step();
     h.step();
-    assert!(h.app.ui.dragging_section.is_some() && h.app.ui.dragging_album.is_none());
+    assert!(h.app.ui.drag.section.is_some() && h.app.ui.drag.album.is_none());
     h.app.synthetic.push(egui::Event::PointerButton {
         pos: to,
         button: egui::PointerButton::Primary,
@@ -562,7 +562,7 @@ fn dragging_a_section_is_not_dragging_an_album() {
     let arranged = h.app.ui.sidebar.clone();
     let (from, to) = (widget(&h, &format!("source:album:{album}")).center(), header(&h, "keywords").center());
     drag_between(&mut h, from, to, Vec::new());
-    assert_eq!((h.app.ui.sidebar.clone(), h.app.ui.dragging_section), (arranged, None));
+    assert_eq!((h.app.ui.sidebar.clone(), h.app.ui.drag.section), (arranged, None));
 }
 
 /// Given a section's header menu, Move Up and Move Down move it one shown section at a time
@@ -829,7 +829,7 @@ fn a_section_dragged_to_the_top_edge_scrolls_past_the_pinned_header() {
     let start = own(&h);
     press(&mut h, pinned.center());
     hold(&mut h, pinned.center() + egui::vec2(12.0, 3.0), 12);
-    assert_eq!(h.app.ui.dragging_section, Some(crate::sidebar::SidebarSection::Albums));
+    assert_eq!(h.app.ui.drag.section, Some(crate::sidebar::SidebarSection::Albums));
     assert_eq!(own(&h), start, "still on the header it was picked up by");
     give_up(&mut h);
     // By Date, picked up by its own header and taken to the top edge: the sidebar scrolls up
@@ -959,7 +959,7 @@ fn dragging_from_a_header_button_does_not_drag_the_section() {
         for i in 1..=6 {
             h.app.synthetic.push(egui::Event::PointerMoved(from - egui::vec2(8.0 * i as f32, 30.0 * i as f32)));
             h.step();
-            assert_eq!(h.app.ui.dragging_section, None, "{button}");
+            assert_eq!(h.app.ui.drag.section, None, "{button}");
         }
         let to = from - egui::vec2(48.0, 180.0);
         h.app.synthetic.push(egui::Event::PointerButton {
@@ -1230,7 +1230,7 @@ fn dragging_an_album_onto_a_folder_moves_it() {
     let mut t = album_tree();
     t.drag_row(t.loose, t.archive);
     assert_eq!(t.parent(t.loose), Some(t.archive), "an album into a folder");
-    assert!(t.h.app.ui.dragging_album.is_none(), "the drag ended");
+    assert!(t.h.app.ui.drag.album.is_none(), "the drag ended");
     // it is shown inside its new folder, which opened for it
     assert!(t.h.app.widgets.iter().any(|(w, _)| *w == format!("source:album:{}", t.loose)));
     t.drag_row(t.sub, t.archive);
@@ -1244,7 +1244,7 @@ fn dragging_an_album_onto_a_folder_moves_it() {
     assert_eq!(t.parent(t.archive), None, "not onto itself");
     t.drag_row(t.archive, t.sub);
     assert_eq!(t.parent(t.archive), None, "not into something inside it");
-    assert!(t.h.app.ui.dragging_album.is_none());
+    assert!(t.h.app.ui.drag.album.is_none());
     // a plain click still only opens the album
     let c = t.row(t.best).center();
     t.drag(c, &[(c, 0)]);
@@ -1262,12 +1262,12 @@ fn an_album_drag_ignores_other_buttons_and_esc_cancels_it() {
     // a right click over the folder mid-drag; the drag then ends elsewhere (on the Loose row itself)
     t.drag_with(from, &[(to, 3), (from, 2)], vec![secondary(true), secondary(false)]);
     assert_eq!(t.parent(t.loose), None, "the secondary release is not a drop");
-    assert!(t.h.app.ui.dragging_album.is_none());
+    assert!(t.h.app.ui.drag.album.is_none());
     let esc = |pressed| egui::Event::Key { key: egui::Key::Escape, physical_key: None, pressed, repeat: false, modifiers: m };
     let (from, to) = (t.row(t.loose).center(), t.row(t.archive).center());
     t.drag_with(from, &[(to, 3)], vec![esc(true), esc(false)]);
     assert_eq!(t.parent(t.loose), None, "Esc abandons the drag, the release drops nothing");
-    assert!(t.h.app.ui.dragging_album.is_none());
+    assert!(t.h.app.ui.drag.album.is_none());
     // and a drag that is left alone still drops
     t.drag_row(t.loose, t.archive);
     assert_eq!(t.parent(t.loose), Some(t.archive));
@@ -1290,7 +1290,7 @@ fn dropping_on_the_edge_of_an_album_places_it_there() {
     // one undo step per drop
     t.h.app.session.execute("edit.undo", &json!({})).unwrap();
     assert_eq!(t.kids(None, false), ["Portfolio", "Garden", "Loose", "Night Sky"]);
-    assert!(t.h.app.ui.dragging_album.is_none());
+    assert!(t.h.app.ui.drag.album.is_none());
 }
 
 /// Dropping beside an album in another folder moves the album there, at that place.
@@ -1411,7 +1411,7 @@ fn a_dragged_album_scrolls_the_sidebar_at_its_edges() {
     hold(&mut t, egui::pos2(cx, top + 70.0));
     let back = t.row(last).top();
     assert!(back > scrolled + 100.0, "the top edge scrolls back up: {scrolled} -> {back}");
-    assert!(t.h.app.ui.dragging_album.is_none());
+    assert!(t.h.app.ui.drag.album.is_none());
 }
 
 /// Photos dragged from the grid scroll the sidebar the same way, to reach an album further down.
@@ -1429,7 +1429,7 @@ fn dragged_photos_scroll_the_sidebar_at_its_edges() {
     let thumb = widget(&t.h, &format!("thumb:{first}")).center();
     t.drag(thumb, &[(egui::pos2(panel.center().x, panel.bottom() - 6.0), 90)]);
     assert!(t.row(last).top() < start - 100.0, "scrolled down: {start} -> {}", t.row(last).top());
-    assert!(t.h.app.ui.dragging_photos.is_none(), "the drag ended");
+    assert!(t.h.app.ui.drag.photos.is_none(), "the drag ended");
 }
 
 /// How fast the sidebar scrolls for a pointer at `y` (+ down) is zero in the middle, ramps up
@@ -2136,7 +2136,7 @@ fn local_photos_cannot_be_added_to_albums_until_they_join_my_photos() {
     assert_eq!(r["ok"], true, "{r}");
     h.settle(SETTLE);
     assert!(h.app.session.catalog.album(album_id).unwrap().photos.is_empty(), "nothing invisible was added");
-    assert!(h.app.ui.dragging_photos.is_none(), "the drag ended");
+    assert!(h.app.ui.drag.photos.is_none(), "the drag ended");
     let toast = h.app.ui.toast.as_ref().map(|t| t.0.clone()).unwrap_or_default();
     assert!(toast.contains("Add to My Photos first"), "{toast:?}");
 

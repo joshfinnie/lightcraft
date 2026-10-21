@@ -450,8 +450,8 @@ pub(crate) fn busy_synchronizing(app: &LightcraftApp) -> Result<(), String> {
 /// taken out and put back in asks again.
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn cards_seen(app: &mut LightcraftApp, now: Vec<lightcraft_engine::devices::Device>) {
-    let Some(known) = app.ui.known_cards.as_mut() else {
-        app.ui.known_cards = Some(now.into_iter().map(|d| d.root).collect());
+    let Some(known) = app.ui.upkeep.known_cards.as_mut() else {
+        app.ui.upkeep.known_cards = Some(now.into_iter().map(|d| d.root).collect());
         return;
     };
     known.retain(|root| now.iter().any(|d| d.root == *root));

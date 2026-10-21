@@ -229,7 +229,7 @@ fn dragging_a_keyword_nests_it_and_back() {
     run(&mut h, "keyword.create", json!({"name": "Portugal"}));
     drag(&mut h, "keywordRow:Lisbon", "keywordRow:Portugal");
     assert_eq!(keywords_of(&h, ids[0]), ["Portugal|Lisbon"]);
-    assert!(h.app.ui.dragging_keyword.is_none(), "the drag ended");
+    assert!(h.app.ui.drag.keyword.is_none(), "the drag ended");
     assert!(has(&h, "keywordRow:Portugal|Lisbon"), "Portugal opened to show it");
     drag(&mut h, "keywordRow:Portugal|Lisbon", "keywordList:topLevel");
     assert_eq!(keywords_of(&h, ids[0]), ["Lisbon"]);
@@ -269,7 +269,7 @@ fn dropping_photos_on_a_keyword_tags_them() {
     run(&mut h, "keyword.create", json!({"name": "Portugal"}));
     drag(&mut h, &format!("thumb:{}", ids[0]), "keywordRow:Portugal");
     assert!(ids.iter().all(|id| keywords_of(&h, *id).contains(&"Portugal".to_string())), "the selection got it");
-    assert!(h.app.ui.dragging_photos.is_none());
+    assert!(h.app.ui.drag.photos.is_none());
 }
 
 fn rect(h: &Headless, id: &str) -> egui::Rect {
@@ -369,10 +369,10 @@ fn escape_gives_up_a_keyword_drag() {
     run(&mut h, "keyword.create", json!({"name": "Portugal", "parent": null}));
     let (from, to) = (center(&h, "keywordRow:Lisbon"), center(&h, "keywordRow:Portugal"));
     press_and_move(&mut h, from, to);
-    assert_eq!(h.app.ui.dragging_keyword.as_deref(), Some("Lisbon"), "dragging");
+    assert_eq!(h.app.ui.drag.keyword.as_deref(), Some("Lisbon"), "dragging");
     h.events.push(egui::Event::Key { key: egui::Key::Escape, physical_key: None, pressed: true, repeat: false, modifiers: egui::Modifiers::NONE });
     h.step();
-    assert_eq!(h.app.ui.dragging_keyword, None, "given up");
+    assert_eq!(h.app.ui.drag.keyword, None, "given up");
     release(&mut h, to);
     assert_eq!(keywords_of(&h, ids[0]), ["Lisbon"]);
 }
@@ -384,11 +384,11 @@ fn a_keyword_drag_ends_without_the_list() {
     let (mut h, _) = keywords_panel_at([1400.0, 2400.0]);
     let from = center(&h, "keywordRow:mountains");
     press_and_move(&mut h, from, from + egui::vec2(-300.0, 0.0));
-    assert_eq!(h.app.ui.dragging_keyword.as_deref(), Some("mountains"));
+    assert_eq!(h.app.ui.drag.keyword.as_deref(), Some("mountains"));
     h.app.ui.right = crate::state::RightPanel::Info;
     h.step();
     release(&mut h, from + egui::vec2(-300.0, 0.0));
-    assert_eq!(h.app.ui.dragging_keyword, None);
+    assert_eq!(h.app.ui.drag.keyword, None);
 }
 
 /// Pressing on a tick box and moving doesn't pick the keyword up.
@@ -397,7 +397,7 @@ fn a_tick_box_doesnt_start_a_drag() {
     let (mut h, _) = keywords_panel_at([1400.0, 2400.0]);
     let from = center(&h, "keywordCheck:mountains");
     press_and_move(&mut h, from, from + egui::vec2(0.0, 60.0));
-    assert_eq!(h.app.ui.dragging_keyword, None);
+    assert_eq!(h.app.ui.drag.keyword, None);
     release(&mut h, from + egui::vec2(0.0, 60.0));
 }
 

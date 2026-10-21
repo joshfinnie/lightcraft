@@ -174,6 +174,8 @@ mod tests_titlebar;
 #[cfg(test)]
 mod tests_tool_overlay;
 #[cfg(test)]
+mod tests_ui_state;
+#[cfg(test)]
 mod tests_unsaved;
 #[cfg(test)]
 mod tests_view_cost;
@@ -582,16 +584,16 @@ impl LightcraftApp {
     /// The open person page, the way back to it, and the photo it was opened from follow a rename.
     fn follow_renamed_person(&mut self, from: &str, to: &str) {
         let same = |n: &str| n.trim().to_lowercase() == from.trim().to_lowercase();
-        if self.ui.person_page.as_deref().is_some_and(same) {
-            self.ui.person_page = Some(to.to_string());
+        if self.ui.people.person_page.as_deref().is_some_and(same) {
+            self.ui.people.person_page = Some(to.to_string());
         }
-        if self.ui.last_person.as_deref().is_some_and(same) {
-            self.ui.last_person = Some(to.to_string());
+        if self.ui.people.last_person.as_deref().is_some_and(same) {
+            self.ui.people.last_person = Some(to.to_string());
         }
-        if let Some((Some(name), photo)) = self.ui.person_from.clone()
+        if let Some((Some(name), photo)) = self.ui.people.person_from.clone()
             && same(&name)
         {
-            self.ui.person_from = Some((Some(to.to_string()), photo));
+            self.ui.people.person_from = Some((Some(to.to_string()), photo));
         }
     }
 
@@ -749,8 +751,8 @@ impl LightcraftApp {
         let Some(b) = self.session.preview_build.clone() else { return };
         let key = std::sync::Arc::as_ptr(&b) as usize;
         if b.finished.load(Ordering::Relaxed) {
-            if self.ui.preview_build_seen != Some((key, true)) {
-                self.ui.preview_build_seen = Some((key, true));
+            if self.ui.upkeep.preview_build_seen != Some((key, true)) {
+                self.ui.upkeep.preview_build_seen = Some((key, true));
                 let (done, failed) = (b.done.load(Ordering::Relaxed), b.failed.load(Ordering::Relaxed));
                 let plural = if done == 1 { "" } else { "s" };
                 let mut msg = match (b.error(), b.what) {
@@ -775,9 +777,9 @@ impl LightcraftApp {
     /// retried) and when it works again; the top bar's cloud icon shows the state meanwhile.
     fn save_status(&mut self, ctx: &egui::Context) {
         let unsaved = self.session.unsaved().map(|(n, e)| (n, e.to_string()));
-        match (unsaved, self.ui.unsaved_seen) {
+        match (unsaved, self.ui.upkeep.unsaved_seen) {
             (Some((n, e)), false) => {
-                self.ui.unsaved_seen = true;
+                self.ui.upkeep.unsaved_seen = true;
                 let t = ctx.input(|i| i.time);
                 self.ui.toast = Some((
                     crate::i18n::tr_format!(
@@ -791,7 +793,7 @@ impl LightcraftApp {
                 ));
             }
             (None, true) => {
-                self.ui.unsaved_seen = false;
+                self.ui.upkeep.unsaved_seen = false;
                 self.toast(ctx, crate::i18n::tr("Library saved"));
             }
             (Some(_), true) => ctx.request_repaint_after(std::time::Duration::from_secs(2)), // retry
@@ -831,7 +833,7 @@ impl LightcraftApp {
             ctx.request_repaint();
         }
         if let Some(mask) = polled.refine {
-            self.ui.detail_due = Some((now + 0.3, mask));
+            self.ui.mask_edit.detail_due = Some((now + 0.3, mask));
         }
         if let Some(e) = polled.messages.into_iter().last() {
             self.ai_error(ctx, e, None);
@@ -845,8 +847,8 @@ impl LightcraftApp {
             ctx.request_repaint_after(std::time::Duration::from_millis(250));
         }
         // a download finishing while its dialog is closed: say so once
-        if self.ui.sam_downloading && !download.running {
-            self.ui.sam_downloading = false;
+        if self.ui.mask_edit.sam_downloading && !download.running {
+            self.ui.mask_edit.sam_downloading = false;
             let open = matches!(self.ui.dialog, Some(state::Dialog::SamModel { .. }));
             match sam_download_ended(&download) {
                 _ if open => {}
@@ -855,9 +857,9 @@ impl LightcraftApp {
                 None => {}
             }
         }
-        if let Some((due, mask)) = self.ui.detail_due {
+        if let Some((due, mask)) = self.ui.mask_edit.detail_due {
             if now >= due && !self.session.segmenter.busy() && !self.session.segmenter.detail_busy() {
-                self.ui.detail_due = None;
+                self.ui.mask_edit.detail_due = None;
                 if let Err(e) = self.run("mask.refineDetail", serde_json::json!({"id": mask})) {
                     log::warn!("detail pass: {e}");
                 }
@@ -1128,28 +1130,28 @@ impl LightcraftApp {
         panels::faces::pump(self, ctx);
         // back from an external editor: pick up the files it saved
         let focused = ctx.input(|i| i.focused);
-        if focused && !self.ui.was_focused && !self.ui.external_edits.is_empty() {
-            let ids = self.ui.external_edits.clone();
+        if focused && !self.ui.upkeep.was_focused && !self.ui.upkeep.external_edits.is_empty() {
+            let ids = self.ui.upkeep.external_edits.clone();
             if let Ok(r) = self.session.execute("photo.reload", &serde_json::json!({"ids": ids}))
                 && r["reloaded"].as_array().is_some_and(|a| !a.is_empty())
             {
                 self.toast(ctx, crate::i18n::tr("Updated the edits saved in the external editor"));
             }
         }
-        self.ui.was_focused = focused;
+        self.ui.upkeep.was_focused = focused;
         // auto import: list the watched folder every few seconds (on a worker thread: it may be on
         // a network share), then import what's new like any import (also on a worker thread)
         #[cfg(not(target_arch = "wasm32"))]
         if let Some(folder) = self.session.prefs.import_defaults.auto_folder.clone() {
             const LABEL: &str = "Auto Import";
             let now = ctx.input(|i| i.time);
-            if now - self.ui.auto_import_at >= 3.0
+            if now - self.ui.upkeep.auto_import_at >= 3.0
                 && self.import.is_none()
                 && self.sync_run.is_none()
                 && self.lightroom.is_none()
                 && !self.tasks.is_running(LABEL)
             {
-                self.ui.auto_import_at = now;
+                self.ui.upkeep.auto_import_at = now;
                 let work = move || lightcraft_engine::cmd::library::list_auto_import_folder(&folder);
                 let done = |app: &mut LightcraftApp, _ctx: &egui::Context, listing: Result<Vec<(String, u64)>, String>| {
                     let listing = match listing {
@@ -1180,14 +1182,14 @@ impl LightcraftApp {
         {
             if self.session.unsaved_sidecars() > 0 {
                 let now = ctx.input(|i| i.time);
-                if now - self.ui.sidecar_retry_at >= 10.0 {
-                    self.ui.sidecar_retry_at = now;
+                if now - self.ui.upkeep.sidecar_retry_at >= 10.0 {
+                    self.ui.upkeep.sidecar_retry_at = now;
                     self.session.retry_unsaved_sidecars();
                 }
                 ctx.request_repaint_after(std::time::Duration::from_secs(10));
             }
             let waiting = self.session.unsaved_sidecars();
-            if waiting > 0 && self.ui.sidecars_waiting == 0 {
+            if waiting > 0 && self.ui.upkeep.sidecars_waiting == 0 {
                 self.toast_for(
                     ctx,
                     crate::i18n::tr_format!(
@@ -1196,10 +1198,10 @@ impl LightcraftApp {
                     ),
                     8.0,
                 );
-            } else if waiting == 0 && self.ui.sidecars_waiting > 0 {
+            } else if waiting == 0 && self.ui.upkeep.sidecars_waiting > 0 {
                 self.toast(ctx, crate::i18n::tr("Wrote the XMP sidecars that were waiting"));
             }
-            self.ui.sidecars_waiting = waiting;
+            self.ui.upkeep.sidecars_waiting = waiting;
         }
         // Settings → Import: open the import review when a camera or card is connected
         #[cfg(not(target_arch = "wasm32"))]
@@ -1209,7 +1211,7 @@ impl LightcraftApp {
             }
             ctx.request_repaint_after(lightcraft_engine::devices::MAX_AGE);
         } else {
-            self.ui.known_cards = None;
+            self.ui.upkeep.known_cards = None;
         }
         self.session.persist_if_dirty();
         panels::denoise::pump(self, ctx);

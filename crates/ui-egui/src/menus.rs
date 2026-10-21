@@ -908,7 +908,7 @@ pub(crate) fn edit_in(app: &mut LightcraftApp, ctx: &egui::Context, p: &Value, p
     let mut failed = None;
     for (path, id) in &copies {
         if let Some(id) = id {
-            app.ui.external_edits.push(*id);
+            app.ui.upkeep.external_edits.push(*id);
         }
         // the copy is LightCraft's own render, but it goes through the same gate as any other
         // path handed to the system opener (#2135)

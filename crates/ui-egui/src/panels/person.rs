@@ -108,7 +108,7 @@ pub(crate) fn handle_bulk_key(app: &mut LightcraftApp, ctx: &egui::Context) -> b
     if app.ui.view != crate::state::ViewMode::People || app.ui.dialog.is_some() || ctx.text_edit_focused() {
         return false;
     }
-    let Some(name) = app.ui.person_page.clone() else { return false };
+    let Some(name) = app.ui.people.person_page.clone() else { return false };
     if !ctx.input(|i| i.modifiers == egui::Modifiers::NONE && i.key_pressed(egui::Key::A)) {
         return false;
     }
@@ -121,20 +121,20 @@ pub(crate) fn handle_bulk_key(app: &mut LightcraftApp, ctx: &egui::Context) -> b
     let target = page
         .more
         .iter()
-        .filter(|f| !app.ui.dismissed_faces.contains(&(f.photo, f.index)))
+        .filter(|f| !app.ui.people.dismissed_faces.contains(&(f.photo, f.index)))
         .find(|f| {
             let widget = format!("more-face:{}:{}", f.photo, f.index);
             app.widgets.iter().any(|(id, rect)| id == &widget && pointer.is_some_and(|p| rect.contains(p)))
         })
         .or_else(|| {
-            page.more.iter().filter(|f| !app.ui.dismissed_faces.contains(&(f.photo, f.index))).find(|f| {
+            page.more.iter().filter(|f| !app.ui.people.dismissed_faces.contains(&(f.photo, f.index))).find(|f| {
                 ctx.memory(|m| {
                     m.has_focus(egui::Id::new(("more-face", f.photo, f.index))) || m.has_focus(egui::Id::new(("more-face-above", f.photo, f.index)))
                 })
             })
         });
     let Some(target) = target else { return false };
-    let more: Vec<&Face> = page.more.iter().filter(|f| !app.ui.dismissed_faces.contains(&(f.photo, f.index))).collect();
+    let more: Vec<&Face> = page.more.iter().filter(|f| !app.ui.people.dismissed_faces.contains(&(f.photo, f.index))).collect();
     confirm_above(app, ctx, &name, &more, target.score);
     true
 }
@@ -180,7 +180,7 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui, name: &str) {
         );
         return;
     }
-    let dismissed = &app.ui.dismissed_faces;
+    let dismissed = &app.ui.people.dismissed_faces;
     let more: Vec<&Face> = page.more.iter().filter(|f| !dismissed.contains(&(f.photo, f.index))).collect();
     // what the "More" section says when it has no faces to show
     let recognising = app.caches.faces_active || page.ready;
@@ -270,16 +270,16 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui, name: &str) {
                 let _ = app.run("library.select", json!({"ids": [f.photo], "active": f.photo}));
                 let _ = app.run("view.detail", json!({}));
                 // Escape comes back to this page; the People button to everyone, with this person next to its title
-                app.ui.person_from = Some((Some(shown_name.clone()), f.photo));
-                app.ui.last_person = Some(shown_name.clone());
-                app.ui.person_page = None;
+                app.ui.people.person_from = Some((Some(shown_name.clone()), f.photo));
+                app.ui.people.last_person = Some(shown_name.clone());
+                app.ui.people.person_page = None;
             }
             Hit::Confirm => {
                 let _ = app.run("faces.setName", json!({"id": f.photo, "index": f.index, "name": shown_name}));
             }
             Hit::ConfirmAbove => confirm_above(app, ui.ctx(), &shown_name, &more, f.score),
             Hit::Dismiss => {
-                app.ui.dismissed_faces.insert((f.photo, f.index));
+                app.ui.people.dismissed_faces.insert((f.photo, f.index));
             }
             Hit::Nothing => {}
         }

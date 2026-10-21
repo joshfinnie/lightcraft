@@ -18,8 +18,8 @@ fn text_shapes(shape: &egui::Shape, out: &mut Vec<egui::epaint::TextShape>) {
 fn panel(width: f32, scale: f32, locale: Locale, describe: bool) -> (Vec<egui::epaint::TextShape>, Vec<(String, Rect)>) {
     let mut app = LightcraftApp::new(lightcraft_engine::Session::with_demo(), Services::default());
     app.run("mask.add", json!({"kind": "subject", "name": LONG_NAME})).unwrap();
-    app.ui.describe = describe.then(|| ("new".into(), LONG_NAME.repeat(4)));
-    app.ui.detail_due = Some((100.0, 1));
+    app.ui.mask_edit.describe = describe.then(|| ("new".into(), LONG_NAME.repeat(4)));
+    app.ui.mask_edit.detail_due = Some((100.0, 1));
     let photo = app.session.active().unwrap();
     let ctx = egui::Context::default();
     crate::i18n::set_language(locale);
@@ -42,7 +42,7 @@ fn panel(width: f32, scale: f32, locale: Locale, describe: bool) -> (Vec<egui::e
         widgets = crate::widgets::take_registry(&ctx);
     }
     if describe {
-        assert_eq!(app.ui.describe.as_ref().unwrap().1, LONG_NAME.repeat(4), "layout must not shorten the actual prompt");
+        assert_eq!(app.ui.mask_edit.describe.as_ref().unwrap().1, LONG_NAME.repeat(4), "layout must not shorten the actual prompt");
     }
     crate::i18n::set_language(Locale::En);
     (texts, widgets)

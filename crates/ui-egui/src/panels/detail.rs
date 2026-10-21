@@ -793,23 +793,23 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
     }
     if app.ui.face_boxes {
         // a name box left open on another photo is dropped
-        if app.ui.name_edit.as_ref().is_some_and(|e| e.photo != id.0) {
-            app.ui.name_edit = None;
+        if app.ui.people.name_edit.as_ref().is_some_and(|e| e.photo != id.0) {
+            app.ui.people.name_edit = None;
         }
         let hints = super::faces::hints_for(app, id.0);
-        let people = if app.ui.name_edit.is_some() { app.caches.person_names(&app.session.catalog) } else { Default::default() };
+        let people = if app.ui.people.name_edit.is_some() { app.caches.person_names(&app.session.catalog) } else { Default::default() };
         // while the name box is open and recognition is not set up, the box offers the next step
-        let setup = if app.ui.name_edit.is_some() { super::faces::setup(app, ui.ctx()) } else { super::faces::Setup::Running };
-        match region_overlay(ui, &p, &map, &photo, d.orientation, hints.as_deref(), &people, &mut app.ui.name_edit, setup) {
+        let setup = if app.ui.people.name_edit.is_some() { super::faces::setup(app, ui.ctx()) } else { super::faces::Setup::Running };
+        match region_overlay(ui, &p, &map, &photo, d.orientation, hints.as_deref(), &people, &mut app.ui.people.name_edit, setup) {
             Some(RegionEdit::SetUp) => {
-                app.ui.name_edit = None;
+                app.ui.people.name_edit = None;
                 super::faces::take_step(app, ui.ctx(), setup);
             }
             Some(RegionEdit::Remove(index)) => {
                 let _ = app.run("photo.removeRegion", json!({"id": id.0, "index": index}));
             }
             Some(RegionEdit::Name(index, name)) => {
-                app.ui.name_edit = None;
+                app.ui.people.name_edit = None;
                 let _ = app.run("faces.setName", json!({"id": id.0, "index": index, "name": name}));
             }
             Some(RegionEdit::Resize(index, r)) => {
@@ -822,7 +822,7 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
         draw_focus_point(&p.with_clip_rect(img_rect.intersect(canvas)), img_rect, &photo, "canvas:focusPoint");
     }
     // a fine grid while a transform (geometry) slider is dragged, to judge verticals
-    if app.ui.dragging_control.as_deref().is_some_and(|c| c.starts_with("geometry.")) {
+    if app.ui.drag.control.as_deref().is_some_and(|c| c.starts_with("geometry.")) {
         let n = 12;
         let stroke = Stroke::new(1.0, Color32::from_white_alpha(70));
         for i in 1..n {
@@ -2104,7 +2104,7 @@ fn mask_overlay(app: &mut LightcraftApp, ui: &mut egui::Ui, resp: &egui::Respons
             match app.run_typed("mask.objectPoint", json!({"x": n.x, "y": n.y, "exclude": exclude})) {
                 Ok(_) => {
                     if let Some(mid) = app.session.active_mask {
-                        app.ui.detail_due = Some((ui.input(|i| i.time) + 1.0, mid));
+                        app.ui.mask_edit.detail_due = Some((ui.input(|i| i.time) + 1.0, mid));
                     }
                 }
                 Err(e) => app.ai_error(ui.ctx(), e, Some(("object", "new"))),

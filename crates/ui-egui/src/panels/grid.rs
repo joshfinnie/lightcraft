@@ -778,7 +778,7 @@ fn cell(app: &mut LightcraftApp, ui: &mut egui::Ui, id: PhotoId, r: Rect, square
         if !app.session.selection.contains(id) {
             let _ = app.run("library.select", json!({"ids": [id.0]}));
         }
-        app.ui.dragging_photos = Some(app.session.selection.ids.iter().map(|p| p.0).collect());
+        app.ui.drag.photos = Some(app.session.selection.ids.iter().map(|p| p.0).collect());
     }
     resp.context_menu(|ui| context_menu(app, ui, id));
 }
@@ -906,10 +906,10 @@ pub fn drag_hint(ctx: &egui::Context, text: String) {
 }
 
 pub fn drag_feedback(app: &mut LightcraftApp, ctx: &egui::Context) {
-    let Some(ids) = &app.ui.dragging_photos else { return };
+    let Some(ids) = &app.ui.drag.photos else { return };
     let (released, down, pos) = ctx.input(|i| (i.pointer.any_released(), i.pointer.any_down(), i.pointer.latest_pos()));
     if released || !down {
-        app.ui.dragging_photos = None;
+        app.ui.drag.photos = None;
         return;
     }
     let Some(pos) = pos else { return };

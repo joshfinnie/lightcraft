@@ -24,7 +24,7 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
     // the title, where a dragged keyword goes back to the top level
     let (title, title_resp) = ui.allocate_exact_size(vec2(ui.available_width(), 46.0), Sense::click());
     register(ui.ctx(), "keywordList:topLevel", title);
-    let dragging = app.ui.dragging_keyword.clone();
+    let dragging = app.ui.drag.keyword.clone();
     let (pointer, released) = ui.input(|i| (i.pointer.latest_pos(), i.pointer.any_released()));
     let over_title = shown_under(ui, title, pointer);
     if dragging.is_some() && over_title {
@@ -119,11 +119,11 @@ fn shown_under(ui: &egui::Ui, rect: Rect, pointer: Option<egui::Pos2>) -> bool {
 /// the pointer, and the drag ends with the button's release wherever it is (the list may be gone
 /// by then) or with Esc.
 pub fn drag_feedback(app: &mut LightcraftApp, ctx: &egui::Context) {
-    let Some(keyword) = app.ui.dragging_keyword.clone() else { return };
+    let Some(keyword) = app.ui.drag.keyword.clone() else { return };
     let (released, down, at, esc) =
         ctx.input(|i| (i.pointer.any_released(), i.pointer.any_down(), i.pointer.latest_pos(), i.key_pressed(egui::Key::Escape)));
     if released || !down || esc {
-        app.ui.dragging_keyword = None;
+        app.ui.drag.keyword = None;
         return;
     }
     let Some(at) = at else { return };
@@ -140,7 +140,7 @@ pub fn drag_feedback(app: &mut LightcraftApp, ctx: &egui::Context) {
 /// Drop the dragged `keyword` inside `parent` (`None`: the top level). Where one of its name is
 /// already, ask before merging the two; where it is already, nothing happens.
 fn drop_keyword(app: &mut LightcraftApp, ctx: &egui::Context, keyword: &str, parent: Option<&str>) {
-    app.ui.dragging_keyword = None;
+    app.ui.drag.keyword = None;
     let cat = &app.session.catalog;
     let leaf = keyword.rsplit('|').next().unwrap_or(keyword);
     let parent = parent.map(|p| cat.keyword_path(p).unwrap_or_else(|| p.to_string()));
@@ -169,7 +169,7 @@ fn row(app: &mut LightcraftApp, ui: &mut egui::Ui, r: &Row, selection: &[PhotoId
     crate::widgets::announce(&resp, r.path.clone());
     register(ui.ctx(), format!("keywordRow:{}", r.path), rect);
     if resp.drag_started() {
-        app.ui.dragging_keyword = Some(r.path.clone());
+        app.ui.drag.keyword = Some(r.path.clone());
     }
     drop_target(app, ui, rect, &r.path);
     let picked = app.ui.keyword_list_selected.as_deref().is_some_and(|k| same(k, &r.path));
@@ -285,7 +285,7 @@ fn drop_target(app: &mut LightcraftApp, ui: &mut egui::Ui, rect: Rect, path: &st
     }
     let t = Tokens::get(ui.ctx());
     let outline = |ui: &egui::Ui| ui.painter().rect_stroke(rect.shrink2(vec2(16.0, 1.0)), 4.0, Stroke::new(1.5, t.accent), StrokeKind::Inside);
-    if let Some(k) = app.ui.dragging_keyword.clone() {
+    if let Some(k) = app.ui.drag.keyword.clone() {
         if lightcraft_catalog::keywords::is_under(path, &k) {
             return;
         }
@@ -293,7 +293,7 @@ fn drop_target(app: &mut LightcraftApp, ui: &mut egui::Ui, rect: Rect, path: &st
         if released {
             drop_keyword(app, ui.ctx(), &k, Some(path));
         }
-    } else if let Some(ids) = app.ui.dragging_photos.clone() {
+    } else if let Some(ids) = app.ui.drag.photos.clone() {
         outline(ui);
         if released {
             // only the photos that didn't have it get it
@@ -304,7 +304,7 @@ fn drop_target(app: &mut LightcraftApp, ui: &mut egui::Ui, rect: Rect, path: &st
                     .is_some_and(|p| !p.meta.keywords.iter().any(|k| same(&lightcraft_catalog::keywords::clean(k), path)))
             };
             let n = ids.iter().filter(|id| lacking(id)).count();
-            app.ui.dragging_photos = None;
+            app.ui.drag.photos = None;
             match app.run("photo.setMeta", json!({"ids": ids, "addKeywords": [path]})) {
                 Ok(_) => app.toast(
                     ui.ctx(),

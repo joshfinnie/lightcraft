@@ -620,6 +620,85 @@ pub enum KeywordChips {
     Grouped,
 }
 
+/// The People view and the faces in the loupe: the page shown, the faces picked and the names being typed.
+#[derive(Clone, Debug, Default)]
+pub struct PeopleUi {
+    /// A face's name being typed in the loupe.
+    pub name_edit: Option<NameEdit>,
+    /// The person whose page the People view shows (their faces and the faces that look like them); `None`: everyone.
+    pub person_page: Option<String>,
+    /// The person page a photo in the loupe was opened from (`None`: the People view's unnamed faces), and that photo:
+    /// Escape goes back there (not to the grid).
+    pub person_from: Option<(Option<String>, u64)>,
+    /// The last person page left: the People view offers a way back to it next to its title.
+    pub last_person: Option<String>,
+    /// "More" faces the user hid with ×, for this session: (photo, region index).
+    pub dismissed_faces: std::collections::HashSet<(u64, usize)>,
+    /// The unnamed faces selected in the People view (photo, region), the name being typed for them, the face last
+    /// clicked (Shift-click selects a range from it) and whether the name box should take the keyboard.
+    pub unnamed_selected: std::collections::HashSet<(u64, usize)>,
+    pub unnamed_name: String,
+    pub unnamed_anchor: Option<usize>,
+    pub unnamed_focus: bool,
+}
+
+/// What is being dragged: a slider, photos, a sidebar row or section, a keyword.
+#[derive(Clone, Debug, Default)]
+pub struct Drags {
+    /// The develop control whose slider is being dragged (geometry sliders show a grid).
+    pub control: Option<String>,
+    /// Photos being dragged from the grid (dropped on an album to add them).
+    pub photos: Option<Vec<u64>>,
+    /// An album or folder row being dragged in the sidebar (dropped on a folder to move it there).
+    pub album: Option<u64>,
+    /// A sidebar section being dragged by its header (dropped between sections to move it there).
+    pub section: Option<crate::sidebar::SidebarSection>,
+    /// A keyword being dragged in the Keyword List (onto another to nest it).
+    pub keyword: Option<String>,
+}
+
+/// The app's own background chores: what it last announced, rescanned and retried.
+#[derive(Clone, Debug, Default)]
+pub struct Upkeep {
+    /// The Build Previews run last announced (its identity, finished?).
+    pub preview_build_seen: Option<(usize, bool)>,
+    /// Saving the library is failing (announced with a toast; the top bar shows a warning until
+    /// a later save succeeds).
+    pub unsaved_seen: bool,
+    /// Copies opened in an external editor this session (reloaded when the window is focused
+    /// again), and whether the window had focus last frame.
+    pub external_edits: Vec<u64>,
+    pub was_focused: bool,
+    /// When the watched folder was last scanned (egui time).
+    pub auto_import_at: f64,
+    /// When the automatic XMP writes that failed were last tried again (egui time), and how many were waiting then.
+    pub sidecar_retry_at: f64,
+    pub sidecars_waiting: usize,
+    /// The cards and cameras already seen (volume roots) while Settings → Import → "Show the
+    /// import review when a camera or card is connected" is on; `None` = not looked yet.
+    pub known_cards: Option<Vec<String>>,
+    /// The library (its `Session::library_generation`) whose preview-only raws were rechecked
+    /// (`crate::recheck`).
+    pub rechecked_library: Option<u64>,
+}
+
+/// Masks being renamed or described, and the AI mask work started from the panel.
+#[derive(Clone, Debug, Default)]
+pub struct MaskEdit {
+    /// A mask being renamed in the Masks list: its id and the edited name.
+    pub renaming_mask: Option<(u32, String)>,
+    /// The Describe field (AI mask from a text prompt) while open: how the selection combines
+    /// (`new` mask, or `add`/`subtract`/`intersect` on the selected one) and the text typed.
+    pub describe: Option<(String, String)>,
+    /// A SAM 3 download was started from the app (to report its end once).
+    pub sam_downloading: bool,
+    /// When to start the zoomed-in detail pass of an AI mask (app time) and which mask: set by
+    /// each click or description, so the pass runs once the clicking stops.
+    pub detail_due: Option<(f64, u32)>,
+    /// A mask component being renamed inline: (mask id, component index, name).
+    pub renaming_component: Option<(u32, usize, String)>,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct UiState {
@@ -632,13 +711,9 @@ pub struct UiState {
     pub docking: Option<crate::docking::Workspace>,
     #[serde(default = "crate::i18n::default_language")]
     pub language: crate::i18n::Locale,
-    /// The Build Previews run last announced (its identity, finished?).
+    /// The app's own background chores: what it last announced, rescanned and retried.
     #[serde(skip)]
-    pub preview_build_seen: Option<(usize, bool)>,
-    /// Saving the library is failing (announced with a toast; the top bar shows a warning until
-    /// a later save succeeds).
-    #[serde(skip)]
-    pub unsaved_seen: bool,
+    pub upkeep: Upkeep,
     pub view: ViewMode,
     pub left_panel: bool,
     pub right: RightPanel,
@@ -715,93 +790,30 @@ pub struct UiState {
     /// so they stay folded ([`UiState::sanitized`] moves them over), never written.
     #[serde(skip_serializing)]
     pub collapsed_sidebar: Vec<String>,
-    /// A face's name being typed in the loupe.
+    /// The People view and the faces in the loupe: the page shown, the faces picked and the names being typed.
     #[serde(skip)]
-    pub name_edit: Option<NameEdit>,
-    /// The person whose page the People view shows (their faces and the faces that look like them); `None`: everyone.
-    #[serde(skip)]
-    pub person_page: Option<String>,
-    /// The person page a photo in the loupe was opened from (`None`: the People view's unnamed faces), and that photo:
-    /// Escape goes back there (not to the grid).
-    #[serde(skip)]
-    pub person_from: Option<(Option<String>, u64)>,
-    /// The last person page left: the People view offers a way back to it next to its title.
-    #[serde(skip)]
-    pub last_person: Option<String>,
-    /// "More" faces the user hid with ×, for this session: (photo, region index).
-    #[serde(skip)]
-    pub dismissed_faces: std::collections::HashSet<(u64, usize)>,
-    /// The unnamed faces selected in the People view (photo, region), the name being typed for them, the face last
-    /// clicked (Shift-click selects a range from it) and whether the name box should take the keyboard.
-    #[serde(skip)]
-    pub unnamed_selected: std::collections::HashSet<(u64, usize)>,
-    #[serde(skip)]
-    pub unnamed_name: String,
-    #[serde(skip)]
-    pub unnamed_anchor: Option<usize>,
-    #[serde(skip)]
-    pub unnamed_focus: bool,
+    pub people: PeopleUi,
     /// Local sidebar locations hidden with “Remove from Local” (folders on disk are untouched).
     pub hidden_locations: Vec<String>,
-    /// Copies opened in an external editor this session (reloaded when the window is focused
-    /// again), and whether the window had focus last frame.
+    /// What is being dragged: a slider, photos, a sidebar row or section, a keyword.
     #[serde(skip)]
-    pub external_edits: Vec<u64>,
-    #[serde(skip)]
-    pub was_focused: bool,
-    /// When the watched folder was last scanned (egui time).
-    #[serde(skip)]
-    pub auto_import_at: f64,
-    /// When the automatic XMP writes that failed were last tried again (egui time), and how many were waiting then.
-    #[serde(skip)]
-    pub sidecar_retry_at: f64,
-    #[serde(skip)]
-    pub sidecars_waiting: usize,
-    /// The cards and cameras already seen (volume roots) while Settings → Import → "Show the
-    /// import review when a camera or card is connected" is on; `None` = not looked yet.
-    #[serde(skip)]
-    pub known_cards: Option<Vec<String>>,
-    /// The develop control whose slider is being dragged (geometry sliders show a grid).
-    #[serde(skip)]
-    pub dragging_control: Option<String>,
+    pub drag: Drags,
     pub search: String,
     /// Focus the search field on the next frame (Edit → Find…).
     #[serde(skip)]
     pub focus_search: bool,
-    /// A mask being renamed in the Masks list: its id and the edited name.
+    /// Masks being renamed or described, and the AI mask work started from the panel.
     #[serde(skip)]
-    pub renaming_mask: Option<(u32, String)>,
-    /// The Describe field (AI mask from a text prompt) while open: how the selection combines
-    /// (`new` mask, or `add`/`subtract`/`intersect` on the selected one) and the text typed.
-    #[serde(skip)]
-    pub describe: Option<(String, String)>,
-    /// A SAM 3 download was started from the app (to report its end once).
-    #[serde(skip)]
-    pub sam_downloading: bool,
-    /// When to start the zoomed-in detail pass of an AI mask (app time) and which mask: set by
-    /// each click or description, so the pass runs once the clicking stops.
-    #[serde(skip)]
-    pub detail_due: Option<(f64, u32)>,
-    /// A mask component being renamed inline: (mask id, component index, name).
-    pub renaming_component: Option<(u32, usize, String)>,
+    pub mask_edit: MaskEdit,
     /// Close the window on the next frame (File → Quit).
     #[serde(skip)]
     pub quit: bool,
-    /// Photos being dragged from the grid (dropped on an album to add them).
-    #[serde(skip)]
-    pub dragging_photos: Option<Vec<u64>>,
     /// An album just made: the Albums tree opens the folders down to it, once.
     #[serde(skip)]
     pub reveal_album: Option<u64>,
     /// A keyword just made from the sidebar: Keywords opens down to it, once.
     #[serde(skip)]
     pub reveal_keyword: Option<String>,
-    /// An album or folder row being dragged in the sidebar (dropped on a folder to move it there).
-    #[serde(skip)]
-    pub dragging_album: Option<u64>,
-    /// A sidebar section being dragged by its header (dropped between sections to move it there).
-    #[serde(skip)]
-    pub dragging_section: Option<crate::sidebar::SidebarSection>,
     /// Selected curve channel in the Curve flyout.
     pub curve_channel: String,
     /// Selected mixer mode: "hue" | "saturation" | "luminance" | "all".
@@ -874,9 +886,6 @@ pub struct UiState {
     /// The keyword picked in the Keyword List (− deletes it, Edit edits it).
     #[serde(skip)]
     pub keyword_list_selected: Option<String>,
-    /// A keyword being dragged in the Keyword List (onto another to nest it).
-    #[serde(skip)]
-    pub dragging_keyword: Option<String>,
     /// A running slideshow (full screen; see [`crate::panels::slideshow`]).
     #[serde(skip)]
     pub slideshow: Option<Box<crate::panels::slideshow::Run>>,
@@ -910,10 +919,6 @@ pub struct UiState {
     #[cfg(test)]
     #[serde(skip)]
     pub find_missing_test_delay: Option<std::time::Duration>,
-    /// The library (its `Session::library_generation`) whose preview-only raws were rechecked
-    /// (`crate::recheck`).
-    #[serde(skip)]
-    pub rechecked_library: Option<u64>,
     #[serde(skip)]
     pub status: String,
     #[serde(skip)]
@@ -1266,8 +1271,7 @@ impl Default for UiState {
             window: None,
             docking: None,
             language: crate::i18n::default_language(),
-            preview_build_seen: None,
-            unsaved_seen: false,
+            upkeep: Default::default(),
             luminance_map_restore: None,
             view: ViewMode::Detail,
             left_panel: false,
@@ -1309,36 +1313,15 @@ impl Default for UiState {
             face_boxes: true,
             sidebar: Default::default(),
             collapsed_sidebar: Vec::new(),
-            name_edit: None,
-            person_page: None,
-            person_from: None,
-            last_person: None,
-            dismissed_faces: Default::default(),
-            unnamed_selected: Default::default(),
-            unnamed_name: String::new(),
-            unnamed_anchor: None,
-            unnamed_focus: false,
+            people: Default::default(),
             hidden_locations: Vec::new(),
-            dragging_control: None,
-            external_edits: Vec::new(),
-            was_focused: true,
-            auto_import_at: 0.0,
-            sidecar_retry_at: 0.0,
-            sidecars_waiting: 0,
-            known_cards: None,
+            drag: Default::default(),
             search: String::new(),
             focus_search: false,
-            renaming_mask: None,
-            describe: None,
-            detail_due: None,
-            sam_downloading: false,
-            renaming_component: None,
+            mask_edit: Default::default(),
             quit: false,
-            dragging_photos: None,
             reveal_album: None,
             reveal_keyword: None,
-            dragging_album: None,
-            dragging_section: None,
             curve_channel: "parametric".into(),
             mixer_mode: "hue".into(),
             grading_mode: "3way".into(),
@@ -1371,7 +1354,6 @@ impl Default for UiState {
             folded_sections: Vec::new(),
             keyword_list_open: Vec::new(),
             keyword_list_selected: None,
-            dragging_keyword: None,
             info_overlay: InfoOverlay::Off,
             layout_image: LayoutImage::default(),
             navigator: true,
@@ -1387,7 +1369,6 @@ impl Default for UiState {
             last_find_missing_result: None,
             #[cfg(test)]
             find_missing_test_delay: None,
-            rechecked_library: None,
             status: String::new(),
             dialog: None,
             print: Default::default(),

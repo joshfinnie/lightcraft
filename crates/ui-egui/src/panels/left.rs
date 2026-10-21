@@ -330,24 +330,24 @@ pub(crate) fn section_drop_before(placed: &[PlacedSection], y: f32) -> Option<Si
 /// While a section is dragged by its header: a line shows where it would go, releasing over the
 /// sidebar moves it there (`view.sidebarMoveSection`), releasing elsewhere or Esc leaves it.
 fn section_drag(app: &mut LightcraftApp, ui: &mut egui::Ui, placed: &[PlacedSection]) {
-    let Some(dragged) = app.ui.dragging_section else { return };
+    let Some(dragged) = app.ui.drag.section else { return };
     let (released, pos, esc) = ui.input(|i| (i.pointer.primary_released(), i.pointer.latest_pos(), i.key_pressed(egui::Key::Escape)));
     if esc {
         // the drag's Esc, not also a dialog's or a view's
         crate::widgets::take_escape(ui.ctx());
-        app.ui.dragging_section = None;
+        app.ui.drag.section = None;
         return;
     }
     let view = ui.clip_rect();
     let Some(pos) = pos.filter(|p| view.contains(*p)) else {
         if released {
-            app.ui.dragging_section = None;
+            app.ui.drag.section = None;
         }
         return;
     };
     let before = section_drop_before(placed, pos.y);
     if released {
-        app.ui.dragging_section = None;
+        app.ui.drag.section = None;
         let before = before.map_or(serde_json::Value::Null, |b| json!(b.id()));
         if let Err(e) = app.run("view.sidebarMoveSection", json!({"section": dragged.id(), "before": before})) {
             app.toast(ui.ctx(), e);
@@ -370,10 +370,10 @@ fn section_drag(app: &mut LightcraftApp, ui: &mut egui::Ui, placed: &[PlacedSect
 /// The dragged section's name follows the pointer; a drag that ended anywhere (also outside the
 /// sidebar, or with the sidebar closed) is over.
 pub fn section_drag_feedback(app: &mut LightcraftApp, ctx: &egui::Context) {
-    let Some(section) = app.ui.dragging_section else { return };
+    let Some(section) = app.ui.drag.section else { return };
     let (down, pos) = ctx.input(|i| (i.pointer.primary_down(), i.pointer.latest_pos()));
     if !down || !app.ui.left_panel {
-        app.ui.dragging_section = None;
+        app.ui.drag.section = None;
         return;
     }
     let Some(pos) = pos else { return };
@@ -411,14 +411,14 @@ fn section_header(app: &mut LightcraftApp, ui: &mut egui::Ui, section: SidebarSe
     if resp.drag_started_by(egui::PointerButton::Primary) && !on_button {
         // picked up by the pinned header, the drag starts inside the top edge (see `drag_auto_scroll`)
         ui.data_mut(|d| d.insert_temp(egui::Id::new("left-section-drag-from-pinned"), pinned));
-        app.ui.dragging_section = Some(section);
+        app.ui.drag.section = Some(section);
     }
     resp.context_menu(|ui| sections_menu(app, ui, Some(section)));
     let open = !app.ui.sidebar.is_collapsed(section);
     resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::CollapsingHeader, true, open, title));
     // what is visible of the header: its bar and count end at the panel's edge, like a row's
     let edge = r.right().min(visible_right(ui));
-    let hovered = resp.hovered() && app.ui.dragging_section.is_none();
+    let hovered = resp.hovered() && app.ui.drag.section.is_none();
     if hovered {
         let bar = Rect::from_min_max(r.min + vec2(8.0, 2.0), pos2((edge - 8.0).max(r.left() + 8.0), r.bottom() - 2.0));
         ui.painter().rect_filled(bar, 4.0, t.hover.gamma_multiply(0.6));
@@ -430,7 +430,7 @@ fn section_header(app: &mut LightcraftApp, ui: &mut egui::Ui, section: SidebarSe
     ui.painter().text(pos2(r.left() + 18.0, r.center().y), Align2::LEFT_CENTER, title, t.semibold(13.5), t.text_label);
     let button = header_button(section);
     // (an album being dragged puts "Top Level" in the Albums header)
-    let room = !(section == SidebarSection::Albums && app.ui.dragging_album.is_some());
+    let room = !(section == SidebarSection::Albums && app.ui.drag.album.is_some());
     if !open && rows > 0 && app.ui.show_counts && room {
         // folded: how much is in there (left of the header's own button)
         let right = edge - 18.0 - if button.is_some() { HEADER_BUTTON + 4.0 } else { 0.0 };
@@ -1168,7 +1168,7 @@ fn albums_tree(app: &mut LightcraftApp, ui: &mut egui::Ui, all: &AlbumKids, pare
             // a folder is no source, so its row folds it too; the triangle is the same click, aimed
             let has_children = all.get(&Some(a.id)).is_some_and(|v| !v.is_empty());
             if resp.drag_started() {
-                app.ui.dragging_album = Some(a.id.0);
+                app.ui.drag.album = Some(a.id.0);
             }
             if album_drag_over(app, ui, &resp, a, has_children.then_some(&mut open), indent) {
                 set_tree_open(ui, open_id, true);
@@ -1208,7 +1208,7 @@ fn albums_tree(app: &mut LightcraftApp, ui: &mut egui::Ui, all: &AlbumKids, pare
                 crate::widgets::register(ui.ctx(), format!("albumProblem:{}", a.id.0), resp.rect);
             }
             if resp.drag_started() {
-                app.ui.dragging_album = Some(a.id.0);
+                app.ui.drag.album = Some(a.id.0);
             }
             album_drag_over(app, ui, &resp, a, None, indent);
             if !a.is_smart() {
@@ -1274,7 +1274,7 @@ pub fn auto_scroll_speed(y: f32, top: f32, bottom: f32) -> f32 {
 /// pointer is near its top or bottom edge, so rows beyond the visible part can be reached. Call
 /// inside the scroll area.
 fn drag_auto_scroll(app: &LightcraftApp, ui: &egui::Ui) {
-    if app.ui.dragging_album.is_none() && app.ui.dragging_photos.is_none() && app.ui.dragging_section.is_none() {
+    if app.ui.drag.album.is_none() && app.ui.drag.photos.is_none() && app.ui.drag.section.is_none() {
         return;
     }
     let view = ui.clip_rect();
@@ -1282,7 +1282,7 @@ fn drag_auto_scroll(app: &LightcraftApp, ui: &egui::Ui) {
     // a section picked up by its pinned header starts inside the top edge: it scrolls once it has
     // left the header. Any other drag scrolls there as at any edge, to reach what is above
     let from_pinned = egui::Id::new("left-section-drag-from-pinned");
-    if app.ui.dragging_section.is_some() && ui.data(|d| d.get_temp::<bool>(from_pinned)) == Some(true) {
+    if app.ui.drag.section.is_some() && ui.data(|d| d.get_temp::<bool>(from_pinned)) == Some(true) {
         if pointer_on_pinned_header(ui) {
             return;
         }
@@ -1322,7 +1322,7 @@ fn finish_drop(app: &mut LightcraftApp, ui: &egui::Ui, dragged: AlbumId, result:
         }
         Err(e) => app.toast(ui.ctx(), e),
     }
-    app.ui.dragging_album = None;
+    app.ui.drag.album = None;
 }
 
 /// Forgets how long the pointer rested on each folder (a new drag starts counting again).
@@ -1399,7 +1399,7 @@ fn album_drop_at(app: &LightcraftApp, dragged: AlbumId, target: &Album, frac: f3
 /// it; returns whether it did.
 fn album_drag_over(app: &mut LightcraftApp, ui: &mut egui::Ui, resp: &egui::Response, row: &Album, open: Option<&mut bool>, indent: f32) -> bool {
     let hover_id = egui::Id::new(("album-hover", row.id.0));
-    let Some(dragged) = app.ui.dragging_album.map(AlbumId) else { return false };
+    let Some(dragged) = app.ui.drag.album.map(AlbumId) else { return false };
     let pos = ui.input(|i| i.pointer.latest_pos()).filter(|_| pointer_over_row(ui, resp.rect));
     let Some(pos) = pos else {
         if ui.data(|d| d.get_temp::<f64>(hover_id)).is_some() {
@@ -1456,7 +1456,7 @@ fn album_drag_over(app: &mut LightcraftApp, ui: &mut egui::Ui, resp: &egui::Resp
 /// level (outlined, with a hint). The header stays in view however long the tree is, and nothing
 /// moves when it appears.
 fn top_level_drop_target(app: &mut LightcraftApp, ui: &mut egui::Ui, header: Rect) {
-    let Some(dragged) = app.ui.dragging_album.map(AlbumId) else { return };
+    let Some(dragged) = app.ui.drag.album.map(AlbumId) else { return };
     if !can_drop_album(app, dragged, None) {
         return;
     }
@@ -1476,11 +1476,11 @@ fn top_level_drop_target(app: &mut LightcraftApp, ui: &mut egui::Ui, header: Rec
 /// While an album is dragged in the sidebar: its name at the pointer; the drag ends when the
 /// button is up (the drop targets act on the release frame, before this runs).
 pub fn album_drag_feedback(app: &mut LightcraftApp, ctx: &egui::Context) {
-    let Some(id) = app.ui.dragging_album else { return };
+    let Some(id) = app.ui.drag.album else { return };
     let (released, down, pos, esc) =
         ctx.input(|i| (i.pointer.primary_released(), i.pointer.primary_down(), i.pointer.latest_pos(), i.key_pressed(egui::Key::Escape)));
     if released || !down || esc {
-        app.ui.dragging_album = None;
+        app.ui.drag.album = None;
         forget_hover(app, ctx);
         return;
     }
@@ -1497,7 +1497,7 @@ pub fn album_drag_feedback(app: &mut LightcraftApp, ctx: &egui::Context) {
 /// An album row while photos are dragged from the grid: highlighted under the pointer; a
 /// release there adds them.
 fn drop_target(app: &mut LightcraftApp, ui: &mut egui::Ui, resp: &egui::Response, a: &Album) {
-    let Some(ids) = app.ui.dragging_photos.clone() else { return };
+    let Some(ids) = app.ui.drag.photos.clone() else { return };
     // only where the row can be seen: not scrolled out of the sidebar or beneath the pinned header
     let over = pointer_over_row(ui, resp.rect);
     if !over {
@@ -1511,7 +1511,7 @@ fn drop_target(app: &mut LightcraftApp, ui: &mut egui::Ui, resp: &egui::Response
         ui.ctx().set_cursor_icon(egui::CursorIcon::NotAllowed);
         if released {
             app.toast(ui.ctx(), super::grid::albums_hint());
-            app.ui.dragging_photos = None;
+            app.ui.drag.photos = None;
         }
         return;
     }
@@ -1535,7 +1535,7 @@ fn drop_target(app: &mut LightcraftApp, ui: &mut egui::Ui, resp: &egui::Response
             }
             Err(e) => app.toast(ui.ctx(), e),
         }
-        app.ui.dragging_photos = None;
+        app.ui.drag.photos = None;
     }
 }
 
@@ -1797,7 +1797,7 @@ const SPRING_OPEN_SECONDS: f64 = 0.7;
 /// it opens. Photos that can't go there leave it dark (a row covering several disks; Local photos,
 /// not in the library) and a release says why; photos already there say so.
 fn folder_drop_target(app: &mut LightcraftApp, ui: &mut egui::Ui, resp: &egui::Response, n: &FolderNode, open_id: egui::Id, open: &mut bool) {
-    let Some(ids) = app.ui.dragging_photos.clone() else { return };
+    let Some(ids) = app.ui.drag.photos.clone() else { return };
     // only where the row can be seen: not scrolled out of the sidebar or beneath the pinned header
     if !pointer_over_row(ui, resp.rect) {
         return;
@@ -1829,20 +1829,20 @@ fn folder_drop_target(app: &mut LightcraftApp, ui: &mut egui::Ui, resp: &egui::R
         ui.ctx().set_cursor_icon(egui::CursorIcon::NotAllowed);
         if released {
             app.toast(ui.ctx(), why);
-            app.ui.dragging_photos = None;
+            app.ui.drag.photos = None;
         }
         return;
     }
     if all_here {
         if released {
-            app.ui.dragging_photos = None;
+            app.ui.drag.photos = None;
         }
         return;
     }
     let t = Tokens::get(ui.ctx());
     ui.painter().rect_stroke(resp.rect.shrink2(vec2(8.0, 1.0)), 4.0, egui::Stroke::new(1.5, t.accent), egui::StrokeKind::Inside);
     if released {
-        app.ui.dragging_photos = None;
+        app.ui.drag.photos = None;
         // a drop moves files on disk: asked first (as Lightroom Classic does), unless the person
         // said not to; the menu's Move Selected Photos Here is asked for by name and goes at once
         if app.ui.settings.ask_before_move {

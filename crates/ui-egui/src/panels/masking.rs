@@ -162,7 +162,7 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui, id: PhotoId) {
             Some("Analyzing the photo for AI masks…")
         } else if seg.busy() {
             Some("Selecting…")
-        } else if seg.detail_busy() || app.ui.detail_due.is_some() {
+        } else if seg.detail_busy() || app.ui.mask_edit.detail_due.is_some() {
             Some("Refining the mask's detail…")
         } else {
             None
@@ -216,7 +216,7 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui, id: PhotoId) {
         let count = d.masks.len();
         for (index, m) in d.masks.iter().enumerate() {
             let sel = app.session.active_mask == Some(m.id);
-            if let Some((rid, name)) = app.ui.renaming_mask.as_mut().filter(|(rid, _)| *rid == m.id) {
+            if let Some((rid, name)) = app.ui.mask_edit.renaming_mask.as_mut().filter(|(rid, _)| *rid == m.id) {
                 // inline rename: Enter (or leaving the field) commits, Escape cancels
                 let rid = *rid;
                 let r = ui.add(egui::TextEdit::singleline(name).desired_width(ui.available_width()).id_salt(("maskRename", rid)));
@@ -225,10 +225,10 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui, id: PhotoId) {
                     r.request_focus();
                 }
                 if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
-                    app.ui.renaming_mask = None;
+                    app.ui.mask_edit.renaming_mask = None;
                 } else if r.lost_focus() {
                     let name = name.trim().to_string();
-                    app.ui.renaming_mask = None;
+                    app.ui.mask_edit.renaming_mask = None;
                     if !name.is_empty() && name != m.name {
                         let _ = app.run("mask.rename", json!({"id": rid, "name": name}));
                     }
@@ -280,7 +280,7 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui, id: PhotoId) {
                 let _ = app.run("mask.select", json!({"id": m.id}));
             }
             if resp.double_clicked() {
-                app.ui.renaming_mask = Some((m.id, m.name.clone()));
+                app.ui.mask_edit.renaming_mask = Some((m.id, m.name.clone()));
             }
             resp.context_menu(|ui| mask_menu(app, ui, m.id, &m.name, m.visible, index, count));
             if sel {
@@ -319,7 +319,7 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui, id: PhotoId) {
                     lightcraft_develop::MaskOp::Subtract => "− ",
                     lightcraft_develop::MaskOp::Intersect => "∩ ",
                 };
-                if let Some((_, _, name)) = app.ui.renaming_component.as_mut().filter(|(mid, k, _)| *mid == m.id && *k == i) {
+                if let Some((_, _, name)) = app.ui.mask_edit.renaming_component.as_mut().filter(|(mid, k, _)| *mid == m.id && *k == i) {
                     // inline rename: Enter (or leaving the field) commits, Escape cancels
                     let r = ui.add(egui::TextEdit::singleline(name).desired_width(ui.available_width() - 30.0).id_salt(("compRename", m.id, i)));
                     register(ui.ctx(), format!("componentRename:{i}"), r.rect);
@@ -327,10 +327,10 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui, id: PhotoId) {
                         r.request_focus();
                     }
                     if ui.input(|inp| inp.key_pressed(egui::Key::Escape)) {
-                        app.ui.renaming_component = None;
+                        app.ui.mask_edit.renaming_component = None;
                     } else if r.lost_focus() {
                         let name = name.trim().to_string();
-                        app.ui.renaming_component = None;
+                        app.ui.mask_edit.renaming_component = None;
                         if Some(&name) != c.name.as_ref() {
                             let _ = app.run("mask.component", json!({"id": m.id, "component": i, "action": "rename", "name": name}));
                         }
@@ -347,7 +347,7 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui, id: PhotoId) {
                 let resp = resp.inner;
                 register(ui.ctx(), format!("component:{i}"), resp.rect);
                 if resp.double_clicked() {
-                    app.ui.renaming_component = Some((m.id, i, label.clone()));
+                    app.ui.mask_edit.renaming_component = Some((m.id, i, label.clone()));
                 }
                 resp.context_menu(|ui| component_row_menu(app, ui, m.id, i, &label, m.components.len()));
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -439,7 +439,7 @@ fn mask_menu(app: &mut LightcraftApp, ui: &mut egui::Ui, id: u32, name: &str, vi
     run(ui, "Move Down", index + 1 < count, "mask.move", json!({"id": id, "delta": 1}));
     ui.separator();
     if ui.button(crate::i18n::tr("Rename…")).clicked() {
-        app.ui.renaming_mask = Some((id, name.to_string()));
+        app.ui.mask_edit.renaming_mask = Some((id, name.to_string()));
         ui.close();
     }
     if ui.button(crate::i18n::tr("Delete Mask")).clicked() {
@@ -687,7 +687,7 @@ fn component_row_menu(app: &mut LightcraftApp, ui: &mut egui::Ui, mask: u32, k: 
     crate::widgets::menu_button(ui, crate::i18n::tr("Subtract"), |ui| component_menu(app, ui, "subtract"));
     ui.separator();
     if ui.button(crate::i18n::tr("Rename…")).clicked() {
-        app.ui.renaming_component = Some((mask, k, label.to_string()));
+        app.ui.mask_edit.renaming_component = Some((mask, k, label.to_string()));
         ui.close();
     }
     let del = if count == 1 {
@@ -746,7 +746,7 @@ pub(crate) fn begin_ai(app: &mut LightcraftApp, kind: &str, op: &str) -> Result<
             Ok(r)
         }
         _ => {
-            app.ui.describe = Some((op.to_string(), String::new()));
+            app.ui.mask_edit.describe = Some((op.to_string(), String::new()));
             Ok(serde_json::Value::Null)
         }
     }
@@ -757,12 +757,12 @@ pub(crate) fn start_describe(app: &mut LightcraftApp, op: &str) {
     if needs_model(app, "prompt", op) {
         return;
     }
-    app.ui.describe = Some((op.to_string(), String::new()));
+    app.ui.mask_edit.describe = Some((op.to_string(), String::new()));
 }
 
 /// The Describe field: type what to select ("sky", "the red car") and press Return.
 fn describe_field(app: &mut LightcraftApp, ui: &mut egui::Ui, new_mask: bool) {
-    let Some((op, mut text)) = app.ui.describe.clone() else { return };
+    let Some((op, mut text)) = app.ui.mask_edit.describe.clone() else { return };
     // a new mask's field sits under the tiles; one that combines, under the selected mask
     if (op == "new") != new_mask {
         return;
@@ -794,10 +794,10 @@ fn describe_field(app: &mut LightcraftApp, ui: &mut egui::Ui, new_mask: bool) {
         }
     });
     if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
-        app.ui.describe = None;
+        app.ui.mask_edit.describe = None;
         return;
     }
-    app.ui.describe = Some((op.clone(), text.clone()));
+    app.ui.mask_edit.describe = Some((op.clone(), text.clone()));
     if submit && !text.trim().is_empty() {
         let r = if op == "new" {
             app.run_typed("mask.add", json!({"kind": "prompt", "text": text}))
@@ -806,7 +806,7 @@ fn describe_field(app: &mut LightcraftApp, ui: &mut egui::Ui, new_mask: bool) {
         };
         match r {
             // the mask appears when the model has found it (a detail pass follows)
-            Ok(_) => app.ui.describe = None,
+            Ok(_) => app.ui.mask_edit.describe = None,
             Err(e) => app.ai_error(ui.ctx(), e, Some(("prompt", op.as_str()))),
         }
     }

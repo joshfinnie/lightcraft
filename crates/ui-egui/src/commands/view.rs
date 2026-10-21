@@ -159,10 +159,10 @@ pub(crate) fn view_face_boxes(app: &mut LightcraftApp, _: &Call, p: Show) -> Res
 
 pub(crate) fn view_people(app: &mut LightcraftApp, _: &Call, _: NoParams) -> Result<Value, String> {
     // Everyone; the page just left stays one click away (the chip next to the title)
-    if let Some(name) = app.ui.person_page.take() {
-        app.ui.last_person = Some(name);
+    if let Some(name) = app.ui.people.person_page.take() {
+        app.ui.people.last_person = Some(name);
     }
-    app.ui.person_from = None;
+    app.ui.people.person_from = None;
     app.ui.view = ViewMode::People;
     Ok(json!({"people": app.session.catalog.people().len()}))
 }
@@ -173,8 +173,8 @@ pub(crate) fn view_person(app: &mut LightcraftApp, _: &Call, p: Person) -> Resul
         return Err("view.person: missing `name`".into());
     };
     app.ui.view = ViewMode::People;
-    app.ui.person_from = None;
-    app.ui.person_page = Some(name.to_string());
+    app.ui.people.person_from = None;
+    app.ui.people.person_page = Some(name.to_string());
     Ok(json!({"person": name}))
 }
 
@@ -238,16 +238,16 @@ pub(crate) fn view_back(app: &mut LightcraftApp, _: &Call, _: NoParams) -> Resul
     } else if app.ui.right == RightPanel::Crop && app.ui.view == ViewMode::Detail {
         // Esc leaves the crop tool (the crop stays), as C does; the next Esc goes back
         panel(app, &ctx, RightPanel::Crop, "Crop, Rotate, Geometry");
-    } else if app.ui.view == ViewMode::People && app.ui.person_page.is_some() {
-        app.ui.person_page = None;
+    } else if app.ui.view == ViewMode::People && app.ui.people.person_page.is_some() {
+        app.ui.people.person_page = None;
     } else if matches!(app.ui.view, ViewMode::Compare | ViewMode::Survey) {
         app.ui.view = ViewMode::Detail;
     } else if app.ui.view == ViewMode::Detail {
         // a photo opened from a person's page (or the unnamed faces) goes back there, any other to the grid
-        match app.ui.person_from.take() {
+        match app.ui.people.person_from.take() {
             Some((name, photo)) if app.session.active().is_some_and(|a| a.0 == photo) => {
                 app.ui.view = ViewMode::People;
-                app.ui.person_page = name;
+                app.ui.people.person_page = name;
             }
             _ => app.ui.view = ViewMode::PhotoGrid,
         }

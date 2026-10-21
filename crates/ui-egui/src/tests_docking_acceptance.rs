@@ -112,12 +112,12 @@ fn floating_panel_blocks_photo_album_drop_then_uncovered_target_adds_exact_selec
     let ids: Vec<_> = h.app.session.visible_cloned().iter().take(2).map(|id| id.0).collect();
     dock(&mut h, json!({"operation":"float","panel":"tools","rect":[row.left()-10.0,row.top()-30.0,330,500]}));
     let undo = h.app.session.history.undo.len();
-    h.app.ui.dragging_photos = Some(ids.clone());
+    h.app.ui.drag.photos = Some(ids.clone());
     release(&mut h, row.center());
     assert!(h.app.session.catalog.album(lightcraft_catalog::AlbumId(album)).unwrap().photos.is_empty());
     assert_eq!(h.app.session.history.undo.len(), undo);
     dock(&mut h, json!({"operation":"moveFloating","panel":"tools","rect":[800,100,330,500]}));
-    h.app.ui.dragging_photos = Some(ids.clone());
+    h.app.ui.drag.photos = Some(ids.clone());
     release(&mut h, row.center());
     assert_eq!(
         h.app.session.catalog.album(lightcraft_catalog::AlbumId(album)).unwrap().photos,
@@ -203,14 +203,14 @@ fn floating_presets_block_keyword_photo_drop_then_uncovered_target_changes_exact
     dock(&mut h, json!({"operation":"float","panel":"presets","rect":[row.left()-10.0,row.top()-30.0,300,500]}));
     let undo = h.app.session.history.undo.len();
     let before: Vec<_> = ids.iter().map(|id| h.app.session.catalog.photo(lightcraft_catalog::PhotoId(*id)).unwrap().meta.keywords.clone()).collect();
-    h.app.ui.dragging_photos = Some(ids.clone());
+    h.app.ui.drag.photos = Some(ids.clone());
     release(&mut h, row.center());
     for (id, expected) in ids.iter().zip(&before) {
         assert_eq!(&h.app.session.catalog.photo(lightcraft_catalog::PhotoId(*id)).unwrap().meta.keywords, expected);
     }
     assert_eq!(h.app.session.history.undo.len(), undo);
     dock(&mut h, json!({"operation":"moveFloating","panel":"presets","rect":[400,100,300,500]}));
-    h.app.ui.dragging_photos = Some(ids.clone());
+    h.app.ui.drag.photos = Some(ids.clone());
     release(&mut h, row.center());
     for (id, mut expected) in ids.iter().zip(before) {
         expected.push("A Dock Keyword".into());
@@ -232,12 +232,12 @@ fn covered_folder_rejects_album_move_and_uncovered_folder_nests_exact_album() {
     let row = rect(&h, &format!("source:folder:{folder}"));
     dock(&mut h, json!({"operation":"float","panel":"tools","rect":[row.left()-10.0,row.top()-30.0,330,500]}));
     let undo = h.app.session.history.undo.len();
-    h.app.ui.dragging_album = Some(child);
+    h.app.ui.drag.album = Some(child);
     release(&mut h, row.center());
     assert_eq!(h.app.session.catalog.album(lightcraft_catalog::AlbumId(child)).unwrap().parent, None);
     assert_eq!(h.app.session.history.undo.len(), undo);
     dock(&mut h, json!({"operation":"moveFloating","panel":"tools","rect":[800,100,330,500]}));
-    h.app.ui.dragging_album = Some(child);
+    h.app.ui.drag.album = Some(child);
     release(&mut h, row.center());
     assert_eq!(h.app.session.catalog.album(lightcraft_catalog::AlbumId(child)).unwrap().parent, Some(lightcraft_catalog::AlbumId(folder)));
     assert_eq!(h.app.session.history.undo.len(), undo + 1);
@@ -255,13 +255,13 @@ fn covered_keyword_rejects_hierarchy_move_and_uncovered_target_moves_exact_keywo
     let row = rect(&h, "keywordRow:A Dock Parent");
     dock(&mut h, json!({"operation":"float","panel":"presets","rect":[row.left()-10.0,row.top()-30.0,300,500]}));
     let undo = h.app.session.history.undo.len();
-    h.app.ui.dragging_keyword = Some("B Dock Child".into());
+    h.app.ui.drag.keyword = Some("B Dock Child".into());
     release(&mut h, row.center());
     assert!(h.app.session.catalog.has_keyword("B Dock Child"));
     assert!(!h.app.session.catalog.has_keyword("A Dock Parent|B Dock Child"));
     assert_eq!(h.app.session.history.undo.len(), undo);
     dock(&mut h, json!({"operation":"moveFloating","panel":"presets","rect":[400,100,300,500]}));
-    h.app.ui.dragging_keyword = Some("B Dock Child".into());
+    h.app.ui.drag.keyword = Some("B Dock Child".into());
     release(&mut h, row.center());
     assert!(!h.app.session.catalog.has_keyword("B Dock Child"));
     assert!(h.app.session.catalog.has_keyword("A Dock Parent|B Dock Child"));

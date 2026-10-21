@@ -1063,13 +1063,13 @@ mod tests {
         let r = h.request("ui.clickWidget", json!({"id": "regionLabel:0"}), t);
         assert_eq!(r["ok"], true, "{r}");
         h.step();
-        assert!(matches!(&h.app.ui.name_edit, Some(NameEdit { index: 0, .. })), "{:?}", h.app.ui.name_edit);
+        assert!(matches!(&h.app.ui.people.name_edit, Some(NameEdit { index: 0, .. })), "{:?}", h.app.ui.people.name_edit);
         // Escape closes it without naming anything
         let r = h.request("ui.key", json!({"key": "escape"}), t);
         assert_eq!(r["ok"], true, "{r}");
         h.step();
         h.step();
-        assert!(h.app.ui.name_edit.is_none(), "{:?}", h.app.ui.name_edit);
+        assert!(h.app.ui.people.name_edit.is_none(), "{:?}", h.app.ui.people.name_edit);
         assert_eq!(h.app.session.catalog.photo(id).unwrap().meta.regions[0].name, None);
         // open it again, type a name, Enter: the face is named, in one undo step
         h.request("ui.pointer", json!({"events": [{"kind": "move", "x": 0.42, "y": 0.4}]}), t);
@@ -1086,7 +1086,7 @@ mod tests {
         h.step();
         assert_eq!(h.app.session.catalog.photo(id).unwrap().meta.regions[0].name.as_deref(), Some("Ann"));
         assert_eq!(h.app.session.history.undo.len(), undo + 1);
-        assert!(h.app.ui.name_edit.is_none());
+        assert!(h.app.ui.people.name_edit.is_none());
     }
 
     /// Adding a face model: the dialog shows the file's terms, the model is installed only once they are
@@ -1271,12 +1271,12 @@ mod tests {
         h.request("ui.clickWidget", json!({"id": "regionLabel:0"}), t);
         h.step();
         h.step();
-        assert!(h.app.ui.name_edit.is_some() && offers(&mut h), "the name box offers the setup");
+        assert!(h.app.ui.people.name_edit.is_some() && offers(&mut h), "the name box offers the setup");
         let r = h.request("ui.clickWidget", json!({"id": "faces:setup"}), t);
         assert_eq!(r["ok"], true, "{r}");
         h.step();
         h.step();
-        assert!(h.app.ui.name_edit.is_none());
+        assert!(h.app.ui.people.name_edit.is_none());
         assert_eq!(h.app.ui.dialog, Some(Dialog::Settings { tab: "faces".into() }));
         h.app.ui.dialog = None;
 
@@ -1334,13 +1334,13 @@ mod tests {
             h.step();
         };
         open_people(&mut h);
-        assert_eq!((h.app.ui.view, h.app.ui.person_page.clone()), (ViewMode::People, None));
+        assert_eq!((h.app.ui.view, h.app.ui.people.person_page.clone()), (ViewMode::People, None));
         // the card opens the page: a face tile for each of the three faces, not a tile per photo
         let r = h.request("ui.clickWidget", json!({"id": "person:Jane Doe"}), t);
         assert_eq!(r["ok"], true, "{r}");
         h.step();
         h.step();
-        assert_eq!((h.app.ui.view, h.app.ui.person_page.as_deref()), (ViewMode::People, Some("Jane Doe")));
+        assert_eq!((h.app.ui.view, h.app.ui.people.person_page.as_deref()), (ViewMode::People, Some("Jane Doe")));
         let widgets = h.request("ui.widgets", json!({}), t).to_string();
         for (id, index) in [(ids[0], 0), (ids[0], 1), (ids[1], 0)] {
             assert!(widgets.contains(&format!("\"person-face:{}:{index}\"", id.0)), "a tile for each face: {widgets}");
@@ -1354,20 +1354,20 @@ mod tests {
         // Escape from that photo goes back to the page, not to the grid
         h.request("ui.key", json!({"key": "escape"}), t);
         h.step();
-        assert_eq!((h.app.ui.view, h.app.ui.person_page.as_deref()), (ViewMode::People, Some("Jane Doe")));
+        assert_eq!((h.app.ui.view, h.app.ui.people.person_page.as_deref()), (ViewMode::People, Some("Jane Doe")));
         // the People button from a photo shows everyone, with the person last left one click away next to the title
         h.request("ui.clickWidget", json!({"id": format!("person-face:{}:0", ids[1].0)}), t);
         h.step();
         h.step();
         assert_eq!(h.app.ui.view, ViewMode::Detail);
         open_people(&mut h);
-        assert_eq!((h.app.ui.view, h.app.ui.person_page.clone()), (ViewMode::People, None));
+        assert_eq!((h.app.ui.view, h.app.ui.people.person_page.clone()), (ViewMode::People, None));
         h.step();
         let r = h.request("ui.clickWidget", json!({"id": "people:last"}), t);
         assert_eq!(r["ok"], true, "{r}");
         h.step();
         h.step();
-        assert_eq!((h.app.ui.view, h.app.ui.person_page.as_deref()), (ViewMode::People, Some("Jane Doe")));
+        assert_eq!((h.app.ui.view, h.app.ui.people.person_page.as_deref()), (ViewMode::People, Some("Jane Doe")));
         // a photo reached any other way goes back to the grid on Escape
         h.request("engine.execute", json!({"command": "view.detail"}), t);
         h.request("ui.key", json!({"key": "escape"}), t);
@@ -1379,14 +1379,14 @@ mod tests {
         assert_eq!(r["ok"], true, "{r}");
         h.step();
         h.step();
-        assert_eq!(h.app.ui.person_page, None);
+        assert_eq!(h.app.ui.people.person_page, None);
         h.request("engine.execute", json!({"command": "view.person", "params": {"name": "Jane Doe"}}), t);
         h.request("ui.key", json!({"key": "escape"}), t);
         h.step();
-        assert_eq!((h.app.ui.view, h.app.ui.person_page.clone()), (ViewMode::People, None), "Escape goes back to everyone");
+        assert_eq!((h.app.ui.view, h.app.ui.people.person_page.clone()), (ViewMode::People, None), "Escape goes back to everyone");
         h.request("engine.execute", json!({"command": "view.person", "params": {"name": "John Roe"}}), t);
         open_people(&mut h);
-        assert_eq!(h.app.ui.person_page, None, "the People button shows everyone");
+        assert_eq!(h.app.ui.people.person_page, None, "the People button shows everyone");
         // a missing or empty name is refused
         assert_eq!(h.request("engine.execute", json!({"command": "view.person", "params": {}}), t)["ok"], false);
         assert_eq!(h.request("engine.execute", json!({"command": "view.person", "params": {"name": "  "}}), t)["ok"], false);
@@ -1431,7 +1431,7 @@ mod tests {
                 Some(("Jane Doe".into(), h.app.session.catalog.revision, h.app.caches.faces_indexed, 0.0, Arc::new(page.clone())));
             h.step();
         };
-        h.app.ui.dismissed_faces.insert((ids[4].0, 0));
+        h.app.ui.people.dismissed_faces.insert((ids[4].0, 0));
         set_page(&mut h);
         let bulk_id = format!("more-face-above:{}:0", ids[2].0);
         assert!(h.request("ui.widgets", json!({"filter": "more-face-above:"}), t).to_string().contains(&bulk_id));
@@ -1550,7 +1550,7 @@ mod tests {
             h.step();
             h.step();
         }
-        assert_eq!(h.app.ui.unnamed_selected.len(), 2);
+        assert_eq!(h.app.ui.people.unnamed_selected.len(), 2);
         let bar = h.request("ui.widgets", json!({"filter": "unnamed:"}), t).to_string();
         assert!(bar.contains("unnamed:name") && bar.contains("unnamed:clear"), "{bar}");
         assert!(h.request("ui.widgets", json!({"filter": "field:unnamedName"}), t).to_string().contains("field:unnamedName"));
@@ -1565,7 +1565,7 @@ mod tests {
         assert_eq!((named(&h, ids[1], 0), named(&h, ids[2], 0)), (Some("Ann Example".to_string()), Some("Ann Example".to_string())));
         assert_eq!(named(&h, ids[1], 1), None, "a face that was not selected stays unnamed");
         assert_eq!(h.app.session.history.undo.len(), undo + 1, "one step for both");
-        assert!(h.app.ui.unnamed_selected.is_empty() && h.app.ui.unnamed_name.is_empty());
+        assert!(h.app.ui.people.unnamed_selected.is_empty() && h.app.ui.people.unnamed_name.is_empty());
         h.settle(SETTLE);
         h.step();
         assert_eq!(tiles(&mut h), 2, "the named faces left the unnamed list");
@@ -1574,10 +1574,10 @@ mod tests {
         h.request("ui.clickWidget", json!({"id": "unnamed:selectAll"}), t);
         h.step();
         h.step();
-        assert_eq!(h.app.ui.unnamed_selected.len(), 2);
+        assert_eq!(h.app.ui.people.unnamed_selected.len(), 2);
         h.request("ui.clickWidget", json!({"id": "unnamed:clear"}), t);
         h.step();
-        assert!(h.app.ui.unnamed_selected.is_empty());
+        assert!(h.app.ui.people.unnamed_selected.is_empty());
         // undo gives the two faces back
         h.request("engine.execute", json!({"command": "edit.undo"}), t);
         h.step();
@@ -1615,7 +1615,7 @@ mod tests {
         h.step();
         h.step();
         assert_eq!((h.app.ui.view, h.app.session.active()), (ViewMode::People, Some(ids[0])));
-        assert_eq!(h.app.ui.unnamed_selected.len(), 1);
+        assert_eq!(h.app.ui.people.unnamed_selected.len(), 1);
         h.request("ui.clickWidget", json!({"id": "unnamed:clear"}), t);
         // half a second of frames, so egui does not count the next two clicks as the third and fourth of one burst
         for _ in 0..30 {
@@ -1631,7 +1631,7 @@ mod tests {
         // Escape goes back to the faces, not to the grid
         h.request("ui.key", json!({"key": "escape"}), t);
         h.step();
-        assert_eq!((h.app.ui.view, h.app.ui.person_page.clone()), (ViewMode::People, None));
+        assert_eq!((h.app.ui.view, h.app.ui.people.person_page.clone()), (ViewMode::People, None));
     }
 
     /// The name field under the unnamed faces is a shared text field: right-click ▸ Paste puts the
@@ -1665,12 +1665,12 @@ mod tests {
             h.step();
             h.step();
         }
-        assert_eq!(h.app.ui.unnamed_name, "Wedding Guest");
-        assert_eq!(h.app.ui.unnamed_selected.len(), 1, "still naming");
+        assert_eq!(h.app.ui.people.unnamed_name, "Wedding Guest");
+        assert_eq!(h.app.ui.people.unnamed_selected.len(), 1, "still naming");
         h.request("ui.key", json!({"key": "Escape"}), t);
         h.step();
         h.step();
-        assert!(h.app.ui.unnamed_selected.is_empty() && h.app.ui.unnamed_name.is_empty(), "Esc cleared the selection and the name");
+        assert!(h.app.ui.people.unnamed_selected.is_empty() && h.app.ui.people.unnamed_name.is_empty(), "Esc cleared the selection and the name");
     }
 
     /// A screenful of faces larger than the picture cache's usual budget (96) is all kept: with a fixed budget the same few
@@ -2530,7 +2530,7 @@ mod tests {
         h.settle(SETTLE);
         let members = h.app.session.catalog.album(lightcraft_catalog::AlbumId(album)).unwrap().photos.clone();
         assert_eq!(members, vec![lightcraft_catalog::PhotoId(first)]);
-        assert!(h.app.ui.dragging_photos.is_none(), "the drag ended");
+        assert!(h.app.ui.drag.photos.is_none(), "the drag ended");
     }
 
     /// Issue #10: a raw shown from its embedded JPEG (an undecodable raw variant) says so — a badge
@@ -3206,7 +3206,7 @@ mod tests {
         // with the option off nothing is remembered, so turning it on again starts with a first look
         assert!(!h.app.session.prefs.import_defaults.show_on_card);
         h.step();
-        assert!(h.app.ui.known_cards.is_none());
+        assert!(h.app.ui.upkeep.known_cards.is_none());
         let _ = std::fs::remove_dir_all(&root);
     }
 

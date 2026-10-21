@@ -57,7 +57,7 @@ pub(super) fn fit(painter: &egui::Painter, text: &str, font: egui::FontId, max_w
 }
 
 pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
-    if let Some(name) = app.ui.person_page.clone() {
+    if let Some(name) = app.ui.people.person_page.clone() {
         return super::person::show(app, ui, &name);
     }
     let t = Tokens::get(ui.ctx());
@@ -68,7 +68,7 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
     let title =
         ui.painter().text(pos2(head.left() + PAD, head.center().y), Align2::LEFT_CENTER, crate::i18n::tr("Named People"), t.semibold(15.0), t.text);
     // the person page last left (a face opened from it, or its back button): one click returns to it
-    if let Some(last) = app.ui.last_person.clone().filter(|n| people.iter().any(|p| &p.name == n)) {
+    if let Some(last) = app.ui.people.last_person.clone().filter(|n| people.iter().any(|p| &p.name == n)) {
         let label = fit(ui.painter(), &last, t.font(13.0), 224.0);
         let width = ui.painter().layout_no_wrap(label.clone(), t.font(13.0), Color32::WHITE).size().x + 44.0;
         let r = Rect::from_min_size(pos2(title.right() + 14.0, head.center().y - 12.0), vec2(width, 24.0));
