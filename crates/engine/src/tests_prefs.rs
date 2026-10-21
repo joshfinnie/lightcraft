@@ -440,9 +440,30 @@ fn prefs_json_keeps_its_keys() {
     let mut keys: Vec<&str> = v.as_object().unwrap().keys().map(String::as_str).collect();
     keys.sort_unstable();
     let mut want = vec![
-        "xmp", "lastExport", "lastMerge", "exportPresets", "printTemplates", "metadataPresets", "filterPresets", "curvePresets",
-        "maskEffects", "maskToolEffects", "labelSets", "lutProfiles", "keywordSets", "keywordSet", "recentKeywords", "import",
-        "cacheMb", "smartPreviewsDir", "forgetLocalDays", "slideshow", "slideLayout", "slideOverlays", "slideTitles", "holdView",
+        "xmp",
+        "lastExport",
+        "lastMerge",
+        "exportPresets",
+        "printTemplates",
+        "metadataPresets",
+        "filterPresets",
+        "curvePresets",
+        "maskEffects",
+        "maskToolEffects",
+        "labelSets",
+        "lutProfiles",
+        "keywordSets",
+        "keywordSet",
+        "recentKeywords",
+        "import",
+        "cacheMb",
+        "smartPreviewsDir",
+        "forgetLocalDays",
+        "slideshow",
+        "slideLayout",
+        "slideOverlays",
+        "slideTitles",
+        "holdView",
     ];
     want.sort_unstable();
     assert_eq!(keys, want);

@@ -158,7 +158,7 @@ fn following_an_edit_gives_the_list_worked_out_from_every_photo() {
     assert_eq!(checked, 1440);
     // and it was following that was checked: most edits touch a photo or two, and the view kept up with those
     // without asking every photo again
-    assert!(s.view_followed > 400, "followed {} times, worked out {} times", s.view_followed, s.view_worked_out);
+    assert!(s.view.view_followed > 400, "followed {} times, worked out {} times", s.view.view_followed, s.view.view_worked_out);
 }
 
 #[test]
@@ -176,13 +176,13 @@ fn a_view_that_asks_about_the_last_days_follows_the_clock_too() {
     assert!(!shown.is_empty() && shown.len() < ids.len(), "{} of {}", shown.len(), ids.len());
     // When a photo is rated two months later
     *now.lock().unwrap() = "2026-03-05T12:00:00".to_string();
-    let followed = s.view_followed;
+    let followed = s.view.view_followed;
     s.execute("library.select", &json!({"ids": [ids[0].0]})).unwrap();
     s.execute("photo.rate", &json!({"rating": 2})).unwrap();
     // Then the photos nobody touched have left with the days: the view was asked whole, not followed
     assert!(s.visible_cloned().is_empty(), "{:?}", s.visible_cloned());
     assert_eq!(s.visible_cloned(), s.visible_in_full());
-    assert_eq!(s.view_followed, followed);
+    assert_eq!(s.view.view_followed, followed);
     // And the same through a view that only looks into that album
     let rules = json!({"ruleSet": {"match": "all", "rules": [{"field": "album", "op": "is", "value": recent}]}});
     if let Ok(r) = s.execute("album.createSmart", &json!({"name": "In Recent", "rules": rules})) {
@@ -191,7 +191,7 @@ fn a_view_that_asks_about_the_last_days_follows_the_clock_too() {
         s.execute("library.select", &json!({"ids": [ids[0].0]})).unwrap();
         s.execute("photo.rate", &json!({"rating": 3})).unwrap();
         assert_eq!(s.visible_cloned(), s.visible_in_full());
-        assert_eq!(s.view_followed, followed, "a view that looks into a clocked album is asked whole too");
+        assert_eq!(s.view.view_followed, followed, "a view that looks into a clocked album is asked whole too");
     }
 }
 
@@ -200,24 +200,24 @@ fn an_edit_to_many_photos_or_to_more_than_photos_is_worked_out_whole() {
     let (mut s, ids, album, _) = library(600);
     s.execute("library.sort", &json!({"key": "random", "seed": 3})).unwrap();
     let _ = s.visible_cloned();
-    let (followed, whole) = (s.view_followed, s.view_worked_out);
+    let (followed, whole) = (s.view.view_followed, s.view.view_worked_out);
     // one photo rated: followed
     s.execute("library.select", &json!({"ids": [ids[5].0]})).unwrap();
     s.execute("photo.rate", &json!({"rating": 1})).unwrap();
     let _ = s.visible_cloned();
-    assert_eq!((s.view_followed, s.view_worked_out), (followed + 1, whole));
+    assert_eq!((s.view.view_followed, s.view.view_worked_out), (followed + 1, whole));
     // five hundred photos rated at once: worked out from every photo
     s.execute("library.select", &json!({"ids": ids.iter().take(500).map(|id| id.0).collect::<Vec<_>>()})).unwrap();
     s.execute("photo.rate", &json!({"rating": 2})).unwrap();
     let _ = s.visible_cloned();
-    assert_eq!((s.view_followed, s.view_worked_out), (followed + 1, whole + 1));
+    assert_eq!((s.view.view_followed, s.view.view_worked_out), (followed + 1, whole + 1));
     // an album's photos changed: what that does to which view is not asked photo by photo
     s.execute("album.addPhotos", &json!({"id": album, "ids": [ids[1].0]})).unwrap();
     let _ = s.visible_cloned();
-    assert_eq!((s.view_followed, s.view_worked_out), (followed + 1, whole + 2));
+    assert_eq!((s.view.view_followed, s.view.view_worked_out), (followed + 1, whole + 2));
     // nothing changed: neither
     let _ = s.visible_cloned();
-    assert_eq!((s.view_followed, s.view_worked_out), (followed + 1, whole + 2));
+    assert_eq!((s.view.view_followed, s.view.view_worked_out), (followed + 1, whole + 2));
 }
 
 #[test]
