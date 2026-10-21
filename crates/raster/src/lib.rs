@@ -22,15 +22,29 @@ pub const MAX_IMAGE_EDGE: u64 = 65_000;
 /// can make the app allocate.
 pub const MAX_IMAGE_PIXELS: u64 = 512_000_000;
 
-static PIXEL_CEILING: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(MAX_IMAGE_PIXELS);
+/// The most pixels an image may have in the web build. A wasm32 program has 4 GiB of memory and no
+/// allocation there may reach 2 GiB (`isize::MAX`): a larger one is a panic, which ends the web app
+/// (it is built with `panic = "abort"`). The widest per-pixel buffer, four `f32` channels, stays
+/// below that up to here. Every module instance (the page and each worker) starts with it.
+pub const WEB_MAX_IMAGE_PIXELS: u64 = 128_000_000;
 
-/// Lower the pixel limit for this process below [`MAX_IMAGE_PIXELS`] (to what the machine's
-/// memory can develop); at least one pixel, never above [`MAX_IMAGE_PIXELS`].
+// the widest buffer, four `f32` a pixel, stays below wasm32's `isize::MAX`, and a GFX100's 100 MP raw opens
+const _: () =
+    assert!(WEB_MAX_IMAGE_PIXELS * 16 <= i32::MAX as u64 && WEB_MAX_IMAGE_PIXELS >= 11_648 * 8_736 && WEB_MAX_IMAGE_PIXELS < MAX_IMAGE_PIXELS);
+
+/// The most pixels an image may have on this platform: [`MAX_IMAGE_PIXELS`], or
+/// [`WEB_MAX_IMAGE_PIXELS`] in the web build.
+pub const PLATFORM_MAX_IMAGE_PIXELS: u64 = if cfg!(target_arch = "wasm32") { WEB_MAX_IMAGE_PIXELS } else { MAX_IMAGE_PIXELS };
+
+static PIXEL_CEILING: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(PLATFORM_MAX_IMAGE_PIXELS);
+
+/// Lower the pixel limit for this process below [`PLATFORM_MAX_IMAGE_PIXELS`] (to what the
+/// machine's memory can develop); at least one pixel, never above it.
 pub fn set_pixel_ceiling(pixels: u64) {
-    PIXEL_CEILING.store(pixels.clamp(1, MAX_IMAGE_PIXELS), std::sync::atomic::Ordering::Relaxed);
+    PIXEL_CEILING.store(pixels.clamp(1, PLATFORM_MAX_IMAGE_PIXELS), std::sync::atomic::Ordering::Relaxed);
 }
 
-/// The most pixels an image may have in this process: [`MAX_IMAGE_PIXELS`] or the lower
+/// The most pixels an image may have in this process: [`PLATFORM_MAX_IMAGE_PIXELS`] or the lower
 /// [`set_pixel_ceiling`].
 pub fn max_image_pixels() -> u64 {
     PIXEL_CEILING.load(std::sync::atomic::Ordering::Relaxed)
@@ -45,8 +59,10 @@ pub fn within_image_limits(width: u64, height: u64) -> bool {
 /// machine's memory when that is what sets the pixel limit.
 pub fn image_limits_text() -> String {
     let mp = max_image_pixels() / 1_000_000;
-    if max_image_pixels() < MAX_IMAGE_PIXELS {
+    if max_image_pixels() < PLATFORM_MAX_IMAGE_PIXELS {
         format!("up to 65,000 pixels a side and {mp} megapixels with this computer's memory")
+    } else if PLATFORM_MAX_IMAGE_PIXELS < MAX_IMAGE_PIXELS {
+        format!("up to 65,000 pixels a side and {mp} megapixels in a web browser")
     } else {
         format!("up to 65,000 pixels a side and {mp} megapixels")
     }

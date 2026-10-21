@@ -102,6 +102,10 @@ are the same in every version, so serve them with `Cache-Control: no-cache` (not
     and loads the rest on demand (the active photo is prefetched).
   - `thumbs/<key>.jpg` + `thumbs/index.json`: the rendered-thumbnail cache, with the desktop's
     budget (2 GB, least recently used pruned to 80 %).
+  - Image size: photos and exports up to 128 megapixels (the desktop allows 512). A browser gives
+    the app 4 GB of memory and no single allocation of 2 GB or more; beyond 128 MP a buffer of
+    four floats a pixel would need one, and the app would stop. Larger photos are refused with
+    that limit in the message (`lightcraft_raster::WEB_MAX_IMAGE_PIXELS`).
 
   A new library starts with the procedural demo photos. URL options: `?store=idb` forces
   IndexedDB, `?store=memory` keeps nothing, `?reset` deletes the stored library first (after a
