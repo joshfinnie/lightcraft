@@ -3227,14 +3227,19 @@ mod tests {
         let (g, n) = (gate.clone(), started.clone());
         h.app.session.media.file_probe = Some(std::sync::Arc::new(move |_: &str| {
             n.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            while !g.load(std::sync::atomic::Ordering::Relaxed) {
+            // held until the test lets go; a scan run on the request's own thread would wait for
+            // ever, so it gives up after a while and the "returns at once" check below fails
+            let held = std::time::Instant::now();
+            while !g.load(std::sync::atomic::Ordering::Relaxed) && held.elapsed() < Duration::from_secs(30) {
                 std::thread::sleep(Duration::from_millis(5));
             }
             Ok(lightcraft_engine::media::ProbeInfo { format: "PNG".into(), ..Default::default() })
         }));
         let browse =
             |h: &mut Headless| h.request("engine.execute", json!({"command": "library.browse", "params": {"path": dir.to_string_lossy()}}), t);
+        let asked = std::time::Instant::now();
         assert_eq!(browse(&mut h)["result"]["scanning"], true);
+        assert!(asked.elapsed() < Duration::from_secs(10), "library.browse waited for the scan");
         std::thread::sleep(Duration::from_millis(200));
         assert_eq!(browse(&mut h)["result"]["scanning"], true);
         std::thread::sleep(Duration::from_millis(200));
