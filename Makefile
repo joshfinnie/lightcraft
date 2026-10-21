@@ -86,9 +86,11 @@ FUZZ_SECONDS ?= 300
 fuzz: seeds ## fuzz one parser: make fuzz FUZZ_TARGET=codecs_decode FUZZ_SECONDS=600
 	cd fuzz && cargo +nightly fuzz run $(FUZZ_TARGET) -O -- -max_total_time=$(FUZZ_SECONDS) -rss_limit_mb=4096 -timeout=10 -max_len=262144
 
+# release: instrumented debug builds run some tests ~25x slower, past their deadlines;
+# --no-fail-fast: one failing test binary must not leave the rest unmeasured
 coverage: ## line coverage of the workspace tests, per file (HTML report: target/llvm-cov/html)
-	cargo llvm-cov --workspace --html
-	cargo llvm-cov report --summary-only
+	cargo llvm-cov --workspace --release --no-fail-fast --html
+	cargo llvm-cov report --release --summary-only
 
 # Release: packages for the platform this runs on, into dist/release/ (see docs/releasing.md).
 # macOS signs ad hoc unless MACOS_SIGN_IDENTITY is set, and notarizes with APPLE_ID,
