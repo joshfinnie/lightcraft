@@ -61,6 +61,9 @@ pub const TABLE: &[(&str, Class)] = &[
     ("segment", Class::Layer(3)),
     ("engine", Class::Layer(4)),
     ("ui-egui", Class::Layer(5)),
+    // vendored from craft-libs (NOTICE)
+    ("craft-ui", Class::Layer(5)),
+    ("craft-docpath", Class::Standalone),
     ("mcp", Class::Layer(5)),
     ("testkit", Class::Testkit),
     // L6 apps and tooling
@@ -82,6 +85,7 @@ pub const INTRA_LAYER_ORDER: &[&[&str]] = &[
     &["meta", "develop"],
     &["develop", "scenes"],
     &["codecs", "raw"],
+    &["craft-ui", "ui-egui"],
 ];
 
 fn intra_layer_allowed(from: &str, to: &str) -> bool {

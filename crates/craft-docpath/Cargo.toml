@@ -1,0 +1,8 @@
+[package]
+name = "craft-docpath"
+description = "Decide whether a file path or file URL stored in a document refers to a local file (vendored from craft-libs; see NOTICE)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
