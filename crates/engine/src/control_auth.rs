@@ -66,21 +66,43 @@ fn token_file_in(config_dir: Option<&Path>, port: u16) -> Option<PathBuf> {
     config_dir.map(|dir| dir.join(format!("control-token-{port}")))
 }
 
-/// Store `token` for clients, replacing an older run's. On Unix only the owner may read it.
+/// Store `token` for clients, replacing an older run's. The token goes to a new file in the same
+/// folder that is then renamed over the old one, so a client never reads half a token and the file
+/// is new each time: on Unix only the owner may read it, whatever an older file allowed.
 pub fn write_token_file(path: &Path, token: &str) -> Result<(), String> {
     use std::io::Write;
     if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
         std::fs::create_dir_all(parent).map_err(|e| format!("{}: {e}", parent.display()))?;
     }
+    let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    let staged = path.with_file_name(format!(".{name}.{}.tmp", std::process::id()));
+    let _ = std::fs::remove_file(&staged);
     let mut options = std::fs::OpenOptions::new();
-    options.write(true).create(true).truncate(true);
+    options.write(true).create_new(true);
     #[cfg(unix)]
     {
         use std::os::unix::fs::OpenOptionsExt;
         options.mode(0o600);
     }
-    let mut file = options.open(path).map_err(|e| format!("{}: {e}", path.display()))?;
-    writeln!(file, "{token}").map_err(|e| format!("{}: {e}", path.display()))
+    let written = options
+        .open(&staged)
+        .and_then(|mut file| writeln!(file, "{token}"))
+        .and_then(|()| std::fs::rename(&staged, path))
+        .map_err(|e| format!("{}: {e}", path.display()));
+    if written.is_err() {
+        let _ = std::fs::remove_file(&staged);
+    }
+    written
+}
+
+/// Remove the token file at `path` when it still holds `token` (this run's): the app does this as
+/// it quits, so its token doesn't outlive it. A file that holds another token (a later run on the
+/// same port) or none is left alone. `Ok(true)`: removed.
+pub fn remove_token_file(path: &Path, token: &str) -> Result<bool, String> {
+    match read_token_file(path) {
+        Ok(stored) if matches(&stored, token) => std::fs::remove_file(path).map(|()| true).map_err(|e| format!("{}: {e}", path.display())),
+        _ => Ok(false),
+    }
 }
 
 /// Read and check a token file.
@@ -212,6 +234,29 @@ mod tests {
         let path = std::env::temp_dir().join(format!("lightcraft-control-token-mode-{}", std::process::id()));
         write_token_file(&path, TOKEN).unwrap();
         assert_eq!(std::fs::metadata(&path).unwrap().permissions().mode() & 0o777, 0o600);
+        // an older file anyone could read is replaced by a private one
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+        write_token_file(&path, TOKEN).unwrap();
+        assert_eq!(std::fs::metadata(&path).unwrap().permissions().mode() & 0o777, 0o600);
         let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn a_run_removes_only_its_own_token_file() {
+        let dir = std::env::temp_dir().join(format!("lightcraft-control-remove-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let path = token_file_in(Some(&dir), 18433).unwrap();
+        write_token_file(&path, TOKEN).unwrap();
+        assert_eq!(read_token_file(&path), Ok(TOKEN.to_string()));
+        // a later run's token stays
+        assert_eq!(remove_token_file(&path, &"f".repeat(64)), Ok(false));
+        assert!(path.exists());
+        assert_eq!(remove_token_file(&path, TOKEN), Ok(true));
+        assert!(!path.exists());
+        // gone already: nothing to do
+        assert_eq!(remove_token_file(&path, TOKEN), Ok(false));
+        // nothing staged is left behind
+        assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 0);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

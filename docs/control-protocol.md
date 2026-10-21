@@ -29,6 +29,8 @@ or wrong token, or a line that isn't a request gets one error reply (`authentica
   `LIGHTCRAFT_CONFIG_DIR`); on Unix only you can read it. A page in
   a browser can't read files, and the HTTP request line it must send first is refused anyway.
   Without a settings folder (`LIGHTCRAFT_CONFIG_DIR` set empty) a fresh token is printed on stderr.
+  The file is written only once the app has the port (a second app started on a port another one
+  serves leaves that app's token alone), and removed when the app quits.
 - **Clients:** `lightcraft-cli run --connect` and `lightcraft-cli mcp --connect` send
   `LIGHTCRAFT_CONTROL_TOKEN` if set, else the token in that file for the port they connect to, and
   report a refused token as such. [`docs/showcase/run.py`](showcase/run.py) does the same.

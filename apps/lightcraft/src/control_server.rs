@@ -28,20 +28,17 @@ pub const MAX_LINE: usize = 4 * 1024 * 1024;
 pub const MAX_CONNECTIONS: usize = 16;
 
 /// Serve the control channel on `127.0.0.1:port`; every connection must authenticate with `token`.
-pub fn start(port: u16, token: String, ctx: egui::Context) -> Receiver<ControlRequest> {
+/// `Err` when the port can't be had (another app serves it): then this run must not publish its
+/// token, which would lock that app's clients out.
+pub fn start(port: u16, token: String, ctx: egui::Context) -> Result<Receiver<ControlRequest>, String> {
     let (tx, rx) = channel::<ControlRequest>();
-    let listener = match TcpListener::bind(("127.0.0.1", port)) {
-        Ok(l) => l,
-        Err(e) => {
-            log::error!("control server failed to bind 127.0.0.1:{port}: {e}");
-            return rx;
-        }
-    };
-    match std::thread::Builder::new().name("lc-control".into()).spawn(move || accept_loop(listener, tx, ctx, token)) {
-        Ok(_) => log::info!("control server listening on 127.0.0.1:{port}"),
-        Err(e) => log::error!("control server could not start on 127.0.0.1:{port}: {e}"),
-    }
-    rx
+    let listener = TcpListener::bind(("127.0.0.1", port)).map_err(|e| format!("control server failed to bind 127.0.0.1:{port}: {e}"))?;
+    std::thread::Builder::new()
+        .name("lc-control".into())
+        .spawn(move || accept_loop(listener, tx, ctx, token))
+        .map_err(|e| format!("control server could not start on 127.0.0.1:{port}: {e}"))?;
+    log::info!("control server listening on 127.0.0.1:{port}");
+    Ok(rx)
 }
 
 fn accept_loop(listener: TcpListener, tx: Sender<ControlRequest>, ctx: egui::Context, token: String) {

@@ -57,12 +57,12 @@ fn app_icon() -> egui::IconData {
     eframe::icon_data::from_png_bytes(png).unwrap_or_default()
 }
 
-struct App(LightcraftApp, PrefsWriter, #[cfg(target_os = "macos")] Option<native_menu::NativeMenu>);
+struct App(LightcraftApp, PrefsWriter, Option<PublishedToken>, #[cfg(target_os = "macos")] Option<native_menu::NativeMenu>);
 
 impl eframe::App for App {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         #[cfg(target_os = "macos")]
-        if let Some(m) = self.2.as_mut()
+        if let Some(m) = self.3.as_mut()
             && m.update(&mut self.0, ctx)
             && lightcraft_ui_egui::panels::notices::may_close(&mut self.0)
         {
@@ -94,6 +94,9 @@ impl eframe::App for App {
         // last, with everything saved: no render may be inside the GPU driver when the process ends
         if !self.0.shutdown(EXIT_WAIT) {
             log::warn!("quit: background work was still running after {EXIT_WAIT:?}");
+        }
+        if let Some(token) = &self.2 {
+            token.remove();
         }
         // macOS (#1331): end the process here, before eframe tears the window down, as Quit from
         // the menu bar already does (PR #444). AccessKit's macOS adapter subclasses the window's
@@ -850,16 +853,55 @@ fn control_token(supplied: Option<String>) -> Result<String, String> {
     Ok(control_auth::encode(&bytes))
 }
 
-/// Write the token where clients on this machine find it ([`control_auth::token_file`]).
-fn publish_control_token(port: u16, token: &str, supplied: bool) {
-    match control_auth::token_file(port).map(|path| (control_auth::write_token_file(&path, token), path)) {
-        Some((Ok(()), path)) => log::info!("control token for port {port}: {}", path.display()),
-        Some((Err(e), _)) if supplied => log::warn!("could not store the control token ({e}); clients need {}", control_auth::TOKEN_ENV),
-        None if supplied => log::info!("no settings folder; clients need {}", control_auth::TOKEN_ENV),
-        // Nowhere to put a fresh token: show it once on stderr (not in the log file).
-        Some((Err(e), _)) => eprintln!("lightcraft: could not store the control token ({e}); token: {token}"),
-        None => eprintln!("lightcraft: no settings folder for the control token; token: {token}"),
+/// The token file this run wrote, removed as it quits ([`control_auth::remove_token_file`]).
+struct PublishedToken {
+    path: std::path::PathBuf,
+    token: String,
+}
+
+impl PublishedToken {
+    fn remove(&self) {
+        if let Err(e) = control_auth::remove_token_file(&self.path, &self.token) {
+            log::warn!("could not remove the control token file: {e}");
+        }
     }
+}
+
+/// Serve the control channel on `port` and, once the port is this run's, write the token where
+/// clients on this machine find it (`file`: [`control_auth::token_file`]). A port another app
+/// serves leaves that app's token file alone.
+fn serve_control(
+    port: u16,
+    token: String,
+    supplied: bool,
+    file: Option<std::path::PathBuf>,
+    ctx: egui::Context,
+) -> Option<(std::sync::mpsc::Receiver<lightcraft_ui_egui::ControlRequest>, Option<PublishedToken>)> {
+    let rx = control_server::start(port, token.clone(), ctx).map_err(|e| log::error!("{e}")).ok()?;
+    let published = match file.map(|path| (control_auth::write_token_file(&path, &token), path)) {
+        Some((Ok(()), path)) => {
+            log::info!("control token for port {port}: {}", path.display());
+            Some(PublishedToken { path, token })
+        }
+        Some((Err(e), _)) if supplied => {
+            log::warn!("could not store the control token ({e}); clients need {}", control_auth::TOKEN_ENV);
+            None
+        }
+        None if supplied => {
+            log::info!("no settings folder; clients need {}", control_auth::TOKEN_ENV);
+            None
+        }
+        // Nowhere to put a fresh token: show it once on stderr (not in the log file).
+        Some((Err(e), _)) => {
+            eprintln!("lightcraft: could not store the control token ({e}); token: {token}");
+            None
+        }
+        None => {
+            eprintln!("lightcraft: no settings folder for the control token; token: {token}");
+            None
+        }
+    };
+    Some((rx, published))
 }
 
 /// An isolated profile keeps the emergency crash log with its other app data. With no
@@ -1026,13 +1068,15 @@ fn main() -> eframe::Result {
                     app.ui.settings.gpu = false;
                     app.notices.push(notice);
                 }
+                let mut published = None;
                 if let Some(port) = control_port {
                     let supplied = control_token_arg.is_some();
                     match control_token(control_token_arg) {
                         Ok(token) => {
-                            publish_control_token(port, &token, supplied);
-                            let rx = control_server::start(port, token, cc.egui_ctx.clone());
-                            app = app.with_control(rx);
+                            if let Some((rx, file)) = serve_control(port, token, supplied, control_auth::token_file(port), cc.egui_ctx.clone()) {
+                                app = app.with_control(rx);
+                                published = file;
+                            }
                         }
                         Err(e) => log::error!("no control server: {e}"),
                     }
@@ -1058,6 +1102,7 @@ fn main() -> eframe::Result {
                 Ok(Box::new(App(
                     app,
                     writer,
+                    published,
                     #[cfg(target_os = "macos")]
                     menu,
                 )))
@@ -1152,6 +1197,29 @@ fn startup_failed(error: &str, log_file: Option<&std::path::Path>) {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
+
+    /// A second app asked to serve a port the first already serves must not replace the first's
+    /// token file (its clients would be refused); the app that serves it writes its token and
+    /// removes the file as it quits.
+    #[test]
+    fn only_the_app_serving_the_port_publishes_its_token() {
+        let dir = std::env::temp_dir().join(format!("lightcraft-serve-control-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let first = "a".repeat(64);
+        let second = "b".repeat(64);
+        let taken = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let port = taken.local_addr().unwrap().port();
+        let file = dir.join(format!("control-token-{port}"));
+        control_auth::write_token_file(&file, &first).unwrap();
+        assert!(serve_control(port, second.clone(), false, Some(file.clone()), egui::Context::default()).is_none());
+        assert_eq!(control_auth::read_token_file(&file), Ok(first));
+        drop(taken);
+        let (_rx, published) = serve_control(port, second.clone(), false, Some(file.clone()), egui::Context::default()).unwrap();
+        assert_eq!(control_auth::read_token_file(&file), Ok(second));
+        published.unwrap().remove();
+        assert!(!file.exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     fn dir(tag: &str) -> std::path::PathBuf {
         let d = std::env::temp_dir().join(format!("lc-app-prefs-{tag}-{}", std::process::id()));
@@ -1569,6 +1637,7 @@ mod tests {
             let mut app = App(
                 app,
                 PrefsWriter::default(),
+                None,
                 #[cfg(target_os = "macos")]
                 None,
             );
