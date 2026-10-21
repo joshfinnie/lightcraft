@@ -98,6 +98,7 @@ pub(crate) fn decode(bytes: &[u8], mode: Mode) -> Result<RawImage> {
     // the white balance is measured from the samples, so the header probe reads them too
     let chunks = info.chunks(bytes.len() as u64);
     let src = chunks.first().and_then(|c| chunk_bytes(bytes, c)).ok_or_else(|| RawError::Corrupt("Erf strip outside file".into()))?;
+    crate::check_stored(src.len(), n as u64, 12)?;
     let mut d = vec![0u16; n];
     unpack(src, &mut d);
     let white = super::white_from_data(&d, 12);

@@ -93,6 +93,18 @@ pub(crate) fn check_dimensions(width: u64, height: u64) -> Result<u64> {
     Ok(width.saturating_mul(height))
 }
 
+/// Before allocating `samples` stored uncompressed at `bits` each, of which the file holds `have`
+/// bytes: a strip's declared length is not proof of its data. Rows past the end of a short file come
+/// out black, but a sliver of the data the image needs is no picture (as in [`tiffraw`], issue #1512),
+/// and must not cost a buffer sized by the header.
+pub(crate) fn check_stored(have: usize, samples: u64, bits: u32) -> Result<()> {
+    let need = samples.saturating_mul(u64::from(bits)) / 8;
+    if (have as u64).saturating_mul(64) < need {
+        return Err(RawError::Corrupt(format!("{have} bytes of image data cannot hold {samples} samples")));
+    }
+    Ok(())
+}
+
 /// Errors from raw decoding.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum RawError {
@@ -898,6 +910,15 @@ impl RawImage {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Uncompressed data needs at least 1/64 of its bytes in the file before its frame is allocated.
+    #[test]
+    fn stored_data_must_be_more_than_a_sliver() {
+        // 1000 × 1000 12-bit samples need 1.5 MB: 23 438 bytes is the least that passes
+        assert!(check_stored(23_438, 1_000_000, 12).is_ok());
+        assert!(matches!(check_stored(23_437, 1_000_000, 12), Err(RawError::Corrupt(_))));
+        assert!(check_stored(0, u64::MAX, 16).is_err());
+    }
 
     #[test]
     fn cfa_helpers() {

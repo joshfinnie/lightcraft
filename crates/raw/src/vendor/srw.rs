@@ -108,6 +108,14 @@ pub(crate) fn decode(bytes: &[u8], mode: Mode) -> Result<RawImage> {
     };
     let data = if mode == Mode::Full {
         let src = chunk_bytes(bytes, &chunks[0]).ok_or_else(|| RawError::Corrupt("SRW strip outside file".into()))?;
+        crate::check_stored(
+            src.len(),
+            n as u64,
+            match coding {
+                Coding::Words => 16,
+                Coding::Packed12 => 12,
+            },
+        )?;
         let mut d = vec![0u16; n];
         match coding {
             Coding::Words => read_u16s(src, ByteOrder::Little, &mut d),

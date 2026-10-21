@@ -642,6 +642,8 @@ pub(crate) fn decode(bytes: &[u8], mode: Mode) -> Result<RawImage> {
         }
         32767 if one_byte_per_sample => {
             let src = chunk_bytes(bytes, &chunks[0]).ok_or_else(|| RawError::Corrupt("raw strip outside file".into()))?;
+            crate::check_dimensions(w as u64, h as u64)?;
+            crate::check_stored(src.len(), samples, 8)?;
             let curve = code_curve(&raw.u64s(TONE_CURVE).unwrap_or_else(|| vec![8000, 10400, 12900, 14100]));
             let mut data = vec![0u16; samples as usize];
             data.par_chunks_mut(w).enumerate().for_each(|(y, out)| {
@@ -659,6 +661,8 @@ pub(crate) fn decode(bytes: &[u8], mode: Mode) -> Result<RawImage> {
         }
         32767 if packed12 => {
             let src = chunk_bytes(bytes, &chunks[0]).ok_or_else(|| RawError::Corrupt("raw strip outside file".into()))?;
+            crate::check_dimensions(w as u64, h as u64)?;
+            crate::check_stored(src.len(), samples, 12)?;
             let row_bytes = w / 2 * 3;
             let mut data = vec![0u16; samples as usize];
             data.par_chunks_mut(w).enumerate().for_each(|(y, out)| {
@@ -952,6 +956,33 @@ mod tests {
             let r = decode(&arw_with_strip(32 * 4), mode);
             assert!(!matches!(r, Err(RawError::Unsupported(ref m)) if m.contains("packed compressed variant")), "{r:?}");
         }
+    }
+
+    /// A strip's declared length is not its data: a file whose header claims a whole frame (one byte a pixel, or
+    /// packed 12-bit) but holds 64 bytes of it allocated the claimed frame and decoded a black picture.
+    #[test]
+    fn a_strip_the_file_does_not_hold_is_refused() {
+        let (w, h) = (2048u32, 1024u32);
+        for (name, claimed) in [("one byte", w * h), ("packed 12-bit", w * h * 3 / 2)] {
+            let mut file = packed_arw(w, h, vec![0u8; 64]);
+            set_strip_byte_count(&mut file, claimed);
+            let err = decode(&file, Mode::Full).map(|_| ()).unwrap_err();
+            assert!(matches!(err, RawError::Corrupt(ref m) if m.contains("cannot hold")), "{name}: {err:?}");
+        }
+    }
+
+    /// Rewrite the first IFD's StripByteCounts (one strip) as a LONG holding `n`.
+    fn set_strip_byte_count(file: &mut [u8], n: u32) {
+        let le = file.starts_with(b"II");
+        let u16_at = |f: &[u8], i: usize| if le { u16::from_le_bytes([f[i], f[i + 1]]) } else { u16::from_be_bytes([f[i], f[i + 1]]) };
+        let u32_at = |f: &[u8], i: usize| {
+            if le { u32::from_le_bytes(f[i..i + 4].try_into().unwrap()) } else { u32::from_be_bytes(f[i..i + 4].try_into().unwrap()) }
+        };
+        let ifd = u32_at(file, 4) as usize;
+        let at = (0..u16_at(file, ifd) as usize).map(|k| ifd + 2 + 12 * k).find(|&e| u16_at(file, e) == t::STRIP_BYTE_COUNTS).unwrap();
+        let (ty, val) = if le { (4u16.to_le_bytes(), n.to_le_bytes()) } else { (4u16.to_be_bytes(), n.to_be_bytes()) };
+        file[at + 2..at + 4].copy_from_slice(&ty);
+        file[at + 8..at + 12].copy_from_slice(&val);
     }
 
     /// A 32767-compressed, 12-bit ARW of `w` x `h` whose single strip is `strip`.

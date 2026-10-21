@@ -233,6 +233,7 @@ pub(crate) fn decode(bytes: &[u8], mode: Mode) -> Result<RawImage> {
         let src = chunk_bytes(bytes, &chunks[0]).ok_or_else(|| RawError::Corrupt("ORF strip outside file".into()))?;
         // the depth is fixed here, so a header-only probe needs the samples only when the file doesn't state its
         // colour-filter layout
+        crate::check_stored(src.len(), n as u64, 12)?;
         let d = if mode == Mode::Full || stated.is_none() {
             let stride = src.len() / h;
             let mut d = vec![0u16; n];
