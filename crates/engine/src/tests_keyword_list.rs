@@ -38,12 +38,12 @@ fn creating_a_keyword_with_attributes_and_the_selection() {
     let mut s = Session::with_demo();
     let id = s.visible_cloned()[0].0;
     s.execute("library.select", &json!({"ids": [id]})).unwrap();
-    let undo = s.undo.len();
+    let undo = s.history.undo.len();
     let r = s
         .execute("keyword.create", &json!({"name": "Weddings", "parent": "Events", "synonyms": ["marriage"], "person": false, "addToSelected": true}))
         .unwrap();
     assert_eq!(r["keyword"], "Events|Weddings", "{r}");
-    assert_eq!(s.undo.len(), undo + 1, "one undo step");
+    assert_eq!(s.history.undo.len(), undo + 1, "one undo step");
     assert!(keywords_of(&s, id).contains(&"Events|Weddings".to_string()));
     let info = s.execute("keyword.info", &json!({"keyword": "events|weddings"})).unwrap();
     assert_eq!(info["path"], "Events|Weddings");
@@ -93,9 +93,9 @@ fn new_keywords_go_inside_the_default_parent() {
 fn editing_a_keyword_changes_what_it_is_given() {
     let mut s = Session::with_demo();
     s.execute("keyword.create", &json!({"name": "Weddings", "synonyms": ["marriage"]})).unwrap();
-    let undo = s.undo.len();
+    let undo = s.history.undo.len();
     s.execute("keyword.edit", &json!({"keyword": "weddings", "name": "Marriages", "includeOnExport": false})).unwrap();
-    assert_eq!(s.undo.len(), undo + 1);
+    assert_eq!(s.history.undo.len(), undo + 1);
     let info = s.execute("keyword.info", &json!({"keyword": "Marriages"})).unwrap();
     assert_eq!((info["includeOnExport"].as_bool(), info["synonyms"].clone()), (Some(false), json!(["marriage"])));
     assert!(s.execute("keyword.info", &json!({"keyword": "Weddings"})).is_err());
@@ -325,10 +325,10 @@ fn importing_keywords_reads_a_list() {
     let mut s = Session::with_demo();
     let path = dir.join("vocabulary.utf8");
     std::fs::write(&path, "[Places]\r\n\tPortugal\r\n\t\tLisbon\r\n").unwrap();
-    let undo = s.undo.len();
+    let undo = s.history.undo.len();
     let r = s.execute("keyword.import", &json!({"path": path.to_string_lossy()})).unwrap();
     assert_eq!((r["added"].as_u64(), r["updated"].as_u64()), (Some(3), Some(0)), "{r}");
-    assert_eq!(s.undo.len(), undo + 1);
+    assert_eq!(s.history.undo.len(), undo + 1);
     assert!(s.catalog.has_keyword("Places|Portugal|Lisbon"));
     let r = s.execute("keyword.import", &json!({"text": "Events\n\t{celebrations}\n"})).unwrap();
     assert_eq!(r["added"], 1);

@@ -521,7 +521,7 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
     let before_target = in_pane(areas[0], target_rect);
     app.image_rect = Some(img_rect);
     // request renders: the loupe at display resolution (drafts during drags)
-    let interacting = app.session.interaction.is_some();
+    let interacting = app.session.history.interaction.is_some();
     let overlay = view_overlay(app, &d);
     // a drag drafts at full size where the GPU draws the view (by the GPU's own rule, `handles`;
     // `ready` first: `available` would wait for a device still being created)
@@ -530,7 +530,7 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
         && lightcraft_engine::gpu::ready()
         && lightcraft_engine::gpu::available();
     let shown = app.renderer.textures.get(&Slot::Main).filter(|t| t.photo == id && t.quick.is_none()).map(|t| (t.key, t.ms));
-    let drag = app.session.interaction.as_ref().map(|i| (i.photo, i.label.as_str()));
+    let drag = app.session.history.interaction.as_ref().map(|i| (i.photo, i.label.as_str()));
     let draft = app.drag_scale.scale(drag, gpu, shown.map(|(key, _)| key));
     // render at the final size: a click-zoom animation only changes how the result is drawn
     let native_long = native[0].max(native[1]);

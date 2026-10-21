@@ -723,7 +723,7 @@ impl LightcraftApp {
 
     /// Called only after a crop gesture begins, inside its undo transaction.
     pub(crate) fn begin_crop(&mut self) -> Result<(), String> {
-        if self.session.interaction.is_some()
+        if self.session.history.interaction.is_some()
             && self.session.active().and_then(|id| self.session.develop_of(id)).is_some_and(|d| d.crop == lightcraft_develop::Crop::default())
             && let Some(aspect) = self.ui.crop_default_aspect.clone()
             && aspect != serde_json::json!("free")
@@ -1164,7 +1164,7 @@ impl LightcraftApp {
                     if let Some(o) = params.as_object_mut() {
                         o.remove("paths");
                     }
-                    let undo0 = app.session.undo.len();
+                    let undo0 = app.session.history.undo.len();
                     app.import = Some(import::ImportTask::new(paths, params, undo0, false).auto());
                 };
                 // listed every few seconds: quiet, no row in the activity stack

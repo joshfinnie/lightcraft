@@ -296,7 +296,7 @@ fn photo_tile(app: &mut LightcraftApp, ui: &mut egui::Ui, id: PhotoId, slot: Slo
         let mine = |s: Slot| r.textures.get(&s).filter(|t| t.photo == id).map(|t| t.key);
         let waits = |s: Slot| r.is_pending(s) && !r.retrying(s);
         // a slider drag on this photo: Compare has no drafts, so its render can't keep up until the drag ends
-        let dragging = app.session.interaction.is_some() && app.session.selection.active == Some(id);
+        let dragging = app.session.history.interaction.is_some() && app.session.selection.active == Some(id);
         let coming = (waits(slot) && !dragging) || (window.is_some() && waits(Slot::CompareRegion(i)));
         let keys = [mine(slot), mine(Slot::CompareRegion(i)), None, None];
         let now = ui.input(|i| i.time);
@@ -390,7 +390,7 @@ fn request_window(app: &mut LightcraftApp, v: &TileView) -> Option<crate::region
     if frame_edge as f32 <= v.whole_edge as f32 * crate::region::WINDOW_RATIO {
         return None;
     }
-    let editing = app.session.interaction.is_some() && app.session.active() == Some(v.id);
+    let editing = app.session.history.interaction.is_some() && app.session.active() == Some(v.id);
     if app.compare_hold_until > v.now || editing {
         return app.compare_windows[v.pane as usize].filter(|w| w.photo == v.id);
     }
@@ -426,7 +426,7 @@ fn request_window(app: &mut LightcraftApp, v: &TileView) -> Option<crate::region
 /// zoom is drawn at its place in the frame, magnified or shrunk, until the new one arrives.
 fn draw_window(p: &egui::Painter, app: &LightcraftApp, pane: u8, id: PhotoId, look: u64, display: Rect) {
     let Some(tex) = app.renderer.textures.get(&Slot::CompareRegion(pane)).filter(|t| t.photo == id) else { return };
-    let editing = app.session.interaction.is_some() && app.session.active() == Some(id);
+    let editing = app.session.history.interaction.is_some() && app.session.active() == Some(id);
     let Some(tile) = app.compare_tiles.get(&(pane, tex.key)).filter(|t| t.photo == id && (editing || t.settings == look)) else {
         return;
     };

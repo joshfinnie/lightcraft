@@ -994,11 +994,13 @@ impl Session {
 
     /// Complete retained repairs before a file or folder change can stale their exact paths.
     pub(crate) fn repair_sidecars_with(&mut self, fs: &dyn MoveFs) -> Result<()> {
-        for repair in self.pending_sidecar_repairs.iter().chain(self.undo.iter().chain(&self.redo).flat_map(|e| &e.retry_sidecars)) {
+        for repair in
+            self.history.pending_sidecar_repairs.iter().chain(self.history.undo.iter().chain(&self.history.redo).flat_map(|e| &e.retry_sidecars))
+        {
             repair.validate_repair(fs).map_err(EngineError::Other)?;
         }
-        retry_sidecars(fs, &mut self.pending_sidecar_repairs).map_err(EngineError::Other)?;
-        for entry in self.undo.iter_mut().chain(self.redo.iter_mut()) {
+        retry_sidecars(fs, &mut self.history.pending_sidecar_repairs).map_err(EngineError::Other)?;
+        for entry in self.history.undo.iter_mut().chain(self.history.redo.iter_mut()) {
             retry_sidecars(fs, &mut entry.retry_sidecars).map_err(EngineError::Other)?;
         }
         Ok(())
@@ -1006,8 +1008,8 @@ impl Session {
 
     pub(crate) fn repair_sidecars_for_paths(&mut self, paths: &[PathBuf], fs: &dyn MoveFs) -> Result<()> {
         self.validate_sidecar_packets_for_paths(paths, fs)?;
-        retry_sidecars_for_paths(fs, &mut self.pending_sidecar_repairs, paths).map_err(EngineError::Other)?;
-        for entry in self.undo.iter_mut().chain(self.redo.iter_mut()) {
+        retry_sidecars_for_paths(fs, &mut self.history.pending_sidecar_repairs, paths).map_err(EngineError::Other)?;
+        for entry in self.history.undo.iter_mut().chain(self.history.redo.iter_mut()) {
             retry_sidecars_for_paths(fs, &mut entry.retry_sidecars, paths).map_err(EngineError::Other)?;
         }
         Ok(())
@@ -1016,7 +1018,9 @@ impl Session {
     /// A healthy shared packet may be saved while another photo's repair is unavailable.
     /// Check its retained content too, without forcing that unrelated physical operation.
     pub(crate) fn validate_sidecar_packets_for_paths(&self, paths: &[PathBuf], fs: &dyn MoveFs) -> Result<()> {
-        for repair in self.pending_sidecar_repairs.iter().chain(self.undo.iter().chain(&self.redo).flat_map(|e| &e.retry_sidecars)) {
+        for repair in
+            self.history.pending_sidecar_repairs.iter().chain(self.history.undo.iter().chain(&self.history.redo).flat_map(|e| &e.retry_sidecars))
+        {
             if paths.iter().any(|path| repair.touches(fs, path)) {
                 repair.validate_repair(fs).map_err(EngineError::Other)?;
             } else {
@@ -1034,7 +1038,12 @@ impl Session {
     /// replace inodes; aliases that now resolve to the written path observe the new content.
     pub(crate) fn note_sidecar_write(&mut self, path: &Path, bytes: &[u8]) {
         let version = PacketVersion::of(bytes);
-        for repair in self.pending_sidecar_repairs.iter_mut().chain(self.undo.iter_mut().chain(&mut self.redo).flat_map(|e| &mut e.retry_sidecars)) {
+        for repair in self
+            .history
+            .pending_sidecar_repairs
+            .iter_mut()
+            .chain(self.history.undo.iter_mut().chain(&mut self.history.redo).flat_map(|e| &mut e.retry_sidecars))
+        {
             for packet in &mut repair.companions {
                 if RealFs.same_file(path, &packet.path) {
                     packet.version = Some(version);
@@ -1117,7 +1126,7 @@ impl Session {
         let applied = if undoable {
             let label = if n == 0 { "Repair Rename Sidecars".to_string() } else { format!("Rename {n} Photo{s} (partly)") };
             self.commit(&label, fix).map(|()| {
-                if let Some(entry) = self.undo.last_mut() {
+                if let Some(entry) = self.history.undo.last_mut() {
                     entry.retry_sidecars.extend(pending_sidecars);
                 }
             })
@@ -1128,7 +1137,7 @@ impl Session {
                         Op::Batch { ops } => ops,
                         op => vec![op],
                     };
-                    self.pending_log.push(fix);
+                    self.history.pending_log.push(fix);
                     Ok(())
                 }
                 Err(e) => Err(e),
@@ -1364,9 +1373,9 @@ pub(crate) mod tests {
                         companions: vec![RetainedPacket { path: old_sidecar.clone(), version: Some(RealFs.packet_version(&old_sidecar).unwrap()) }],
                     };
                     match queue {
-                        "undo" => s.undo.last_mut().unwrap().retry_sidecars.push(repair),
-                        "redo" => s.redo.last_mut().unwrap().retry_sidecars.push(repair),
-                        _ => s.pending_sidecar_repairs.push(repair),
+                        "undo" => s.history.undo.last_mut().unwrap().retry_sidecars.push(repair),
+                        "redo" => s.history.redo.last_mut().unwrap().retry_sidecars.push(repair),
+                        _ => s.history.pending_sidecar_repairs.push(repair),
                     }
                     let params = if command == "folder.rename" {
                         serde_json::json!({"path": from, "name": "Holiday"})
@@ -1375,17 +1384,17 @@ pub(crate) mod tests {
                     };
                     let to = if command == "folder.rename" { root.join("Holiday") } else { root.join("Archive").join("Trip") };
                     let before = s.catalog.to_snapshot();
-                    let history = (s.undo.len(), s.redo.len());
+                    let history = (s.history.undo.len(), s.history.redo.len());
                     assert!(s.execute(command, &params).is_err());
                     assert!(from.is_dir() && !to.exists());
                     assert_eq!(s.catalog.to_snapshot(), before);
-                    assert_eq!((s.undo.len(), s.redo.len()), history);
+                    assert_eq!((s.history.undo.len(), s.history.redo.len()), history);
                     assert_eq!(std::fs::read(&old_sidecar).unwrap(), b"Retained edits");
                     assert_eq!(std::fs::read(&sidecar).unwrap(), b"Other edits");
                     std::fs::remove_file(&sidecar).unwrap();
                     s.execute(command, &params).unwrap();
-                    assert!(s.pending_sidecar_repairs.is_empty());
-                    assert!(s.undo.iter().chain(&s.redo).all(|e| e.retry_sidecars.is_empty()));
+                    assert!(s.history.pending_sidecar_repairs.is_empty());
+                    assert!(s.history.undo.iter().chain(&s.history.redo).all(|e| e.retry_sidecars.is_empty()));
                     let moved_sidecar = to.join(sidecar.file_name().unwrap());
                     assert_eq!(std::fs::read(&moved_sidecar).unwrap(), b"Retained edits");
                     assert_eq!(to.join(old_sidecar.file_name().unwrap()).exists(), copied);
@@ -1563,7 +1572,7 @@ pub(crate) mod tests {
         assert_eq!(path(&s, 1), "/p/Trip-1.jpg");
         assert_eq!(s.catalog.photo(PhotoId(1)).unwrap().file_name, "Trip-1.jpg");
         assert_eq!((path(&s, 2), path(&s, 3)), ("/p/b.jpg".into(), "/p/c.jpg".into()));
-        assert_eq!(s.undo.last().map(|e| e.label.as_str()), Some("Rename 1 Photo (partly)"));
+        assert_eq!(s.history.undo.last().map(|e| e.label.as_str()), Some("Rename 1 Photo (partly)"));
 
         // a sidecar that won't move, and a file that won't go back: the file keeps its new name
         // with the sidecars that did move, and says so

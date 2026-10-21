@@ -103,7 +103,7 @@ fn fills_missing_points_and_remembers_photos_without_one() {
             photo(7, &heif, "SONY ILCE-1"),
         ],
     );
-    let undo = s.undo.len();
+    let undo = s.history.undo.len();
     let r = s.execute("photo.readFocusPoints", &json!({"wait": true})).unwrap();
     assert_eq!(r["queued"], 4, "{r}");
     let last = &r["last"];
@@ -124,7 +124,7 @@ fn fills_missing_points_and_remembers_photos_without_one() {
     assert!(record_contains(&s, PhotoId(2)) && record_contains(&s, PhotoId(6)));
     assert!(!record_contains(&s, PhotoId(5)), "an unreadable file is tried again later");
     assert_eq!(record_len(&s), 2);
-    assert_eq!(s.undo.len(), undo, "no undo step");
+    assert_eq!(s.history.undo.len(), undo, "no undo step");
     // asked again: only the offline photo is left
     assert_eq!(s.execute("photo.readFocusPoints", &json!({"wait": true})).unwrap()["queued"], 1);
     // named photos are looked at again, even those recorded as having none

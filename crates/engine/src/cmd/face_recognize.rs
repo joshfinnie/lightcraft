@@ -993,7 +993,7 @@ mod imp {
             let (mut s, d) = loaded("found");
             let (a, b) = two_photos(&s);
             set_regions(&mut s, b, vec![region(0.1, Some("Ann"))]);
-            let (undo, redo) = (s.undo.len(), s.redo.len());
+            let (undo, redo) = (s.history.undo.len(), s.history.redo.len());
             let found = region(0.3, None).rect;
             let done = finished(&s, a, Some(vec![found]), vec![(found, Some(unit(&[(0, 1.0)])), found)]);
             assert_eq!(ingest(&mut s, done), (1, 0));
@@ -1002,7 +1002,7 @@ mod imp {
             assert!(regions[0].kind == RegionKind::Face && regions[0].name.is_none() && regions[0].rect == found);
             assert!(regions[0].description.as_deref().unwrap().starts_with(MARK), "marked as detected");
             // not something the user did, and its embedding is already there
-            assert_eq!((s.undo.len(), s.redo.len()), (undo, redo));
+            assert_eq!((s.history.undo.len(), s.history.redo.len()), (undo, redo));
             assert!(s.skip_auto_write, "no sidecar is rewritten for it");
             assert!(s.faces.scanned.contains(a.0) && s.faces.index.contains(a.0, &found));
             // a photo that has faces by now (the user, an import) keeps exactly those

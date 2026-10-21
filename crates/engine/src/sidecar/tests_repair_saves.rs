@@ -49,7 +49,12 @@ fn png(path: &Path) {
     std::fs::write(path, bytes).unwrap();
 }
 fn queued(s: &Session) -> Vec<crate::rename::SidecarMove> {
-    s.pending_sidecar_repairs.iter().chain(s.undo.iter().chain(&s.redo).flat_map(|entry| entry.retry_sidecars.iter())).cloned().collect()
+    s.history
+        .pending_sidecar_repairs
+        .iter()
+        .chain(s.history.undo.iter().chain(&s.history.redo).flat_map(|entry| entry.retry_sidecars.iter()))
+        .cloned()
+        .collect()
 }
 
 #[test]
@@ -72,7 +77,7 @@ fn autowrite_repairs_partial_rename_before_merging_foreign_xmp_across_library_sw
                     s.execute("library.import", &json!({"paths": [a]})).unwrap();
                     let mut id = s.catalog.photos().next().unwrap().id;
                     s.selection = crate::Selection::single(id);
-                    s.undo.clear();
+                    s.history.undo.clear();
                     let fs = PartialRename { sidecar: old.clone(), photo: b.clone() };
                     let plans = s.plan_rename_with(&fs, &[id], "Trip", 1);
                     assert!(s.execute_fn("photo.rename", |s| Ok(json!({"renamed": s.apply_rename_with(&fs, &plans)?}))).is_err());
@@ -84,7 +89,7 @@ fn autowrite_repairs_partial_rename_before_merging_foreign_xmp_across_library_sw
                     if switch {
                         s.close_library().unwrap();
                         s.open_library(root.join("library-b"), false).unwrap();
-                        assert_eq!(s.pending_sidecar_repairs, pending);
+                        assert_eq!(s.history.pending_sidecar_repairs, pending);
                         s.execute("library.import", &json!({"paths": [b]})).unwrap();
                         id = s.catalog.photos().next().unwrap().id;
                         s.selection = crate::Selection::single(id);

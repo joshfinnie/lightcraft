@@ -199,7 +199,7 @@ fn main() {
             frame_ms.push(fm);
             observe(&h, n, &asked, &mut shown_key, &mut lat_frames, &mut lat_ms, &mut draft_px);
             let r = &h.app.renderer;
-            if h.app.session.interaction.is_none()
+            if h.app.session.history.interaction.is_none()
                 && let Some(tex) = r.textures.get(&watch())
                 && Some(tex.key) == r.wanted(watch())
                 && !r.is_pending(watch())

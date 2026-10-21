@@ -66,11 +66,11 @@ fn removing_from_an_album_keeps_the_photo_in_its_folder() {
     assert_eq!(counts(&mut s, &folder, album), (3, 3, 2), "(library folder, folder on disk, album)");
 
     // removing what isn't in the album changes nothing (and makes no undo step)
-    let undo = s.undo.len();
+    let undo = s.history.undo.len();
     s.execute("library.source", &json!({"kind": "album", "id": album})).unwrap();
     let r = s.execute("album.removePhotos", &json!({"ids": [ids[1].0]})).unwrap();
     assert_eq!(r["removed"], 0, "{r}");
-    assert_eq!(s.undo.len(), undo);
+    assert_eq!(s.history.undo.len(), undo);
     let _ = std::fs::remove_dir_all(&folder);
 }
 

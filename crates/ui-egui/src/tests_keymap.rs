@@ -170,11 +170,11 @@ fn shift_insert_pastes_plainly() {
     let mut h = demo();
     h.events.push(egui::Event::Copy);
     h.settle(SETTLE);
-    let undo = h.app.session.undo.len();
+    let undo = h.app.session.history.undo.len();
     h.events.extend([egui::Event::ModifiersChanged(egui::Modifiers::SHIFT), egui::Event::Paste("text".into())]);
     h.settle(SETTLE);
     assert_eq!(h.app.ui.dialog, None, "no Paste Selected Settings");
-    assert_eq!(h.app.session.undo.len(), undo + 1, "the settings were pasted");
+    assert_eq!(h.app.session.history.undo.len(), undo + 1, "the settings were pasted");
 }
 /// The opening release can carry both physical shortcut keys and the replacement text.
 #[test]
@@ -200,7 +200,7 @@ fn opening_numeric_release_keeps_keys_in_the_editor() {
         assert!(h.app.ui.dialog.is_none());
         assert_eq!(h.app.session.catalog.photo(active).unwrap().rating, 0);
         assert!((h.app.session.develop_of(active).unwrap().light.exposure - 0.7).abs() < 1e-9);
-        let (undo, redo) = (h.app.session.undo.len(), h.app.session.redo.len());
+        let (undo, redo) = (h.app.session.history.undo.len(), h.app.session.history.redo.len());
         let pos = h.app.widgets.iter().rev().find(|(id, _)| id == "sliderValue:light.exposure").unwrap().1.center();
         h.events.push(Event::PointerMoved(pos));
         h.step();
@@ -222,8 +222,8 @@ fn opening_numeric_release_keeps_keys_in_the_editor() {
             }
             let expected = if terminal == Key::Enter { 2.0 } else { 0.7 };
             assert!((h.app.session.develop_of(active).unwrap().light.exposure - expected).abs() < 1e-9, "{terminal:?}, next={next_frame}");
-            assert_eq!(h.app.session.undo.len(), undo + usize::from(terminal == Key::Enter), "{terminal:?}, next={next_frame}");
-            assert_eq!(h.app.session.redo.len(), redo);
+            assert_eq!(h.app.session.history.undo.len(), undo + usize::from(terminal == Key::Enter), "{terminal:?}, next={next_frame}");
+            assert_eq!(h.app.session.history.redo.len(), redo);
             assert_eq!(h.app.session.catalog.photo(active).unwrap().rating, 0, "neither Num2 nor the saved Enter shortcut leaked");
             assert_eq!(h.app.session.active(), Some(active));
             assert_eq!(h.app.session.selection.ids, selection);

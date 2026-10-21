@@ -588,7 +588,7 @@ pub fn poll_scan(app: &mut LightcraftApp, ctx: &egui::Context) {
         let queue: Vec<String> =
             out.candidates.iter().filter(|c| c.duplicate != Some("path".into()) && c.error.is_none()).map(|c| c.path.clone()).collect();
         if !queue.is_empty() {
-            let undo0 = app.session.undo.len();
+            let undo0 = app.session.history.undo.len();
             let total = queue.len();
             let _ = total;
             app.import = Some(ImportTask::new(queue, json!({"mode": "add", "local": true}), undo0, true));
@@ -631,7 +631,7 @@ pub fn start(app: &mut LightcraftApp, d: &ImportDialog) -> Result<Value, String>
     if queue.is_empty() {
         return Err("no photos selected".into());
     }
-    let undo0 = app.session.undo.len();
+    let undo0 = app.session.history.undo.len();
     let mut album = d.album;
     if album.is_none() && !d.new_album.trim().is_empty() {
         let r = app.session.execute("album.create", &json!({"name": d.new_album.trim()})).map_err(|e| e.to_string())?;
@@ -682,7 +682,7 @@ pub fn start_paths(app: &mut LightcraftApp, paths: Vec<String>) -> Result<Value,
     if app.import.is_some() || app.scan.as_ref().is_some_and(|t| !t.browse) {
         return Err("an import is running".into());
     }
-    let undo0 = app.session.undo.len();
+    let undo0 = app.session.history.undo.len();
     let total = paths.len();
     app.import = Some(ImportTask::new(paths, json!({"mode": "add"}), undo0, false));
     Ok(json!({"importing": total}))
@@ -848,7 +848,7 @@ fn xmp_warnings_text(warnings: &[ImportWarning]) -> String {
 /// The import is done (or cancelled): one undo step, show and select the first photo (unless the
 /// user chose another meanwhile), say what happened.
 fn finish(app: &mut LightcraftApp, ctx: &egui::Context, task: ImportTask) {
-    let steps = app.session.undo.len().saturating_sub(task.undo0);
+    let steps = app.session.history.undo.len().saturating_sub(task.undo0);
     let plural = |n: usize| if n == 1 { "" } else { "s" };
     let label = if task.imported == 0 && task.restored > 0 {
         crate::i18n::tr_format!("Restore {} Photo{}", task.restored, plural(task.restored))

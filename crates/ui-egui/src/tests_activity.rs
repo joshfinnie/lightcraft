@@ -268,7 +268,7 @@ fn slow_import(tag: &str, n: usize) -> (Headless, std::path::PathBuf) {
 fn import_cancelled_by_command_reports_cancelled() {
     let n = 40;
     let (mut h, dir) = slow_import("cancel", n);
-    let undo0 = h.app.session.undo.len();
+    let undo0 = h.app.session.history.undo.len();
     crate::import::start_paths(&mut h.app, vec![dir.to_string_lossy().to_string()]).unwrap();
     assert!(h.step_until(Duration::from_secs(60), |h| h.app.import.as_ref().is_some_and(|t| t.imported >= 2)));
     let tasks = h.app.session.activity.list();
@@ -278,7 +278,7 @@ fn import_cancelled_by_command_reports_cancelled() {
     assert!(h.app.session.activity.list().is_empty());
     assert!(h.app.ui.toast.as_ref().is_some_and(|t| t.0.starts_with("Import cancelled")), "{:?}", h.app.ui.toast);
     assert!(h.app.session.catalog.len() < n, "stopped part-way");
-    assert_eq!(h.app.session.undo.len(), undo0 + 1, "one undo step");
+    assert_eq!(h.app.session.history.undo.len(), undo0 + 1, "one undo step");
     let _ = std::fs::remove_dir_all(&dir);
 }
 

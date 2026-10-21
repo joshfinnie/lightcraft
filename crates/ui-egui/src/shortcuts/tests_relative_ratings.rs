@@ -62,7 +62,7 @@ fn grid_brackets_rate_mixed_selection_without_resizing_brushes() {
         let remove = app.ui.remove_size;
         frame(&mut app, &ctx, Some(Key::CloseBracket), None);
         assert_eq!(ratings(&app).unwrap(), [1, 3, 5]);
-        assert_eq!(app.session.undo.len(), 1);
+        assert_eq!(app.session.history.undo.len(), 1);
         app.session.execute("edit.undo", &json!({})).unwrap();
         assert_eq!(ratings(&app).unwrap(), [0, 2, 5]);
         app.session.execute("edit.redo", &json!({})).unwrap();
@@ -90,7 +90,7 @@ fn detail_masking_and_remove_keep_bracket_brush_sizing() {
         let size = if panel == RightPanel::Remove { app.ui.remove_size } else { app.ui.brush_size };
         assert!((size - 0.05).abs() < 1e-6);
         assert_eq!(ratings(&app).unwrap(), [0, 2, 5]);
-        assert!(app.session.undo.is_empty());
+        assert!(app.session.history.undo.is_empty());
     }
 }
 
@@ -131,7 +131,7 @@ fn unknown_saved_bracket_assignment_does_not_shadow_grid_ratings() {
     let brush = app.ui.brush_size;
     frame(&mut app, &ctx, Some(Key::CloseBracket), None);
     assert_eq!(ratings(&app).unwrap(), [1, 3, 5]);
-    assert_eq!(app.session.undo.len(), 1);
+    assert_eq!(app.session.history.undo.len(), 1);
     assert_eq!(app.ui.brush_size, brush);
     app.session.execute("edit.undo", &json!({})).unwrap();
     app.ui.settings.keymap.remove("retired.command");
@@ -171,11 +171,11 @@ fn brackets_yield_to_text_focus_and_shortcut_recording() {
     frame(&mut app, &ctx, Some(Key::CloseBracket), Some(&mut text));
     assert!(ctx.egui_wants_keyboard_input());
     assert_eq!(ratings(&app).unwrap(), [0, 2, 5]);
-    assert!(app.session.undo.is_empty());
+    assert!(app.session.history.undo.is_empty());
     let ctx = egui::Context::default();
     app.ui.dialog = Some(Dialog::Shortcuts);
     app.recording_shortcut = Some("brush.larger".into());
     frame(&mut app, &ctx, Some(Key::CloseBracket), None);
     assert_eq!(ratings(&app).unwrap(), [0, 2, 5]);
-    assert!(app.session.undo.is_empty());
+    assert!(app.session.history.undo.is_empty());
 }

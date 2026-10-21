@@ -519,7 +519,7 @@ fn crop_drag_activates_the_remembered_ratio_and_undo_restores_the_photo() {
     h.app.ui.crop_default_aspect = Some(json!([1, 1]));
     h.settle(SETTLE);
     let before = develop(&h);
-    let undo = h.app.session.undo.len();
+    let undo = h.app.session.history.undo.len();
     assert!(before.crop.aspect.is_none());
     let r = h.request(
         "ui.pointer",
@@ -534,7 +534,7 @@ fn crop_drag_activates_the_remembered_ratio_and_undo_restores_the_photo() {
     assert_eq!(r["ok"], true, "{r}");
     h.settle(SETTLE);
     assert_eq!(develop(&h).crop.aspect, Some((100, 100)));
-    assert_eq!(h.app.session.undo.len(), undo + 1);
+    assert_eq!(h.app.session.history.undo.len(), undo + 1);
     exec(&mut h, "edit.undo", json!({}));
     assert_eq!(develop(&h), before);
 }
@@ -774,12 +774,12 @@ fn smart_album_edit_with_bad_rules_keeps_the_name() {
     let Some(crate::state::Dialog::SmartRules { rules, .. }) = &mut h.app.ui.dialog else { panic!("the editor stays open") };
     *rules = serde_json::from_value(json!({"rules": [{"field": "captureDate", "op": "is", "value": "2026"}]})).unwrap();
     h.settle(SETTLE);
-    let undo = h.app.session.undo.len();
+    let undo = h.app.session.history.undo.len();
     let r = h.request("ui.clickWidget", json!({"id": "button:dialogOk"}), T);
     assert_eq!(r["ok"], true, "{r}");
     h.settle(SETTLE);
     let album = h.app.session.catalog.album(lightcraft_catalog::AlbumId(id)).expect("album");
-    assert_eq!((album.name.as_str(), h.app.session.undo.len()), ("Renamed", undo + 1));
+    assert_eq!((album.name.as_str(), h.app.session.history.undo.len()), ("Renamed", undo + 1));
     exec(&mut h, "edit.undo", json!({}));
     let album = h.app.session.catalog.album(lightcraft_catalog::AlbumId(id)).expect("album");
     assert_eq!(album.name, "Keep", "one undo takes back the name with the rules");
@@ -865,7 +865,7 @@ fn luminance_range_drag_keeps_the_grabbed_handle() {
     h.settle(SETTLE);
     let original = develop(&h);
     for (start, dx, steps) in [(0.2, 180.0, 10), (0.8, -180.0, 10), (0.2, 120.0, 1), (0.8, -120.0, 1)] {
-        let undo0 = h.app.session.undo.len();
+        let undo0 = h.app.session.history.undo.len();
         let r = h.request("ui.dragWidget", json!({"id": "lumRange:0", "fx": start, "fy": 0.5, "dx": dx, "steps": steps}), T);
         assert_eq!(r["ok"], true, "{r}");
         let d = develop(&h);
@@ -877,7 +877,7 @@ fn luminance_range_drag_keeps_the_grabbed_handle() {
             assert_eq!(*lo, 0.2, "dragging high must leave low fixed, including past low");
             assert!(*hi < 0.4 && *hi > *lo, "{lo}..{hi}");
         }
-        assert_eq!(h.app.session.undo.len(), undo0 + 1);
+        assert_eq!(h.app.session.history.undo.len(), undo0 + 1);
         exec(&mut h, "edit.undo", json!({}));
         assert_eq!(develop(&h), original);
     }
@@ -892,14 +892,14 @@ fn luminance_range_controls_and_map() {
         MaskShape::LuminanceRange { lo, hi, lo_feather, .. } => (*lo, *hi, *lo_feather),
         s => panic!("{s:?}"),
     };
-    let undo0 = h.app.session.undo.len();
+    let undo0 = h.app.session.history.undo.len();
     // drag the high handle from the right end to 80 %
     let r = h.request("ui.dragWidget", json!({"id": "lumRange:0", "fx": 1.0, "fy": 0.5, "dx": -48.0}), T);
     assert_eq!(r["ok"], true, "{r}");
     let (lo, hi, _) = lum(&h);
     assert_eq!(lo, 0.6, "the nearer handle moves");
     assert!(hi < 0.9 && hi > 0.6, "{hi}");
-    assert_eq!(h.app.session.undo.len(), undo0 + 1, "one undo step per drag");
+    assert_eq!(h.app.session.history.undo.len(), undo0 + 1, "one undo step per drag");
     // Show Luminance Map: black-and-white overlay, and back
     let r = h.request("ui.clickWidget", json!({"id": "check:lumMap0"}), T);
     assert_eq!(r["ok"], true, "{r}");
@@ -1609,9 +1609,9 @@ fn sideways_scrolling_adjusts_the_slider_under_the_pointer() {
     assert!(scroll(&mut h, json!({"dx": 120.0})) > 0.0, "a swipe right raises the value");
     assert!(scroll(&mut h, json!({"dx": -120.0})) < 0.0, "a swipe left lowers it");
     assert!(scroll(&mut h, json!({"dy": 120.0, "shift": true})) > 0.0, "Shift+wheel scrolls sideways");
-    let undo = h.app.session.undo.len();
+    let undo = h.app.session.history.undo.len();
     assert_eq!(scroll(&mut h, json!({"dx": 30.0, "dy": -120.0})), 0.0, "a mostly vertical swipe leaves the slider alone");
-    assert_eq!(h.app.session.undo.len(), undo);
+    assert_eq!(h.app.session.history.undo.len(), undo);
 }
 
 /// Issue #517: a fast brush stroke (pointer samples several brush widths apart) shows on the photo

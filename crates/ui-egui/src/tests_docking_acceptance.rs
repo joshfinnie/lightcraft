@@ -50,12 +50,12 @@ fn inactive_same_mode_commands_reveal_without_closing_or_editing() {
     dock(&mut h, json!({"operation":"move","panel":"tools","target":"library","zone":"center"}));
     for command in ["panel.crop", "panel.crop", "tool.brush", "section.light", "panel.profiles"] {
         dock(&mut h, json!({"operation":"activate","panel":"library"}));
-        let undo = h.app.session.undo.len();
+        let undo = h.app.session.history.undo.len();
         let photos = serde_json::to_value(h.app.session.catalog.photos().map(|photo| photo.as_ref()).collect::<Vec<_>>()).unwrap();
         h.app.run(command, json!({})).unwrap();
         assert!(h.app.ui.docking.as_ref().unwrap().exposed(Panel::Tools), "{command}");
         assert_ne!(h.app.ui.right, RightPanel::None);
-        assert_eq!(h.app.session.undo.len(), undo);
+        assert_eq!(h.app.session.history.undo.len(), undo);
         assert_eq!(serde_json::to_value(h.app.session.catalog.photos().map(|photo| photo.as_ref()).collect::<Vec<_>>()).unwrap(), photos);
         h.step();
     }
@@ -85,7 +85,7 @@ fn crop_canvas_double_click_reveals_edit_in_actual_custom_workspace() {
     let library = h.app.ui.docking.as_ref().unwrap().layout.location(&Panel::Library).unwrap();
     let id = h.app.session.active().unwrap();
     let photo = serde_json::to_value(h.app.session.catalog.photo(id).unwrap().as_ref()).unwrap();
-    let undo = h.app.session.undo.len();
+    let undo = h.app.session.history.undo.len();
     let center = h.app.image_rect.expect("crop photo is rendered").center();
     release(&mut h, center);
     release(&mut h, center);
@@ -98,7 +98,7 @@ fn crop_canvas_double_click_reveals_edit_in_actual_custom_workspace() {
     assert_eq!(workspace.layout.location(&Panel::Tools).unwrap().anchor, Some(Panel::Presets));
     assert_eq!(workspace.layout.location(&Panel::Library).unwrap(), library);
     assert_eq!(h.app.session.active(), Some(id));
-    assert_eq!(h.app.session.undo.len(), undo);
+    assert_eq!(h.app.session.history.undo.len(), undo);
     assert_eq!(serde_json::to_value(h.app.session.catalog.photo(id).unwrap().as_ref()).unwrap(), photo);
 }
 
@@ -111,11 +111,11 @@ fn floating_panel_blocks_photo_album_drop_then_uncovered_target_adds_exact_selec
     let row = rect(&h, &format!("source:album:{album}"));
     let ids: Vec<_> = h.app.session.visible_cloned().iter().take(2).map(|id| id.0).collect();
     dock(&mut h, json!({"operation":"float","panel":"tools","rect":[row.left()-10.0,row.top()-30.0,330,500]}));
-    let undo = h.app.session.undo.len();
+    let undo = h.app.session.history.undo.len();
     h.app.ui.dragging_photos = Some(ids.clone());
     release(&mut h, row.center());
     assert!(h.app.session.catalog.album(lightcraft_catalog::AlbumId(album)).unwrap().photos.is_empty());
-    assert_eq!(h.app.session.undo.len(), undo);
+    assert_eq!(h.app.session.history.undo.len(), undo);
     dock(&mut h, json!({"operation":"moveFloating","panel":"tools","rect":[800,100,330,500]}));
     h.app.ui.dragging_photos = Some(ids.clone());
     release(&mut h, row.center());
@@ -123,7 +123,7 @@ fn floating_panel_blocks_photo_album_drop_then_uncovered_target_adds_exact_selec
         h.app.session.catalog.album(lightcraft_catalog::AlbumId(album)).unwrap().photos,
         ids.into_iter().map(lightcraft_catalog::PhotoId).collect::<Vec<_>>()
     );
-    assert_eq!(h.app.session.undo.len(), undo + 1);
+    assert_eq!(h.app.session.history.undo.len(), undo + 1);
 }
 
 #[test]
@@ -131,7 +131,7 @@ fn preset_hover_survives_float_movement_without_mutating_photo() {
     let mut h = app();
     h.app.run("panel.presets", json!({})).unwrap();
     dock(&mut h, json!({"operation":"float","panel":"presets","rect":[500,100,300,700]}));
-    let undo = h.app.session.undo.len();
+    let undo = h.app.session.history.undo.len();
     let photos = serde_json::to_value(h.app.session.catalog.photos().map(|photo| photo.as_ref()).collect::<Vec<_>>()).unwrap();
     for x in [500, 650] {
         dock(&mut h, json!({"operation":"moveFloating","panel":"presets","rect":[x,100,300,700]}));
@@ -140,7 +140,7 @@ fn preset_hover_survives_float_movement_without_mutating_photo() {
         h.step();
         h.step();
         assert!(h.app.hover_preview.is_some());
-        assert_eq!(h.app.session.undo.len(), undo);
+        assert_eq!(h.app.session.history.undo.len(), undo);
         assert_eq!(serde_json::to_value(h.app.session.catalog.photos().map(|photo| photo.as_ref()).collect::<Vec<_>>()).unwrap(), photos);
     }
     h.app.synthetic.push(Event::PointerMoved(egui::pos2(5.0, 5.0)));
@@ -201,14 +201,14 @@ fn floating_presets_block_keyword_photo_drop_then_uncovered_target_changes_exact
     h.step();
     let ids: Vec<_> = h.app.session.visible_cloned().iter().take(2).map(|id| id.0).collect();
     dock(&mut h, json!({"operation":"float","panel":"presets","rect":[row.left()-10.0,row.top()-30.0,300,500]}));
-    let undo = h.app.session.undo.len();
+    let undo = h.app.session.history.undo.len();
     let before: Vec<_> = ids.iter().map(|id| h.app.session.catalog.photo(lightcraft_catalog::PhotoId(*id)).unwrap().meta.keywords.clone()).collect();
     h.app.ui.dragging_photos = Some(ids.clone());
     release(&mut h, row.center());
     for (id, expected) in ids.iter().zip(&before) {
         assert_eq!(&h.app.session.catalog.photo(lightcraft_catalog::PhotoId(*id)).unwrap().meta.keywords, expected);
     }
-    assert_eq!(h.app.session.undo.len(), undo);
+    assert_eq!(h.app.session.history.undo.len(), undo);
     dock(&mut h, json!({"operation":"moveFloating","panel":"presets","rect":[400,100,300,500]}));
     h.app.ui.dragging_photos = Some(ids.clone());
     release(&mut h, row.center());
@@ -219,7 +219,7 @@ fn floating_presets_block_keyword_photo_drop_then_uncovered_target_changes_exact
         actual.sort();
         assert_eq!(actual, expected);
     }
-    assert_eq!(h.app.session.undo.len(), undo + 1);
+    assert_eq!(h.app.session.history.undo.len(), undo + 1);
 }
 
 #[test]
@@ -231,16 +231,16 @@ fn covered_folder_rejects_album_move_and_uncovered_folder_nests_exact_album() {
     h.step();
     let row = rect(&h, &format!("source:folder:{folder}"));
     dock(&mut h, json!({"operation":"float","panel":"tools","rect":[row.left()-10.0,row.top()-30.0,330,500]}));
-    let undo = h.app.session.undo.len();
+    let undo = h.app.session.history.undo.len();
     h.app.ui.dragging_album = Some(child);
     release(&mut h, row.center());
     assert_eq!(h.app.session.catalog.album(lightcraft_catalog::AlbumId(child)).unwrap().parent, None);
-    assert_eq!(h.app.session.undo.len(), undo);
+    assert_eq!(h.app.session.history.undo.len(), undo);
     dock(&mut h, json!({"operation":"moveFloating","panel":"tools","rect":[800,100,330,500]}));
     h.app.ui.dragging_album = Some(child);
     release(&mut h, row.center());
     assert_eq!(h.app.session.catalog.album(lightcraft_catalog::AlbumId(child)).unwrap().parent, Some(lightcraft_catalog::AlbumId(folder)));
-    assert_eq!(h.app.session.undo.len(), undo + 1);
+    assert_eq!(h.app.session.history.undo.len(), undo + 1);
 }
 
 #[test]
@@ -254,18 +254,18 @@ fn covered_keyword_rejects_hierarchy_move_and_uncovered_target_moves_exact_keywo
     h.step();
     let row = rect(&h, "keywordRow:A Dock Parent");
     dock(&mut h, json!({"operation":"float","panel":"presets","rect":[row.left()-10.0,row.top()-30.0,300,500]}));
-    let undo = h.app.session.undo.len();
+    let undo = h.app.session.history.undo.len();
     h.app.ui.dragging_keyword = Some("B Dock Child".into());
     release(&mut h, row.center());
     assert!(h.app.session.catalog.has_keyword("B Dock Child"));
     assert!(!h.app.session.catalog.has_keyword("A Dock Parent|B Dock Child"));
-    assert_eq!(h.app.session.undo.len(), undo);
+    assert_eq!(h.app.session.history.undo.len(), undo);
     dock(&mut h, json!({"operation":"moveFloating","panel":"presets","rect":[400,100,300,500]}));
     h.app.ui.dragging_keyword = Some("B Dock Child".into());
     release(&mut h, row.center());
     assert!(!h.app.session.catalog.has_keyword("B Dock Child"));
     assert!(h.app.session.catalog.has_keyword("A Dock Parent|B Dock Child"));
-    assert_eq!(h.app.session.undo.len(), undo + 1);
+    assert_eq!(h.app.session.history.undo.len(), undo + 1);
 }
 
 #[test]
@@ -284,7 +284,7 @@ fn reset_during_held_divider_drag_keeps_replacement_layout_on_later_movement() {
     h.app.synthetic.push(Event::PointerMoved(from + egui::vec2(55.0, 0.0)));
     h.step();
     assert_ne!(h.app.ui.docking.as_ref().unwrap().layout, resized, "renderer-generated actions preserve continuous dragging");
-    let undo = h.app.session.undo.len();
+    let undo = h.app.session.history.undo.len();
     h.app.run("ui.dock.reset", json!({})).unwrap();
     let reset = serde_json::to_value(&h.app.ui.docking).unwrap();
     h.app.synthetic.push(Event::PointerMoved(from + egui::vec2(90.0, 0.0)));
@@ -298,7 +298,7 @@ fn reset_during_held_divider_drag_keeps_replacement_layout_on_later_movement() {
     });
     h.step();
     assert_eq!(serde_json::to_value(&h.app.ui.docking).unwrap(), reset);
-    assert_eq!(h.app.session.undo.len(), undo);
+    assert_eq!(h.app.session.history.undo.len(), undo);
 }
 
 fn held_divider_replacement_route(route: &str) {
@@ -311,7 +311,7 @@ fn held_divider_replacement_route(route: &str) {
     h.app.synthetic.push(Event::PointerMoved(from + egui::vec2(40.0, 0.0)));
     h.step();
     assert_eq!(h.view.ctx.dragged_id(), Some(divider));
-    let undo = h.app.session.undo.len();
+    let undo = h.app.session.history.undo.len();
     match route {
         "ui.set" => {
             let response = h.request("ui.set", json!({"rightWidth":410.0}), std::time::Duration::from_secs(20));
@@ -333,7 +333,7 @@ fn held_divider_replacement_route(route: &str) {
     h.app.synthetic.push(Event::PointerMoved(from + egui::vec2(90.0, 0.0)));
     h.step();
     assert_eq!(serde_json::to_value(&h.app.ui.docking).unwrap(), replacement, "{route} cancels the previous divider gesture");
-    assert_eq!(h.app.session.undo.len(), undo);
+    assert_eq!(h.app.session.history.undo.len(), undo);
     assert_eq!(serde_json::to_value(h.app.session.catalog.photos().map(|photo| photo.as_ref()).collect::<Vec<_>>()).unwrap(), photos);
 }
 #[test]

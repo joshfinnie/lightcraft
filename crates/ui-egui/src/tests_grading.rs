@@ -218,12 +218,12 @@ fn drag_wheel(h: &mut Headless, from: egui::Vec2, by: egui::Vec2, mods: &[&str])
     for m in mods {
         req[*m] = json!(true);
     }
-    let undo = h.app.session.undo.len();
+    let undo = h.app.session.history.undo.len();
     let r = h.request("ui.dragWidget", req, T);
     assert_eq!(r["ok"], true, "{r}");
     h.step();
     h.step();
-    (wheel_value(h, "midtones"), h.app.session.undo.len() - undo)
+    (wheel_value(h, "midtones"), h.app.session.history.undo.len() - undo)
 }
 
 /// The distance a puck moved, in points.

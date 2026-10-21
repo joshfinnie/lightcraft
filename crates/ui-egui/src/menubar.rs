@@ -378,10 +378,10 @@ fn live_label(app: &LightcraftApp, id: &str, label: &str) -> String {
     let n = app.session.selection.ids.len();
     match id {
         "edit.undo" => {
-            app.session.undo.last().map(|e| crate::i18n::tr_format!("Undo {}", crate::i18n::tr(&e.label))).unwrap_or_else(|| "Undo".into())
+            app.session.history.undo.last().map(|e| crate::i18n::tr_format!("Undo {}", crate::i18n::tr(&e.label))).unwrap_or_else(|| "Undo".into())
         }
         "edit.redo" => {
-            app.session.redo.last().map(|e| crate::i18n::tr_format!("Redo {}", crate::i18n::tr(&e.label))).unwrap_or_else(|| "Redo".into())
+            app.session.history.redo.last().map(|e| crate::i18n::tr_format!("Redo {}", crate::i18n::tr(&e.label))).unwrap_or_else(|| "Redo".into())
         }
         "photo.delete" if n > 1 => crate::i18n::tr_format!("Delete {n} Photos", n = n),
         "photo.virtualCopy" if n > 1 => crate::i18n::tr_format!("Create {n} Virtual Copies", n = n),
@@ -1412,7 +1412,7 @@ mod tests {
             lightcraft_catalog::Source::File { path } => path.clone(),
             _ => panic!("expected file source"),
         };
-        let undo_count_before = app.session.undo.len();
+        let undo_count_before = app.session.history.undo.len();
 
         // 1. Point at a nonexistent directory
         let bad_dir = dir.join("nonexistent_subdir");
@@ -1430,7 +1430,7 @@ mod tests {
         assert!(err.contains("too large"), "{err}");
 
         // Catalog and photo path must not have been mutated
-        assert_eq!(app.session.undo.len(), undo_count_before, "no undo steps added on failed search");
+        assert_eq!(app.session.history.undo.len(), undo_count_before, "no undo steps added on failed search");
         let path_after = match &app.session.catalog.photo(id).unwrap().source {
             lightcraft_catalog::Source::File { path } => path.clone(),
             _ => panic!("expected file source"),

@@ -70,7 +70,7 @@ fn backtick_cycles_the_selected_photo_in_grid_and_loupe() {
         assert_eq!(seen, [Flag::Pick, Flag::Reject, Flag::None], "{view:?}");
         assert_eq!(flags(&app)[0], Flag::None);
         assert_eq!(flags(&app)[2], Flag::None);
-        assert_eq!(app.session.undo.len(), 3);
+        assert_eq!(app.session.history.undo.len(), 3);
         app.session.execute("edit.undo", &json!({})).unwrap();
         assert_eq!(flags(&app)[1], Flag::Reject);
     }
@@ -87,7 +87,7 @@ fn cmd_up_and_down_raise_and_lower_the_flag() {
     frame(&mut app, &ctx, Some((Key::ArrowDown, cmd)), None);
     frame(&mut app, &ctx, Some((Key::ArrowDown, cmd)), None);
     assert_eq!(flags(&app)[1], Flag::Reject);
-    assert_eq!(app.session.undo.len(), 3);
+    assert_eq!(app.session.history.undo.len(), 3);
 }
 
 #[test]
@@ -100,7 +100,7 @@ fn backtick_does_nothing_while_a_text_field_has_focus() {
     frame(&mut app, &ctx, Some((Key::Backtick, Modifiers::NONE)), Some(&mut text));
     assert!(ctx.egui_wants_keyboard_input());
     assert_eq!(flags(&app), [Flag::None; 3]);
-    assert!(app.session.undo.is_empty());
+    assert!(app.session.history.undo.is_empty());
 }
 
 #[test]

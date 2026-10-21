@@ -127,13 +127,13 @@ fn develop_set_and_interaction_coalesces() {
     let mut s = demo();
     s.execute("develop.set", &json!({"control": "light.exposure", "value": 0.5})).unwrap();
     assert_eq!(active_dev(&s).light.exposure, 0.5);
-    let undo_before = s.undo.len();
+    let undo_before = s.history.undo.len();
     s.execute("develop.beginInteraction", &json!({"label": "Exposure"})).unwrap();
     for v in [0.6, 0.8, 1.2] {
         s.execute("develop.set", &json!({"control": "light.exposure", "value": v})).unwrap();
     }
     s.execute("develop.endInteraction", &json!({})).unwrap();
-    assert_eq!(s.undo.len(), undo_before + 1, "a drag is one undo step");
+    assert_eq!(s.history.undo.len(), undo_before + 1, "a drag is one undo step");
     assert_eq!(active_dev(&s).light.exposure, 1.2);
     s.execute("edit.undo", &json!({})).unwrap();
     assert_eq!(active_dev(&s).light.exposure, 0.5);
@@ -275,13 +275,13 @@ fn permanently_deleting_photos_selects_a_neighbour_in_recently_deleted() {
             let deleted = &visible[at..at + 2];
             s.execute("library.select", &json!({"ids": deleted, "active": deleted[0]})).unwrap();
             let snapshot = s.catalog.to_snapshot();
-            let undo_len = s.undo.len();
+            let undo_len = s.history.undo.len();
             let r = s.execute("photo.deletePermanently", &json!({})).unwrap();
             assert_eq!(r["deleted"], 2);
             let expected = if at_end { visible[at - 1] } else { visible[at + 2] };
             assert_eq!(s.selection, Selection::single(expected), "sort {params}, end {at_end}");
             assert!(deleted.iter().all(|id| s.catalog.photo(*id).is_none()));
-            assert_eq!(s.undo.len(), undo_len + 1);
+            assert_eq!(s.history.undo.len(), undo_len + 1);
             let removed = s.catalog.to_snapshot();
             s.execute("edit.undo", &json!({})).unwrap();
             assert_eq!(s.catalog.to_snapshot(), snapshot);
@@ -1046,12 +1046,12 @@ fn leaving_an_edited_photo_keeps_an_auto_version() {
     s.execute("library.select", &json!({"ids": [ids[0]]})).unwrap();
     let before = s.catalog.photo(PhotoId(ids[0])).unwrap().versions.len();
     s.execute("develop.set", &json!({"control": "light.exposure", "value": 0.4})).unwrap();
-    let undo = s.undo.len();
+    let undo = s.history.undo.len();
     s.execute("library.select", &json!({"ids": [ids[1]]})).unwrap();
     let v = s.catalog.photo(PhotoId(ids[0])).unwrap().versions.clone();
     assert_eq!(v.len(), before + 1);
     assert!(v.last().unwrap().auto && v.last().unwrap().settings.light.exposure == 0.4);
-    assert_eq!(s.undo.len(), undo, "not an undo step");
+    assert_eq!(s.history.undo.len(), undo, "not an undo step");
     // back and away again without changes: nothing new
     s.execute("library.select", &json!({"ids": [ids[0]]})).unwrap();
     s.execute("library.select", &json!({"ids": [ids[1]]})).unwrap();

@@ -752,7 +752,7 @@ fn apply(s: &mut crate::Session, data: CatalogImport, update_existing: bool) -> 
     let index_path = archive_dir.as_ref().map(|p| p.join("lightroom-index.json"));
     let mut index = load_index(index_path.as_deref())?;
     let archive_path = archive_dir.as_ref().map(|dir| crate::lightroom_archive::store(dir, &data).map_err(error)).transpose()?;
-    let undo0 = s.undo.len();
+    let undo0 = s.history.undo.len();
     let existing: HashMap<_, _> =
         s.catalog.photos().filter(|p| p.copy_of.is_none()).filter_map(|p| source_path(p).map(|path| (key(path), p.id))).collect();
     let paths: Vec<_> = data
@@ -1016,7 +1016,7 @@ pub(crate) fn apply_prepared(s: &mut crate::Session, mut data: CatalogImport, co
     if !ops.is_empty() {
         s.commit("Import Lightroom Catalog", Op::Batch { ops })?;
     }
-    s.merge_undo(s.undo.len().saturating_sub(undo0), "Import Lightroom Catalog");
+    s.merge_undo(s.history.undo.len().saturating_sub(undo0), "Import Lightroom Catalog");
     Ok(AppliedImport {
         report: json!({"source":data.source,"photos":ids.len(),"imported":imported,"library":s.library.as_ref().filter(|l| l.on_disk).map(|l| l.dir.to_string_lossy()),"collections":albums.len(),"preservedExistingEdits":preserved,"missing":missing,"failed":files.failed,"warnings":warnings,"unmapped":unmapped,"archive":archive_path,"mapping":ids}),
         index: index.clone(),
@@ -1114,12 +1114,12 @@ mod tests {
         let mut master = Photo::new(master_id, Source::File { path: "/missing/test.ARW".into() }, "test.ARW", "ARW", 20, 10, "before");
         master.local = true;
         s.commit("Browse folder", Op::AddPhoto { photo: Box::new(master) }).unwrap();
-        s.undo.clear();
+        s.history.undo.clear();
         let before = s.catalog.photo(master_id).unwrap().clone();
         let mut index = ImportIndex::default();
         let missing_sources = [key("/missing/test.ARW")].into_iter().collect();
         let mut import = |s: &mut crate::Session| {
-            let undo0 = s.undo.len();
+            let undo0 = s.history.undo.len();
             apply_prepared(
                 s,
                 data.clone(),
@@ -1141,7 +1141,7 @@ mod tests {
         assert_eq!(first["missing"], json!(["/missing/test.ARW"]));
         assert_eq!(s.catalog.len(), 2);
         assert!(s.catalog.photos().all(|photo| !photo.local));
-        assert_eq!(s.undo.len(), 1);
+        assert_eq!(s.history.undo.len(), 1);
         let second = import(&mut s);
         assert_eq!(second["imported"], 0);
         assert_eq!(second["mapping"], first["mapping"]);
@@ -1177,7 +1177,7 @@ mod tests {
         assert_eq!(album.photos, vec![copy.id, master.id]);
         assert!(album.parent.is_some());
         assert!(r["unmapped"]["1"].as_array().unwrap().iter().any(|v| v.as_str() == Some("CameraProfile")));
-        assert_eq!(s.undo.len(), 1);
+        assert_eq!(s.history.undo.len(), 1);
         s.undo_step().unwrap();
         assert!(s.catalog.is_empty());
         assert!(s.catalog.albums().next().is_none());

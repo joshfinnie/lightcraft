@@ -657,11 +657,11 @@ fn folder_rename_and_move_undo_and_redo_on_disk() {
         lightcraft_catalog::Source::File { path } => path.clone(),
         _ => panic!(),
     };
-    let undo0 = s.undo.len();
+    let undo0 = s.history.undo.len();
     let b = root.join("Italy");
     s.execute("folder.rename", &json!({"path": a.to_string_lossy(), "name": "Italy"})).unwrap();
-    assert_eq!(s.undo.len(), undo0 + 1, "one undo step");
-    assert!(s.undo.last().unwrap().label.contains("Rename Folder"));
+    assert_eq!(s.history.undo.len(), undo0 + 1, "one undo step");
+    assert!(s.history.undo.last().unwrap().label.contains("Rename Folder"));
     assert!(b.join("one.png").exists() && !a.exists());
 
     s.execute("edit.undo", &json!({})).unwrap();
@@ -677,10 +677,10 @@ fn folder_rename_and_move_undo_and_redo_on_disk() {
     // the old name is taken now: undo is refused, nothing is overwritten, the step stays
     std::fs::create_dir_all(&a).unwrap();
     std::fs::write(a.join("keep.txt"), "mine").unwrap();
-    let undo_n = s.undo.len();
+    let undo_n = s.history.undo.len();
     let e = s.execute("edit.undo", &json!({})).unwrap_err().to_string();
     assert!(e.contains("already exists"), "{e}");
-    assert_eq!(s.undo.len(), undo_n, "the step stays on the stack");
+    assert_eq!(s.history.undo.len(), undo_n, "the step stays on the stack");
     assert_eq!(std::fs::read_to_string(a.join("keep.txt")).unwrap(), "mine");
     assert!(b.join("one.png").exists());
     assert_eq!(path(&s), b.join("one.png").to_string_lossy());

@@ -70,13 +70,13 @@ fn moved_to_share(dir: &Scratch) -> (Session, PhotoId, PhotoId) {
 fn undo_with_the_share_offline_is_refused_keeps_the_step_and_works_once_it_is_back() {
     let dir = Scratch::new("offline");
     let (mut s, a, b) = moved_to_share(&dir);
-    let steps = s.undo.len();
+    let steps = s.history.undo.len();
     // the share goes offline: its folder is no longer there
     let away = dir.0.join("share-unmounted");
     std::fs::rename(dir.0.join("share"), &away).unwrap();
     let e = s.execute("edit.undo", &json!({})).unwrap_err().to_string();
     assert!(e.contains("can't move the files back"), "says why: {e}");
-    assert_eq!(s.undo.len(), steps, "the step stays, to undo once the share is back");
+    assert_eq!(s.history.undo.len(), steps, "the step stays, to undo once the share is back");
     // nothing deleted, nothing half-moved, and the library still points at the share
     assert!(away.join("a.jpg").is_file() && away.join("a.xmp").is_file() && away.join("b.jpg").is_file());
     assert!(!dir.0.join("local/a.jpg").exists() && !dir.0.join("local/b.jpg").exists());
@@ -97,13 +97,13 @@ fn undo_from_a_read_only_share_is_refused_and_deletes_nothing() {
     use std::os::unix::fs::PermissionsExt;
     let dir = Scratch::new("readonly");
     let (mut s, a, _) = moved_to_share(&dir);
-    let steps = s.undo.len();
+    let steps = s.history.undo.len();
     std::fs::set_permissions(dir.0.join("share"), std::fs::Permissions::from_mode(0o555)).unwrap();
     // running as root ignores permissions: nothing to check there
     let root = std::fs::write(dir.0.join("share/probe"), "x").is_ok();
     if !root {
         assert!(s.execute("edit.undo", &json!({})).is_err());
-        assert_eq!(s.undo.len(), steps, "the step stays");
+        assert_eq!(s.history.undo.len(), steps, "the step stays");
         assert!(dir.0.join("share/a.jpg").is_file() && dir.0.join("share/b.jpg").is_file(), "nothing deleted");
         assert!(!dir.0.join("local/a.jpg").exists(), "no second copy left behind");
         assert_eq!(file_of(&s, a), dir.path("share/a.jpg"));
@@ -170,14 +170,14 @@ fn a_connection_lost_partway_through_a_move_puts_back_what_moved() {
     let plans = plans(&s, &ids, "/share");
     // the share stops answering when the second file goes
     fs.fail.borrow_mut().push("/local/b.jpg".into());
-    let steps = s.undo.len();
+    let steps = s.history.undo.len();
     assert!(s.apply_file_plans(&fs, &plans, &|_| "Move to Folder".into()).is_err());
     assert_eq!(
         fs.listing(),
         vec![("/local/a.jpg".into(), "A".into()), ("/local/b.jpg".into(), "B".into()), ("/local/c.jpg".into(), "C".into())],
         "all back home"
     );
-    assert_eq!(s.undo.len(), steps, "no step for a move that didn't happen");
+    assert_eq!(s.history.undo.len(), steps, "no step for a move that didn't happen");
     assert_linked(&s, &fs, &[]);
 }
 

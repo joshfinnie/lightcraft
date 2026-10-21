@@ -184,12 +184,12 @@ fn the_readout_stays_on_the_canvas() {
 #[test]
 fn dragging_the_angle_field_is_one_undo_step() {
     let mut h = crop_tool();
-    let undo = h.app.session.undo.len();
+    let undo = h.app.session.history.undo.len();
     let r = h.request("ui.dragWidget", json!({"id": "cropAngleField", "dx": 40.0, "dy": 0.0, "steps": 6}), T);
     assert_eq!(r["ok"], true, "{r}");
     h.settle(SETTLE);
     assert!(angle(&h) > 0.0, "dragged right: {}", angle(&h));
-    assert_eq!(h.app.session.undo.len(), undo + 1, "one step for the whole drag");
+    assert_eq!(h.app.session.history.undo.len(), undo + 1, "one step for the whole drag");
 }
 
 /// Typing into the Angle field one key at a time applies the angle once, on Return: no undo step
@@ -205,18 +205,18 @@ fn typing_in_the_angle_field_applies_on_return() {
         assert_eq!(r["ok"], true, "{r}");
     }
     h.settle(SETTLE);
-    let (before, undo) = (angle(&h), h.app.session.undo.len());
+    let (before, undo) = (angle(&h), h.app.session.history.undo.len());
     for ch in ["-", "3", ".", "2", "5"] {
         let r = h.request("ui.text", json!({"text": ch}), T);
         assert_eq!(r["ok"], true, "{r}");
         h.settle(SETTLE);
     }
-    assert_eq!((angle(&h), h.app.session.undo.len()), (before, undo), "nothing applied while typing");
+    assert_eq!((angle(&h), h.app.session.history.undo.len()), (before, undo), "nothing applied while typing");
     let r = h.request("ui.key", json!({"key": "Enter"}), T);
     assert_eq!(r["ok"], true, "{r}");
     h.settle(SETTLE);
     assert!((angle(&h) + 3.25).abs() < 1e-9, "applied on Return: {}", angle(&h));
-    assert_eq!(h.app.session.undo.len(), undo + 1, "as one undo step");
+    assert_eq!(h.app.session.history.undo.len(), undo + 1, "as one undo step");
 }
 
 /// Rotating in the margin beside a narrow photo keeps the readout next to the pointer: it is kept
@@ -267,11 +267,11 @@ fn escape_in_the_angle_field_keeps_the_angle() {
     let r = h.request("ui.text", json!({"text": "7"}), T);
     assert_eq!(r["ok"], true, "{r}");
     h.settle(SETTLE);
-    let (before, undo) = (angle(&h), h.app.session.undo.len());
+    let (before, undo) = (angle(&h), h.app.session.history.undo.len());
     let r = h.request("ui.key", json!({"key": "Escape"}), T);
     assert_eq!(r["ok"], true, "{r}");
     h.settle(SETTLE);
-    assert_eq!((angle(&h), h.app.session.undo.len()), (before, undo), "Esc applied nothing");
+    assert_eq!((angle(&h), h.app.session.history.undo.len()), (before, undo), "Esc applied nothing");
     assert_eq!(h.app.ui.right, crate::state::RightPanel::Crop, "and only left the field");
 }
 
@@ -289,12 +289,12 @@ fn leaving_the_angle_field_applies_the_angle() {
     let r = h.request("ui.text", json!({"text": "4.5"}), T);
     assert_eq!(r["ok"], true, "{r}");
     h.settle(SETTLE);
-    let undo = h.app.session.undo.len();
+    let undo = h.app.session.history.undo.len();
     let r = h.request("ui.key", json!({"key": "Tab"}), T);
     assert_eq!(r["ok"], true, "{r}");
     h.settle(SETTLE);
     assert!((angle(&h) - 4.5).abs() < 1e-9, "applied on leaving: {}", angle(&h));
-    assert_eq!(h.app.session.undo.len(), undo + 1);
+    assert_eq!(h.app.session.history.undo.len(), undo + 1);
 }
 
 /// A move or resize drag keeps its own pointer when it runs past the box (the box stops at the

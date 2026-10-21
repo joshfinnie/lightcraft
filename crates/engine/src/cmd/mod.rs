@@ -122,10 +122,10 @@ pub fn has_library_selection(s: &Session) -> std::result::Result<(), String> {
 /// Why an album command refused a Local-only selection.
 pub const LOCAL_ONLY: &str = "only Local photos: albums hold library photos (Add to My Photos first)";
 pub fn can_undo(s: &Session) -> std::result::Result<(), String> {
-    if s.undo.is_empty() { Err("nothing to undo".into()) } else { Ok(()) }
+    if s.history.undo.is_empty() { Err("nothing to undo".into()) } else { Ok(()) }
 }
 pub fn can_redo(s: &Session) -> std::result::Result<(), String> {
-    if s.redo.is_empty() { Err("nothing to redo".into()) } else { Ok(()) }
+    if s.history.redo.is_empty() { Err("nothing to redo".into()) } else { Ok(()) }
 }
 pub fn has_clipboard(s: &Session) -> std::result::Result<(), String> {
     has_selection(s)?;

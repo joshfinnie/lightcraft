@@ -812,14 +812,14 @@ mod tests {
         let mut h = demo([1200.0, 760.0]);
         let t = Duration::from_secs(10);
         h.settle(SETTLE);
-        let undo = h.app.session.undo.len();
+        let undo = h.app.session.history.undo.len();
         for action in ["copy", "paste"] {
             let r = h.request("ui.clipboard", json!({"action": action, "text": "travel"}), t);
             assert_eq!(r["ok"], false, "{action}: {r}");
             assert!(r["error"].as_str().is_some_and(|e| e.contains("text field")), "{r}");
         }
         h.settle(SETTLE);
-        assert_eq!(h.app.session.undo.len(), undo, "nothing was pasted");
+        assert_eq!(h.app.session.history.undo.len(), undo, "nothing was pasted");
     }
 
     /// `ui.clickWidget` right-clicks with `button: "right"`, as `ui.click` does (MCP `click`
@@ -1078,14 +1078,14 @@ mod tests {
         h.request("ui.clickWidget", json!({"id": "regionLabel:0"}), t);
         h.step();
         h.step();
-        let undo = h.app.session.undo.len();
+        let undo = h.app.session.history.undo.len();
         h.request("ui.text", json!({"text": "Ann"}), t);
         h.step();
         h.request("ui.key", json!({"key": "enter"}), t);
         h.step();
         h.step();
         assert_eq!(h.app.session.catalog.photo(id).unwrap().meta.regions[0].name.as_deref(), Some("Ann"));
-        assert_eq!(h.app.session.undo.len(), undo + 1);
+        assert_eq!(h.app.session.history.undo.len(), undo + 1);
         assert!(h.app.ui.name_edit.is_none());
     }
 
@@ -1435,7 +1435,7 @@ mod tests {
         set_page(&mut h);
         let bulk_id = format!("more-face-above:{}:0", ids[2].0);
         assert!(h.request("ui.widgets", json!({"filter": "more-face-above:"}), t).to_string().contains(&bulk_id));
-        let undo = h.app.session.undo.len();
+        let undo = h.app.session.history.undo.len();
         let r = h.request("ui.clickWidget", json!({"id": bulk_id}), t);
         assert_eq!(r["ok"], true, "{r}");
         h.step();
@@ -1452,7 +1452,7 @@ mod tests {
                 Some("John Roe".into())
             ]
         );
-        assert_eq!(h.app.session.undo.len(), undo + 1);
+        assert_eq!(h.app.session.history.undo.len(), undo + 1);
         h.request("engine.execute", json!({"command": "edit.undo"}), t);
         h.step();
         assert_eq!(names(&h), vec![Some("Jane Doe".into()), None, None, None, None, None, Some("John Roe".into())]);
@@ -1480,7 +1480,7 @@ mod tests {
         h.request("ui.key", json!({"key": "a"}), t);
         h.step();
         assert_eq!(names(&h)[1..4], [Some("Jane Doe".into()), Some("Jane Doe".into()), Some("Jane Doe".into())]);
-        assert_eq!(h.app.session.undo.len(), undo + 1);
+        assert_eq!(h.app.session.history.undo.len(), undo + 1);
         h.request("engine.execute", json!({"command": "edit.undo"}), t);
         h.step();
         h.request("ui.move", json!({"x": 1, "y": 1}), t);
@@ -1501,11 +1501,11 @@ mod tests {
                 Some("John Roe".into())
             ]
         );
-        assert_eq!(h.app.session.undo.len(), undo + 1);
+        assert_eq!(h.app.session.history.undo.len(), undo + 1);
         h.request("engine.execute", json!({"command": "view.photoGrid"}), t);
         h.request("ui.key", json!({"key": "a"}), t);
         h.step();
-        assert_eq!(h.app.session.undo.len(), undo + 1, "A outside the person page cannot name more faces");
+        assert_eq!(h.app.session.history.undo.len(), undo + 1, "A outside the person page cannot name more faces");
     }
 
     /// The People view lists the unnamed faces below the named people: select some (a click each, or all), type a name,
@@ -1555,7 +1555,7 @@ mod tests {
         assert!(bar.contains("unnamed:name") && bar.contains("unnamed:clear"), "{bar}");
         assert!(h.request("ui.widgets", json!({"filter": "field:unnamedName"}), t).to_string().contains("field:unnamedName"));
         // type a name and press Enter: both faces are named, in one undo step, and the selection is gone
-        let undo = h.app.session.undo.len();
+        let undo = h.app.session.history.undo.len();
         h.request("ui.text", json!({"text": "Ann Example"}), t);
         h.step();
         h.request("ui.key", json!({"key": "enter"}), t);
@@ -1564,7 +1564,7 @@ mod tests {
         let named = |h: &Headless, id: lightcraft_catalog::PhotoId, i: usize| h.app.session.catalog.photo(id).unwrap().meta.regions[i].name.clone();
         assert_eq!((named(&h, ids[1], 0), named(&h, ids[2], 0)), (Some("Ann Example".to_string()), Some("Ann Example".to_string())));
         assert_eq!(named(&h, ids[1], 1), None, "a face that was not selected stays unnamed");
-        assert_eq!(h.app.session.undo.len(), undo + 1, "one step for both");
+        assert_eq!(h.app.session.history.undo.len(), undo + 1, "one step for both");
         assert!(h.app.ui.unnamed_selected.is_empty() && h.app.ui.unnamed_name.is_empty());
         h.settle(SETTLE);
         h.step();
@@ -1757,7 +1757,7 @@ mod tests {
         assert_eq!(hover.photo, id);
         let after = photo(&h);
         assert_eq!((after.develop.clone(), after.history.len()), (before.develop.clone(), before.history.len()), "hover leaves the photo alone");
-        assert_eq!(h.app.session.undo.len(), 0);
+        assert_eq!(h.app.session.history.undo.len(), 0);
         // moving away ends the preview
         h.request("ui.move", json!({"x": 5, "y": 500}), t);
         h.step();
@@ -1809,7 +1809,7 @@ mod tests {
         let after = photo(&h);
         assert_eq!(after.develop, before.develop);
         assert_eq!(after.history.len(), before.history.len(), "no history entry while hovering");
-        assert!(h.app.session.undo.is_empty());
+        assert!(h.app.session.history.undo.is_empty());
         // hovering down across group headers within the presets list retains the preview (no flicker)
         h.request("ui.hoverWidget", json!({"id": "presetGroup:Creative"}), t);
         h.step();
@@ -2600,24 +2600,24 @@ mod tests {
         for &photo in &photos[1..3] {
             h.app.run("library.select", json!({"ids": [photo.0]})).unwrap();
             let before = h.app.session.catalog.photo(photo).unwrap().clone();
-            let undo = h.app.session.undo.len();
+            let undo = h.app.session.history.undo.len();
             h.settle(SETTLE);
             let after = h.app.session.catalog.photo(photo).unwrap();
             assert_eq!(after.develop, before.develop);
             assert_eq!(after.history.len(), before.history.len());
             assert!(!after.is_edited());
-            assert_eq!(h.app.session.undo.len(), undo);
+            assert_eq!(h.app.session.history.undo.len(), undo);
             assert_eq!(h.app.crop_tool_aspect(), Some((100, 100)));
         }
         let photo = photos[2];
         let before = h.app.session.develop_of(photo).unwrap();
-        let undo = h.app.session.undo.len();
+        let undo = h.app.session.history.undo.len();
         h.app.run("develop.beginInteraction", json!({"label": "Crop"})).unwrap();
         h.app.begin_crop().unwrap();
         h.app.run("crop.drag", json!({"handle": "bottomRight", "from": [0.8, 0.8], "to": [0.7, 0.7]})).unwrap();
         h.app.run("develop.endInteraction", json!({})).unwrap();
         assert_eq!(h.app.session.develop_of(photo).unwrap().crop.aspect, Some((100, 100)));
-        assert_eq!(h.app.session.undo.len(), undo + 1);
+        assert_eq!(h.app.session.history.undo.len(), undo + 1);
         h.app.run("edit.undo", json!({})).unwrap();
         assert_eq!(h.app.session.develop_of(photo).unwrap(), before);
         h.app.ui = serde_json::from_value(saved).unwrap();
@@ -2698,23 +2698,23 @@ mod tests {
             h.step();
             h.step();
         };
-        let (title, undo) = (meta(&h).title, h.app.session.undo.len());
+        let (title, undo) = (meta(&h).title, h.app.session.history.undo.len());
         // the caption: two lines, saved on leaving
         ask(&mut h, "ui.clickWidget", json!({"id": "field:caption"}));
         ask(&mut h, "ui.key", json!({"key": "A", "cmd": true}));
         ask(&mut h, "ui.text", json!({"text": "Harbour at dusk"}));
         ask(&mut h, "ui.key", json!({"key": "Enter"}));
         ask(&mut h, "ui.text", json!({"text": "Lisbon, 2026"}));
-        assert_eq!(h.app.session.undo.len(), undo, "Return in the caption saves nothing yet");
+        assert_eq!(h.app.session.history.undo.len(), undo, "Return in the caption saves nothing yet");
         ask(&mut h, "ui.key", json!({"key": "Tab"}));
         assert_eq!(meta(&h).caption, "Harbour at dusk\nLisbon, 2026");
         // the title: Esc gives the edit up
-        let undo = h.app.session.undo.len();
+        let undo = h.app.session.history.undo.len();
         ask(&mut h, "ui.clickWidget", json!({"id": "field:title"}));
         ask(&mut h, "ui.text", json!({"text": " (draft)"}));
         ask(&mut h, "ui.key", json!({"key": "Escape"}));
         h.settle(SETTLE);
-        assert_eq!((meta(&h).title, h.app.session.undo.len()), (title, undo), "Esc saved nothing");
+        assert_eq!((meta(&h).title, h.app.session.history.undo.len()), (title, undo), "Esc saved nothing");
         // the menu
         h.view.clipboard = "Wedding in Sintra".into();
         ask(&mut h, "ui.clickWidget", json!({"id": "field:title"}));
@@ -2956,12 +2956,12 @@ mod tests {
         let active = h.app.session.active().unwrap();
         let exposure = |h: &Headless| h.app.session.develop_of(h.app.session.active().unwrap()).unwrap().light.exposure;
         let rating = |h: &Headless| h.app.session.catalog.photo(active).unwrap().rating;
-        let (undo0, rating0) = (h.app.session.undo.len(), rating(&h));
+        let (undo0, rating0) = (h.app.session.history.undo.len(), rating(&h));
         assert_eq!(h.request("ui.clickWidget", json!({"id": "sliderValue:light.exposure"}), t)["ok"], true);
         h.request("ui.text", json!({"text": "1,5"}), t);
         h.request("ui.key", json!({"key": "Enter"}), t);
         assert!((exposure(&h) - 1.5).abs() < 1e-9, "{}", exposure(&h));
-        assert_eq!(h.app.session.undo.len(), undo0 + 1, "one undo step");
+        assert_eq!(h.app.session.history.undo.len(), undo0 + 1, "one undo step");
         assert_eq!(rating(&h), rating0, "typing 1 set no rating");
         // Esc keeps the value
         assert_eq!(h.request("ui.clickWidget", json!({"id": "sliderValue:light.exposure"}), t)["ok"], true);
@@ -2973,7 +2973,7 @@ mod tests {
         h.request("ui.text", json!({"text": "bright"}), t);
         h.request("ui.key", json!({"key": "Enter"}), t);
         assert!((exposure(&h) - 1.5).abs() < 1e-9, "{}", exposure(&h));
-        assert_eq!(h.app.session.undo.len(), undo0 + 1);
+        assert_eq!(h.app.session.history.undo.len(), undo0 + 1);
     }
 
     /// Reset takes precedence over the value being typed when its button is clicked.
@@ -3014,8 +3014,8 @@ mod tests {
             reset["light"]["exposure"].as_f64(),
             Some(0.0),
             "Reset must win over the active numeric draft: {reset}; history={:?}; last_inverse={:?}; focus={:?}",
-            h.app.session.undo.iter().map(|entry| entry.label.as_str()).collect::<Vec<_>>(),
-            h.app.session.undo.last().map(|entry| &entry.op),
+            h.app.session.history.undo.iter().map(|entry| entry.label.as_str()).collect::<Vec<_>>(),
+            h.app.session.history.undo.last().map(|entry| &entry.op),
             h.view.ctx.memory(|m| m.focused()),
         );
     }
@@ -3274,8 +3274,8 @@ mod tests {
         std::fs::remove_file(dir.join(gone)).unwrap();
         // a later session: the browse's "Add 2 Photos" step is no longer in the undo history (photos it refers to
         // are kept, like selected ones)
-        h.app.session.undo.clear();
-        h.app.session.redo.clear();
+        h.app.session.history.undo.clear();
+        h.app.session.history.redo.clear();
         // the folder clicked again in the sidebar
         browse(&mut h);
         assert_eq!(h.app.session.visible_cloned().len(), 1, "the deleted file's record is forgotten");
@@ -3467,7 +3467,7 @@ mod tests {
         let mut h = Headless::new(app, [1300.0, 900.0], 1.0);
         let t = Duration::from_secs(10);
         let n0 = h.app.session.catalog.len();
-        let undo0 = h.app.session.undo.len();
+        let undo0 = h.app.session.history.undo.len();
         let r = h.request("engine.execute", json!({"command": "file.addPhotos", "params": {"paths": [dir.to_string_lossy()]}}), t);
         assert_eq!(r["result"]["scanning"], true, "{r}");
         h.settle(SETTLE);
@@ -3495,7 +3495,7 @@ mod tests {
         let album = h.app.session.catalog.albums().find(|a| a.name == "Card 1").expect("album").id;
         assert_eq!(h.app.session.catalog.album_count(album), 4);
         assert!(h.app.session.catalog.photos().filter(|p| p.meta.keywords.contains(&"cardone".to_string())).count() == 4);
-        assert_eq!(h.app.session.undo.len(), undo0 + 1, "one undo step");
+        assert_eq!(h.app.session.history.undo.len(), undo0 + 1, "one undo step");
         h.request("engine.execute", json!({"command": "edit.undo"}), t);
         assert_eq!(h.app.session.catalog.len(), n0);
         h.settle(SETTLE);

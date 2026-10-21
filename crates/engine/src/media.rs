@@ -1922,7 +1922,7 @@ mod tests {
             fallback: None,
             denoise: None,
         };
-        let undo_before = s.undo.len();
+        let undo_before = s.history.undo.len();
         let request = job.request;
         let r = job.run();
         let new = r.rendered.as_ref().unwrap().image.data.clone();
@@ -1939,8 +1939,8 @@ mod tests {
         let p = s.catalog.photo(id).unwrap();
         assert_eq!(p.as_shot_wb, Some((4986.0, -2.0)));
         assert_eq!(*p.develop, d);
-        assert_eq!(s.undo.len(), undo_before);
-        assert!(s.pending_log.iter().any(|op| matches!(op, Op::SetAsShotWb { id: i, wb: Some((4986.0, -2.0)) } if *i == id)));
+        assert_eq!(s.history.undo.len(), undo_before);
+        assert!(s.history.pending_log.iter().any(|op| matches!(op, Op::SetAsShotWb { id: i, wb: Some((4986.0, -2.0)) } if *i == id)));
         assert!(!p.is_edited() || p.develop.wb.mode == WbMode::Custom);
         // the panel reads the white balance in effect in Kelvin: the value the relative edit renders as
         let info = s.source_info(id);
@@ -1949,9 +1949,9 @@ mod tests {
         assert_eq!(shown, lightcraft_pipeline::local::legacy_to_kelvin(5800.0, 3.0, (4986.0, -2.0)));
         assert!(shown.0 < 4986.0 && shown.0 > 4000.0, "{shown:?}");
         // accepting again changes nothing more
-        let log = s.pending_log.len();
+        let log = s.history.pending_log.len();
         s.accept(&r);
-        assert_eq!(s.pending_log.len(), log);
+        assert_eq!(s.history.pending_log.len(), log);
         // a catalog-only (proxy) render of the same settings before the decode gave the same pixels too
         let proxy = lightcraft_pipeline::render(&pixels, &header, &d, &request).image.data;
         assert_eq!(proxy, old, "a smart preview of an existing edit changed");

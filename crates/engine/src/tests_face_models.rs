@@ -296,13 +296,13 @@ fn detect_replaces_only_earlier_detections_and_is_one_undo_step() {
     meta.regions =
         vec![region(Some("Jane Doe"), None, 0.1), region(None, Some("Detected by YuNet 2023mar"), 0.5), region(None, Some("Drawn by hand"), 0.7)];
     s.commit("setup", Op::SetMeta { id, meta: Box::new(meta) }).unwrap();
-    let undo_before = s.undo.len();
+    let undo_before = s.history.undo.len();
 
     // a dry run reports and changes nothing
     let r = s.execute("faces.detect", &json!({"apply": false})).unwrap();
     assert_eq!(r["applied"], false);
     assert_eq!(s.catalog.photo(id).unwrap().meta.regions.len(), 3);
-    assert_eq!(s.undo.len(), undo_before);
+    assert_eq!(s.history.undo.len(), undo_before);
 
     // a real run (the default) drops the earlier detection (the demo has no faces) and keeps the others
     let r = s.execute("faces.detect", &json!({})).unwrap();
@@ -312,7 +312,7 @@ fn detect_replaces_only_earlier_detections_and_is_one_undo_step() {
     assert_eq!(photo["faces"].as_array().unwrap().len(), 0, "the procedural demo photos have no faces");
     let names: Vec<_> = s.catalog.photo(id).unwrap().meta.regions.iter().map(|r| (r.name.clone(), r.description.clone())).collect();
     assert_eq!(names, vec![(Some("Jane Doe".to_string()), None), (None, Some("Drawn by hand".to_string()))]);
-    assert_eq!(s.undo.len(), undo_before + 1, "one undo step for the whole run");
+    assert_eq!(s.history.undo.len(), undo_before + 1, "one undo step for the whole run");
     s.execute("edit.undo", &json!({})).unwrap();
     assert_eq!(s.catalog.photo(id).unwrap().meta.regions.len(), 3, "undo brings the detection back");
 

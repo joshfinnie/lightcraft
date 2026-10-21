@@ -38,9 +38,10 @@ impl AppliedPreset {
         self.selected == session.selection.ids
             && self.active == session.active()
             && self.commits == session.commits()
-            && session.interaction.is_none()
-            && session.redo.is_empty()
+            && session.history.interaction.is_none()
+            && session.history.redo.is_empty()
             && session
+                .history
                 .undo
                 .last()
                 .is_some_and(|entry| session.presets.iter().any(|preset| preset.id == self.id && entry.label == format!("Preset: {}", preset.name)))

@@ -217,7 +217,7 @@ fn a_stopped_synchronize_says_it_was_stopped_and_stays_at_most_one_step() {
     let dir = Scratch::new("stop");
     let mut h = changed_folder(&dir);
     open_and_scan(&mut h, &dir.path("trip"));
-    let steps = h.app.session.undo.len();
+    let steps = h.app.session.history.undo.len();
     let dlg = h.app.ui.dialog.take().expect("the dialog is open");
     assert!(crate::panels::dialogs::confirm_dialog(&mut h.app, &dlg).is_ok());
     // Cancel (what the row's ✕ does), before any frame committed anything
@@ -225,7 +225,7 @@ fn a_stopped_synchronize_says_it_was_stopped_and_stays_at_most_one_step() {
     assert!(h.step_until(T, |h| h.app.sync_run.is_none()), "it ends");
     let toast = h.app.ui.toast.as_ref().map(|t| t.0.clone()).unwrap_or_default();
     assert!(toast.contains("Stopped"), "never 'up to date': {toast:?}");
-    assert!(h.app.session.undo.len() <= steps + 1, "what was done by then is at most one step");
+    assert!(h.app.session.history.undo.len() <= steps + 1, "what was done by then is at most one step");
 }
 
 #[test]

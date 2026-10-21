@@ -104,9 +104,9 @@ fn virtual_copies_are_independent_and_persist() {
     s.execute("album.addPhotos", &json!({"id": album, "ids": [src.0]})).unwrap();
     s.execute("library.select", &json!({"ids": [src.0]})).unwrap();
     s.execute("develop.set", &json!({"control": "light.exposure", "value": 0.5})).unwrap();
-    let undo_before = s.undo.len();
+    let undo_before = s.history.undo.len();
     let r = s.execute("photo.virtualCopy", &json!({})).unwrap();
-    assert_eq!(s.undo.len(), undo_before + 1);
+    assert_eq!(s.history.undo.len(), undo_before + 1);
     let c1 = lightcraft_catalog::PhotoId(r["ids"][0].as_u64().unwrap());
     let r2 = s.execute("photo.virtualCopy", &json!({"ids": [src.0]})).unwrap();
     let c2 = lightcraft_catalog::PhotoId(r2["ids"][0].as_u64().unwrap());
@@ -312,7 +312,7 @@ fn deleting_an_album_folder_preserves_photos_and_restores_its_subtree() {
     s.execute("library.source", &json!({"kind": "album", "id": album})).unwrap();
     let before = s.catalog.to_snapshot();
     let photos = serde_json::to_value(s.catalog.photos().collect::<Vec<_>>()).unwrap();
-    let undo_before = s.undo.len();
+    let undo_before = s.history.undo.len();
     s.execute("album.delete", &json!({"id": outer})).unwrap();
     for id in [outer, nested, album, smart] {
         assert!(s.catalog.album(AlbumId(id)).is_none());
@@ -320,16 +320,16 @@ fn deleting_an_album_folder_preserves_photos_and_restores_its_subtree() {
     assert!(s.catalog.album(AlbumId(sibling)).is_some());
     assert_eq!(serde_json::to_value(s.catalog.photos().collect::<Vec<_>>()).unwrap(), photos);
     assert_eq!(s.source, LibrarySource::All, "a deleted descendant cannot remain the source");
-    assert_eq!(s.undo.len(), undo_before + 1);
+    assert_eq!(s.history.undo.len(), undo_before + 1);
     let deleted = s.catalog.to_snapshot();
     s.execute("edit.undo", &json!({})).unwrap();
     assert_eq!(s.catalog.to_snapshot(), before, "all album fields and memberships restored");
     s.execute("edit.redo", &json!({})).unwrap();
     assert_eq!(s.catalog.to_snapshot(), deleted);
-    let undo_after = s.undo.len();
+    let undo_after = s.history.undo.len();
     assert!(s.execute("album.delete", &json!({"id": outer})).is_err());
     assert_eq!(s.catalog.to_snapshot(), deleted, "missing id leaves the catalog unchanged");
-    assert_eq!(s.undo.len(), undo_after);
+    assert_eq!(s.history.undo.len(), undo_after);
     drop(s);
     let reopened = open(&dir);
     assert_eq!(reopened.catalog.to_snapshot(), deleted, "journal replay preserves the deletion");

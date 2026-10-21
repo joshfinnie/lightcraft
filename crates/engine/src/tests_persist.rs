@@ -84,7 +84,7 @@ fn failed_append_fails_the_command_and_is_retried() {
     );
     // applied in memory, undoable, queued
     assert_eq!(s.catalog.photo(id).unwrap().rating, 4);
-    assert!(!s.undo.is_empty());
+    assert!(!s.history.undo.is_empty());
     assert_eq!(s.unsaved().map(|u| u.0), Some(1));
     // queries and commands that change nothing are unaffected (they retry the queue, but report
     // their own result)
@@ -161,7 +161,7 @@ fn close_saves_queued_changes_in_the_snapshot_when_appends_fail() {
     assert_eq!(s.unsaved().map(|u| u.0), Some(2));
     s.close_library().unwrap();
     assert_eq!(s.unsaved(), None);
-    assert!(s.pending_log.is_empty());
+    assert!(s.history.pending_log.is_empty());
     let expect = s.catalog.to_snapshot();
     drop(s);
     store.set_failing(false);

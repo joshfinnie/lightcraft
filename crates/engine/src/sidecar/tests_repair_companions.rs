@@ -39,7 +39,7 @@ fn packet(marker: &str) -> String {
     )
 }
 fn queues(s: &Session) -> Vec<crate::rename::SidecarMove> {
-    s.pending_sidecar_repairs.iter().chain(s.undo.iter().chain(&s.redo).flat_map(|e| &e.retry_sidecars)).cloned().collect()
+    s.history.pending_sidecar_repairs.iter().chain(s.history.undo.iter().chain(&s.history.redo).flat_map(|e| &e.retry_sidecars)).cloned().collect()
 }
 fn session(path: &Path) -> Session {
     let mut s = Session::new();
@@ -265,12 +265,12 @@ fn queued_stem_retry_preserves_shared_packet_after_batch_rollback() {
     assert!(same_path_for_volume(&pending[0].from, &shared), "{:?}", pending[0].from);
     assert!(same_path_for_volume(&pending[0].to, &second_packet), "{:?}", pending[0].to);
     let catalog_before = s.catalog.to_snapshot();
-    let history_before = (s.undo.len(), s.redo.len(), s.commits());
+    let history_before = (s.history.undo.len(), s.history.redo.len(), s.commits());
 
     // Public command, real filesystem: its no-op path drains the naturally retained repair.
     let retry = s.execute("photo.rename", &json!({"ids": [2], "template": "{name}"}));
     let catalog_after = s.catalog.to_snapshot();
-    let history_after = (s.undo.len(), s.redo.len(), s.commits());
+    let history_after = (s.history.undo.len(), s.history.redo.len(), s.commits());
     let repaired = queues(&s).is_empty();
     let old_paths_absent = !b.exists() && !first.exists();
     let files = [&a, &second, &first_packet, &second_packet].map(|p| std::fs::read(p).map_err(|e| e.kind()));

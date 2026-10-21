@@ -43,7 +43,7 @@ fn path(photo: &Path, style: SidecarNaming, upper: bool) -> PathBuf {
     if upper { p.with_extension("XMP") } else { p }
 }
 fn queued(s: &Session) -> Vec<crate::rename::SidecarMove> {
-    s.pending_sidecar_repairs.iter().chain(s.undo.iter().chain(&s.redo).flat_map(|e| &e.retry_sidecars)).cloned().collect()
+    s.history.pending_sidecar_repairs.iter().chain(s.history.undo.iter().chain(&s.history.redo).flat_map(|e| &e.retry_sidecars)).cloned().collect()
 }
 fn session(photo: &Path) -> Session {
     let mut s = Session::new();
@@ -172,16 +172,16 @@ fn failed_redo_and_discarded_or_pruned_history_keep_companion_provenance() {
             for _ in 0..1000 {
                 f.s.commit("Unrelated retention step", Op::Batch { ops: Vec::new() }).unwrap();
             }
-            assert_eq!(f.s.pending_sidecar_repairs.len(), 1);
+            assert_eq!(f.s.history.pending_sidecar_repairs.len(), 1);
         } else {
             f.s.undo_step().unwrap();
             let full_a = path(&f.a, SidecarNaming::Full, false);
             assert!(f.s.redo_step_with(&Faults(vec![full_a, f.b.clone()])).is_err());
-            assert_eq!(f.s.redo.iter().map(|e| e.retry_sidecars.len()).sum::<usize>(), 1);
+            assert_eq!(f.s.history.redo.iter().map(|e| e.retry_sidecars.len()).sum::<usize>(), 1);
             if owner == "discarded" {
                 f.s.commit("Discard failed redo", Op::SetRating { id: PhotoId(1), rating: 3 }).unwrap();
-                assert_eq!(f.s.pending_sidecar_repairs.len(), 1);
-                assert!(f.s.redo.is_empty());
+                assert_eq!(f.s.history.pending_sidecar_repairs.len(), 1);
+                assert!(f.s.history.redo.is_empty());
             }
         }
         let held = f.dir.join("original-held.xmp");
@@ -391,7 +391,7 @@ fn detached_history_entry_is_checked_before_unrelated_global_retirement() {
             let op = Op::SetFile { id, source: Source::File { path: moved.to_string_lossy().into_owned() }, file_name: "Trip.png".into() };
             s.follow_stuck(&op, err, true);
         }
-        assert_eq!(s.undo.len(), i + 1);
+        assert_eq!(s.history.undo.len(), i + 1);
         assert_eq!(queued(&s).len(), i + 1);
         assert_eq!(s.catalog.photo(id).unwrap().source, Source::File { path: moved.to_string_lossy().into_owned() });
         let decoded = lightcraft_codecs::decode(&std::fs::read(&moved).unwrap(), Default::default()).unwrap();
@@ -412,12 +412,12 @@ fn detached_history_entry_is_checked_before_unrelated_global_retirement() {
     let full_packets: Vec<_> = native.iter().map(|f| std::fs::read(&f.full).unwrap()).collect();
     let held = root.join("observed-second-companion.xmp");
     let (observed, foreign) = replace(&second.companion, &held, false);
-    let mut entry = s.undo.pop().unwrap(); // Undo/Redo call this method with their entry detached.
+    let mut entry = s.history.undo.pop().unwrap(); // Undo/Redo call this method with their entry detached.
     let retained = queued(&s);
     let detached = entry.retry_sidecars.clone();
     assert_eq!((retained.len(), detached.len()), (1, 1));
     let sources: Vec<_> = native.iter().map(|f| s.catalog.photo(f.id).unwrap().source.clone()).collect();
-    let log_len = s.pending_log.len();
+    let log_len = s.history.pending_log.len();
     let mut packets: Vec<_> = native.iter().flat_map(|f| [&f.moved, &f.full, &f.companion]).map(|p| (p.clone(), std::fs::read(p).unwrap())).collect();
     packets.push((held.clone(), std::fs::read(&held).unwrap()));
     assert!(!first.target.exists() && !second.target.exists());
@@ -435,7 +435,7 @@ fn detached_history_entry_is_checked_before_unrelated_global_retirement() {
     );
     assert_eq!(queued(&s), retained, "reject the detached owner before any unrelated global repair retires");
     assert_eq!(entry.retry_sidecars, detached);
-    assert_eq!(s.pending_log.len(), log_len);
+    assert_eq!(s.history.pending_log.len(), log_len);
     for (f, source) in native.iter().zip(&sources) {
         assert_eq!(&s.catalog.photo(f.id).unwrap().source, source);
         assert!(!f.original.exists() && !f.target.exists());

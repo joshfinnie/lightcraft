@@ -292,7 +292,7 @@ pub fn commit_prepared(s: &mut crate::Session, mut prepared: PreparedLightroom) 
         s.skip_auto_write = true;
     }
 
-    let undo0 = s.undo.len();
+    let undo0 = s.history.undo.len();
     prepared.normal.revalidate_add(s);
     let options = ImportOptions { mode: ImportMode::Add, on_deleted: crate::import::OnDeleted::Skip, ..ImportOptions::default() };
     let now = prepared.now.clone();
@@ -461,7 +461,7 @@ mod tests {
         let Err(e) = commit_prepared(&mut session, prepared) else { panic!("a cancelled import commits nothing") };
         assert_eq!(e.kind(), crate::ErrorKind::Cancelled, "{e}");
         assert_eq!(session.catalog.to_snapshot(), before);
-        assert!(session.undo.is_empty());
+        assert!(session.history.undo.is_empty());
     }
 
     /// Cancelling while the catalog is read is [`crate::ErrorKind::Cancelled`] whatever the message
@@ -494,7 +494,7 @@ mod tests {
         let prepared = prepared_for(&session, path, 4);
         let first = commit_prepared(&mut session, prepared).unwrap();
         assert_eq!(first.report["mapping"]["1"].as_u64(), Some(1));
-        assert_eq!(session.undo.len(), 1);
+        assert_eq!(session.history.undo.len(), 1);
         let id = lightcraft_catalog::PhotoId(1);
         let mut personal = lightcraft_develop::DevelopSettings::default();
         personal.light.exposure = 1.5;
@@ -504,7 +504,7 @@ mod tests {
         commit_prepared(&mut session, prepared).unwrap();
         assert_eq!(session.catalog.photo(id).map(|photo| photo.develop.clone()), before);
         assert_eq!(session.catalog.photo(id).map(|photo| photo.rating), Some(5));
-        assert_eq!(session.undo.len(), 3);
+        assert_eq!(session.history.undo.len(), 3);
     }
 
     #[test]

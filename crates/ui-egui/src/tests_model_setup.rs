@@ -103,15 +103,15 @@ fn denoise_installation_enables_only_the_requesting_photo_once_and_is_undoable()
     assert_eq!(app.ui.dialog, Some(Dialog::Settings { tab: "denoise".into() }));
     assert_eq!(amount(&app, raw), 0.0, "setup alone never changes the photo");
     app.run("library.select", json!({"ids": [other.0]})).unwrap();
-    let undo = app.session.undo.len();
+    let undo = app.session.history.undo.len();
     install_denoise(&mut app, &dir);
     resume(&mut app);
     assert_eq!(amount(&app, raw), 50.0);
     assert_eq!(amount(&app, other), 0.0);
     assert_eq!(app.session.active(), Some(other));
-    assert_eq!(app.session.undo.len(), undo + 1);
+    assert_eq!(app.session.history.undo.len(), undo + 1);
     resume(&mut app);
-    assert_eq!(app.session.undo.len(), undo + 1, "a later frame cannot apply it again");
+    assert_eq!(app.session.history.undo.len(), undo + 1, "a later frame cannot apply it again");
     app.run("edit.undo", json!({})).unwrap();
     assert_eq!(amount(&app, raw), 0.0);
     app.run("denoise.toggle", json!({"id": raw.0, "enabled": true})).unwrap();
@@ -195,7 +195,7 @@ fn model_installation_waits_for_an_active_slider_gesture_to_finish() {
     install_denoise(&mut app, &dir);
     resume(&mut app);
     assert_eq!(amount(&app, raw), 0.0);
-    assert!(app.session.interaction.is_some());
+    assert!(app.session.history.interaction.is_some());
     app.session.end_interaction().unwrap();
     resume(&mut app);
     assert_eq!(amount(&app, raw), 50.0);

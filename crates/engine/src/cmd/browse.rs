@@ -156,7 +156,7 @@ fn forget_gone(s: &mut Session, dir: &str, subfolders: bool, files: &[String]) -
         let op = Op::Batch { ops: chunk.iter().map(|id| Op::RemovePhoto { id: *id }).collect() };
         match s.catalog.apply(op.clone()) {
             Ok(_) => {
-                s.pending_log.push(op);
+                s.history.pending_log.push(op);
                 forgotten += chunk.len();
             }
             Err(e) => log::warn!("forget Local records of files gone from {dir}: {e}"),
@@ -193,7 +193,7 @@ fn stamp_browsed(s: &mut Session, root: &str, files: &[String]) {
     if !ops.is_empty() {
         let op = Op::Batch { ops };
         if s.catalog.apply(op.clone()).is_ok() {
-            s.pending_log.push(op);
+            s.history.pending_log.push(op);
         }
     }
 }
@@ -213,9 +213,9 @@ fn held(s: &Session) -> std::collections::HashSet<PhotoId> {
     keep.extend(s.selection.ids.iter().copied());
     keep.extend(s.selection.active);
     keep.extend(s.previous_active);
-    keep.extend(s.interaction.as_ref().map(|i| i.photo));
+    keep.extend(s.history.interaction.as_ref().map(|i| i.photo));
     keep.extend(s.before.keys().copied());
-    for e in s.undo.iter().chain(s.redo.iter()) {
+    for e in s.history.undo.iter().chain(s.history.redo.iter()) {
         e.op.photo_ids(&mut |id| {
             keep.insert(id);
         });
@@ -240,7 +240,7 @@ impl Session {
         }
         for op in plan.ops() {
             match self.catalog.apply(op.clone()) {
-                Ok(_) => self.pending_log.push(op),
+                Ok(_) => self.history.pending_log.push(op),
                 Err(e) => log::warn!("forget Local records: {e}"),
             }
         }

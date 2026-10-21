@@ -595,7 +595,7 @@ fn histogram(app: &mut LightcraftApp, ui: &mut egui::Ui, id: PhotoId) {
     let hdr_edit = app.session.develop_of(id).is_some_and(|d| d.hdr.enabled);
     // a drag of an HDR edit: its drafts have no HDR histogram, so a small render beside them
     // gives one (at its own pace: the drafts don't wait for it)
-    let interacting = app.session.interaction.is_some();
+    let interacting = app.session.history.interaction.is_some();
     if interacting && hdr_edit {
         let edge = lightcraft_pipeline::HDR_HISTOGRAM_DRAG_EDGE;
         if let Some(job) = app.session.render_job(id, edge, edge, false, app.ui.right != RightPanel::Crop)

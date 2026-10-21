@@ -782,13 +782,13 @@ impl SyncCommit {
             return;
         }
         let commits = s.commits();
-        if self.after_last.is_some_and(|n| n != s.undo.len()) {
+        if self.after_last.is_some_and(|n| n != s.history.undo.len()) {
             self.interleaved = true;
         }
         self.apply_step(s, step);
         if s.commits() != commits {
             self.own += usize::try_from(s.commits().wrapping_sub(commits)).unwrap_or(0);
-            self.after_last = Some(s.undo.len());
+            self.after_last = Some(s.history.undo.len());
         }
     }
 
@@ -850,10 +850,10 @@ impl SyncCommit {
     pub fn finish(mut self, s: &mut Session) -> SyncReport {
         // a report line once, however many steps came after a library switch
         self.report.failed.dedup();
-        let ours = Arc::ptr_eq(&self.library, &s.library_identity) && !self.interleaved && self.after_last == Some(s.undo.len());
-        let steps = if ours { self.own.min(s.undo.len()) } else { 0 };
+        let ours = Arc::ptr_eq(&self.library, &s.library_identity) && !self.interleaved && self.after_last == Some(s.history.undo.len());
+        let steps = if ours { self.own.min(s.history.undo.len()) } else { 0 };
         s.merge_undo(steps, "Synchronize Folder");
-        if let Some(last) = s.undo.last_mut().filter(|_| steps == 1) {
+        if let Some(last) = s.history.undo.last_mut().filter(|_| steps == 1) {
             last.label = "Synchronize Folder".into();
         }
         self.report

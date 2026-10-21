@@ -721,7 +721,7 @@ impl Session {
     /// Gather changed IDs before the saves mutate retained physical repair queues.
     pub(crate) fn auto_write_sidecars_since(&mut self, log_start: usize) {
         let mut ids = Vec::new();
-        if let Some(ops) = self.pending_log.get(log_start..) {
+        if let Some(ops) = self.history.pending_log.get(log_start..) {
             ops.iter().for_each(|o| op_photos(o, &mut ids));
         }
         self.auto_write_sidecar_ids(ids);

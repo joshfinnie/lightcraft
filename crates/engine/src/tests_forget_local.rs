@@ -54,7 +54,7 @@ fn look_elsewhere(s: &mut Session) {
     s.execute("library.source", &json!({"kind": "all"})).unwrap();
     s.selection = Selection::default();
     s.previous_active = None;
-    s.undo.clear();
+    s.history.undo.clear();
 }
 
 #[test]
@@ -91,7 +91,7 @@ fn untouched_records_of_unbrowsed_folders_are_forgotten_and_come_back() {
     // files on disk are untouched
     assert!(["a1.png", "a2.png", "a3.png"].iter().all(|n| a.join(n).exists()));
     // not an undo step
-    assert!(s.undo.is_empty());
+    assert!(s.history.undo.is_empty());
 
     // a crash now: the log replays the same catalog
     let expect = s.catalog.to_snapshot();
@@ -247,7 +247,7 @@ fn browsing_again_forgets_untouched_records_of_deleted_files() {
     assert_eq!(local_paths(&s), vec!["a2.png", "a3.png"], "the untouched record of a1 is forgotten, the rated a2 stays");
     assert!(s.catalog.photo(a4).is_some_and(|p| !p.local), "a library photo of a deleted file stays");
     assert!(a.join("a3.png").exists());
-    assert!(s.undo.is_empty(), "not an undo step");
+    assert!(s.history.undo.is_empty(), "not an undo step");
     // browsing once more changes nothing
     let r = s.execute("library.browse", &json!({"path": a.to_string_lossy()})).unwrap();
     assert_eq!(r["forgotten"], 0, "{r}");

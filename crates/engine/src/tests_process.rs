@@ -89,11 +89,11 @@ fn update_to_current_process_is_one_undo_step_and_only_when_needed() {
     put(&mut s, ids[2], NEWER, 0.25);
     select(&mut s, &ids);
     assert!(update_info(&s).enabled);
-    let undo = s.undo.len();
+    let undo = s.history.undo.len();
     let r = s.execute("develop.updateProcess", &json!({})).unwrap();
     assert_eq!(r, json!({"changed": 2, "process": ProcessVersion::LATEST.0}));
-    assert_eq!(s.undo.len(), undo + 1, "one undo step");
-    assert_eq!(s.undo.last().unwrap().label, "Update to Current Process");
+    assert_eq!(s.history.undo.len(), undo + 1, "one undo step");
+    assert_eq!(s.history.undo.last().unwrap().label, "Update to Current Process");
     assert_eq!([process(&s, ids[0]), process(&s, ids[1])], [ProcessVersion::LATEST; 2]);
     assert_eq!(process(&s, ids[2]), NEWER, "a newer process is never downgraded");
     assert_eq!(s.develop_of(ids[0]).unwrap().light.exposure, 0.5, "the sliders keep their values");
@@ -240,9 +240,9 @@ fn update_to_current_process_checks_named_photos_not_the_selection() {
     // a different, current photo is selected: the menu item is off, but naming the photo works
     select(&mut s, &[current]);
     assert!(!update_info(&s).enabled);
-    let undo = s.undo.len();
+    let undo = s.history.undo.len();
     assert_eq!(s.execute("develop.updateProcess", &json!({"ids": [old.0]})).unwrap()["changed"], 1);
-    assert_eq!(s.undo.len(), undo + 1);
+    assert_eq!(s.history.undo.len(), undo + 1);
     assert_eq!(process(&s, old), ProcessVersion::LATEST);
     assert_eq!(s.develop_of(old).unwrap().light.exposure, 0.5);
     // with nothing selected at all, by `ids` or `id`

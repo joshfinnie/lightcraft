@@ -66,7 +66,7 @@ fn stale_flag_on_a_file_that_decodes_now_is_cleared() {
     let mut x = library("decodes");
     x.s.execute("develop.set", &json!({"ids": [x.id.0], "control": "light.exposure", "value": 0.5})).unwrap();
     let before = x.s.catalog.photo(x.id).unwrap().clone();
-    let undo = x.s.undo.len();
+    let undo = x.s.history.undo.len();
     decodable_now(&x);
     let r = x.s.execute("library.recheckPreviewOnly", &json!({})).unwrap();
     assert_eq!(r, json!({"checked": 1, "updated": [x.id.0], "cleared": [x.id.0]}));
@@ -74,7 +74,7 @@ fn stale_flag_on_a_file_that_decodes_now_is_cleared() {
     assert_eq!(p.preview_only, None);
     assert_eq!(p.preview_checked, "", "the stamp goes with the flag");
     assert!(p.develops_raw());
-    assert_eq!(x.s.undo.len(), undo, "not an undo step");
+    assert_eq!(x.s.history.undo.len(), undo, "not an undo step");
     assert_eq!(*p.develop, *before.develop);
     assert_eq!(p.history.len(), before.history.len());
     // journaled: a reopen keeps it

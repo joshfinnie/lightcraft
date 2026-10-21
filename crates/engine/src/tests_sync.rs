@@ -251,10 +251,10 @@ fn synchronizing_everything_is_one_undo_step() {
 fn a_folder_with_no_changes_synchronizes_without_an_undo_step() {
     let dir = Scratch::new("sync-none");
     let mut s = library(&dir);
-    let steps = s.undo.len();
+    let steps = s.history.undo.len();
     let r = s.execute("folder.synchronize", &json!({"path": dir.path("trip"), "removeMissing": true, "readMetadata": true})).unwrap();
     assert_eq!((r["imported"].as_u64(), r["removed"].as_u64(), r["read"].as_u64()), (Some(0), Some(0), Some(0)), "{r}");
-    assert_eq!(s.undo.len(), steps);
+    assert_eq!(s.history.undo.len(), steps);
 }
 
 #[test]
@@ -589,7 +589,7 @@ fn the_work_checks_again_that_a_new_file_is_still_there() {
 fn a_cancelled_synchronize_does_nothing_more() {
     let dir = Scratch::new("cancel-run");
     let mut s = library(&dir);
-    let steps_before = s.undo.len();
+    let steps_before = s.history.undo.len();
     write_png(&dir.path("trip/c.png"), 3);
     let changes = crate::sync::scan(&mut s, &dir.path("trip"), false).unwrap();
     let (work, commit) = crate::sync::SyncJob::start(&mut s, changes, crate::sync::SyncChoice::default()).unwrap();
@@ -602,7 +602,7 @@ fn a_cancelled_synchronize_does_nothing_more() {
     });
     assert_eq!(sent, 0);
     let r = commit.finish(&mut s);
-    assert_eq!((r.imported, s.undo.len()), (0, steps_before));
+    assert_eq!((r.imported, s.history.undo.len()), (0, steps_before));
 }
 
 /// Ready a synchronize of the trip folder and do its work, keeping the steps for the test to
@@ -629,13 +629,13 @@ fn steps_for_a_library_that_was_closed_meanwhile_are_not_applied() {
     // File › Open Library while the work runs: another catalog, whose photo ids mean other photos
     s.library_identity = std::sync::Arc::new(());
     let before = holdings(&s);
-    let undo = s.undo.len();
+    let undo = s.history.undo.len();
     for step in steps {
         commit.apply(&mut s, step);
     }
     let r = commit.finish(&mut s);
     assert_eq!(holdings(&s), before, "nothing landed in the other library");
-    assert_eq!(s.undo.len(), undo);
+    assert_eq!(s.history.undo.len(), undo);
     assert_eq!((r.imported, r.removed), (0, 0), "{r:?}");
     assert!(!r.failed.is_empty(), "and the report says why: {r:?}");
 }

@@ -62,10 +62,10 @@ fn keyword_rename_merge_delete_undo_and_replay() {
     // filter by a parent keyword: its children match
     s.execute("library.filter", &json!({"keyword": "travel|italy"})).unwrap();
     assert_eq!(s.visible().len(), 2);
-    let undo_before = s.undo.len();
+    let undo_before = s.history.undo.len();
     let r = s.execute("keyword.rename", &json!({"from": "travel|italy", "to": "Europe|Italy"})).unwrap();
     assert_eq!(r["changed"], 2);
-    assert_eq!(s.undo.len(), undo_before + 1, "one undo step");
+    assert_eq!(s.history.undo.len(), undo_before + 1, "one undo step");
     assert_eq!(keywords_of(&s, ids[0]), ["Europe|Italy|rome", "sea"]);
     assert_eq!(s.filter.keyword.as_deref(), Some("Europe|Italy"), "the filter follows the rename");
     assert_eq!(s.visible().len(), 2);
@@ -275,12 +275,12 @@ fn import_review_preview_and_options() {
     // c.png is already in the library
     s.execute("library.import", &json!({"paths": [src.join("sub").join("c.png").to_string_lossy()]})).unwrap();
     let n0 = s.catalog.len();
-    let undo0 = s.undo.len();
+    let undo0 = s.history.undo.len();
     let pv = s.execute("library.importPreview", &json!({"paths": [src.to_string_lossy()]})).unwrap();
     assert_eq!(pv["scanned"], 4, "{pv}");
     assert_eq!(pv["duplicates"], 2, "{pv}");
     assert_eq!(s.catalog.len(), n0, "a preview adds nothing");
-    assert_eq!(s.undo.len(), undo0);
+    assert_eq!(s.history.undo.len(), undo0);
     let cands = pv["candidates"].as_array().unwrap();
     let dup = |name: &str| cands.iter().find(|c| c["name"] == name).unwrap()["duplicate"].clone();
     assert_eq!(dup("c.png"), "path");
@@ -307,7 +307,7 @@ fn import_review_preview_and_options() {
         let lightcraft_catalog::Source::File { path } = &p.source else { panic!() };
         assert!(std::path::Path::new(path).starts_with(lib.join("Originals")), "{path}");
     }
-    assert_eq!(s.undo.len(), undo0 + 1, "import + album = one undo step");
+    assert_eq!(s.history.undo.len(), undo0 + 1, "import + album = one undo step");
     s.execute("edit.undo", &json!({})).unwrap();
     assert_eq!(s.catalog.len(), n0);
     assert!(s.catalog.album(album).is_none());
@@ -438,9 +438,9 @@ fn tracklog_auto_tag() {
     assert_eq!((r["points"].as_u64(), r["start"].as_str()), (Some(3), Some("2026-05-01T10:00:00Z")));
     assert_eq!(ids.iter().map(|i| gps(&s, *i)).collect::<Vec<_>>(), before);
     // tag: one undo step
-    let undo_depth = s.undo.len();
+    let undo_depth = s.history.undo.len();
     s.execute("photo.autoTagTracklog", &json!({"path": path, "ids": ids, "offset": 2})).unwrap();
-    assert_eq!(s.undo.len(), undo_depth + 1);
+    assert_eq!(s.history.undo.len(), undo_depth + 1);
     assert_eq!(gps(&s, ids[0]), Some((46.0005, 7.001)), "interpolated half-way between the first two points");
     assert_eq!(gps(&s, ids[1]), Some((46.001, 7.002)));
     assert_eq!(gps(&s, ids[2]), None);
@@ -578,14 +578,14 @@ fn capture_time_invalid_calendar_anchor_keeps_other_targets_and_redo() {
         s.selection.active = Some(PhotoId(1));
         let before = s.catalog.clone();
         let selection = s.selection.clone();
-        let undo: Vec<_> = s.undo.iter().map(|e| (e.label.clone(), e.op.clone())).collect();
-        let redo: Vec<_> = s.redo.iter().map(|e| (e.label.clone(), e.op.clone())).collect();
-        let log = s.pending_log.clone();
+        let undo: Vec<_> = s.history.undo.iter().map(|e| (e.label.clone(), e.op.clone())).collect();
+        let redo: Vec<_> = s.history.redo.iter().map(|e| (e.label.clone(), e.op.clone())).collect();
+        let log = s.history.pending_log.clone();
         assert!(s.execute("photo.setCaptureTime", &json!({"time": "2026-03-03T12:00:00"})).is_err(), "{raw}");
         assert_eq!(s.catalog, before);
         assert_eq!(s.selection, selection);
-        assert_eq!(s.undo.iter().map(|e| (e.label.clone(), e.op.clone())).collect::<Vec<_>>(), undo);
-        assert_eq!(s.redo.iter().map(|e| (e.label.clone(), e.op.clone())).collect::<Vec<_>>(), redo);
-        assert_eq!(s.pending_log, log);
+        assert_eq!(s.history.undo.iter().map(|e| (e.label.clone(), e.op.clone())).collect::<Vec<_>>(), undo);
+        assert_eq!(s.history.redo.iter().map(|e| (e.label.clone(), e.op.clone())).collect::<Vec<_>>(), redo);
+        assert_eq!(s.history.pending_log, log);
     }
 }

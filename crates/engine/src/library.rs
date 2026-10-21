@@ -516,13 +516,13 @@ impl Session {
         // (nothing of the list the last library showed is this one's)
         self.refresh_view();
         self.library_generation = crate::LIBRARY_GEN.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        for entry in self.undo.iter_mut().chain(self.redo.iter_mut()) {
-            self.pending_sidecar_repairs.append(&mut entry.retry_sidecars);
+        for entry in self.history.undo.iter_mut().chain(self.history.redo.iter_mut()) {
+            self.history.pending_sidecar_repairs.append(&mut entry.retry_sidecars);
         }
-        self.undo.clear();
-        self.redo.clear();
-        self.interaction = None;
-        self.pending_log.clear();
+        self.history.undo.clear();
+        self.history.redo.clear();
+        self.history.interaction = None;
+        self.history.pending_log.clear();
         self.selection = Selection::default();
         self.source = LibrarySource::All;
         self.library_folder = None;
@@ -636,11 +636,11 @@ impl Session {
     /// [`EngineError::NotSaved`]) only when the queued ops couldn't be written; they stay queued.
     pub fn persist(&mut self) -> Result<()> {
         let Some(lib) = self.library.as_mut() else { return Ok(()) };
-        if !self.pending_log.is_empty() {
-            if let Err(e) = lib.journal.append(&self.pending_log) {
+        if !self.history.pending_log.is_empty() {
+            if let Err(e) = lib.journal.append(&self.history.pending_log) {
                 // the ops stay queued (and applied in memory): the next persist retries them
                 let reason = e.to_string();
-                log::error!("library: {} change(s) not written to disk: {reason}", self.pending_log.len());
+                log::error!("library: {} change(s) not written to disk: {reason}", self.history.pending_log.len());
                 lib.last_error = Some(reason.clone());
                 lib.unsaved_error = Some(reason.clone());
                 lib.retry_at = Some(web_time::Instant::now() + RETRY_BACKOFF);
@@ -650,7 +650,7 @@ impl Session {
                 log::info!("library: queued changes written to disk");
             }
             lib.retry_at = None;
-            self.pending_log.clear();
+            self.history.pending_log.clear();
             lib.last_error = None;
         }
         poll_compaction(lib);
@@ -659,7 +659,7 @@ impl Session {
         // A failed compaction loses nothing (the log is kept whole and compacted later): it is
         // reported (`library.info` → `lastError`), not returned.
         if lib.journal.wants_snapshot()
-            && self.interaction.is_none()
+            && self.history.interaction.is_none()
             && let Err(e) = lib.journal.snapshot_in_background(&self.catalog)
         {
             log::error!("library: compaction: {e}");
@@ -688,7 +688,7 @@ impl Session {
     /// changed outside [`Session::execute`]).
     pub fn persist_if_dirty(&mut self) {
         let backing_off = self.library.as_ref().and_then(|l| l.retry_at).is_some_and(|t| web_time::Instant::now() < t);
-        if self.library.is_some() && !self.pending_log.is_empty() && !backing_off {
+        if self.library.is_some() && !self.history.pending_log.is_empty() && !backing_off {
             let _ = self.persist();
         } else if let Some(lib) = self.library.as_mut() {
             poll_compaction(lib);
@@ -700,7 +700,7 @@ impl Session {
     /// every command and by [`Session::persist_if_dirty`].
     pub fn unsaved(&self) -> Option<(usize, &str)> {
         let lib = self.library.as_ref()?;
-        lib.unsaved_error.as_deref().filter(|_| !self.pending_log.is_empty()).map(|e| (self.pending_log.len(), e))
+        lib.unsaved_error.as_deref().filter(|_| !self.history.pending_log.is_empty()).map(|e| (self.history.pending_log.len(), e))
     }
 
     /// Flush everything and write a snapshot (on quit). Ends an open interaction first.
@@ -715,14 +715,14 @@ impl Session {
         let _ = self.end_interaction();
         let persisted = self.persist();
         self.save_view();
-        let unlogged = if persisted.is_err() { self.pending_log.len() as u64 } else { 0 };
+        let unlogged = if persisted.is_err() { self.history.pending_log.len() as u64 } else { 0 };
         let Some(lib) = self.library.as_mut() else { return Ok(()) };
         let before = lib.journal.seq();
         let snapshot = lib.journal.snapshot_with_unlogged(&self.catalog, unlogged);
         if unlogged > 0 && lib.journal.seq() == before + unlogged {
             // the snapshot holds the queued ops: they are saved, never append them again
             log::info!("library: {unlogged} queued change(s) saved in the closing snapshot");
-            self.pending_log.clear();
+            self.history.pending_log.clear();
             lib.unsaved_error = None;
             lib.retry_at = None;
             lib.last_error = None;
@@ -814,7 +814,7 @@ impl Session {
             log::error!("library: {e}");
             return;
         }
-        if self.interaction.is_some() {
+        if self.history.interaction.is_some() {
             return;
         }
         let Some(lib) = self.library.as_mut() else { return };
@@ -827,7 +827,7 @@ impl Session {
     /// Compact the log into a snapshot now.
     pub fn compact_library(&mut self) -> Result<()> {
         self.persist()?;
-        if self.interaction.is_some() {
+        if self.history.interaction.is_some() {
             return Err(EngineError::Other("can't compact during an interaction".into()));
         }
         if let Some(lib) = self.library.as_mut() {

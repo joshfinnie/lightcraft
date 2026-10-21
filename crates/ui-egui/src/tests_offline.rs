@@ -205,7 +205,7 @@ fn import_reads_files_off_the_ui_thread_and_can_be_cancelled() {
     // The first frame installs fonts; finish the first layout before the drive matters.
     h.step();
     assert!(h.app.fonts_ready, "the UI is initialized");
-    let undo0 = h.app.session.undo.len();
+    let undo0 = h.app.session.history.undo.len();
     crate::import::start_paths(&mut h.app, vec![dir.to_string_lossy().to_string()]).unwrap();
     // every read is held: frames go on, and the import's row shows (after 0.5 s) with its ✕
     frames_while_asleep(&mut h, &nas, 20, "import");
@@ -238,7 +238,7 @@ fn import_reads_files_off_the_ui_thread_and_can_be_cancelled() {
     assert!(h.app.import.is_none(), "stopped");
     let added = h.app.session.catalog.len();
     assert!((8..n).contains(&added), "cancelled part-way: {added} of {n} added");
-    assert_eq!(h.app.session.undo.len(), undo0 + 1, "one undo step");
+    assert_eq!(h.app.session.history.undo.len(), undo0 + 1, "one undo step");
     assert_eq!(calls.on(ui_thread), 0, "files were never read on the UI thread");
     let _ = std::fs::remove_dir_all(&dir);
 }

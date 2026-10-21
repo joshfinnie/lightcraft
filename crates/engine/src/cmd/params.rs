@@ -415,11 +415,11 @@ mod command_tests {
         let ids = s.visible_cloned();
         s.execute("library.select", &json!({"ids": [ids[0].0]})).unwrap();
         let ratings = |s: &Session| ids.iter().map(|id| s.catalog.photo(*id).map(|p| p.rating)).collect::<Vec<_>>();
-        let (before, undo) = (ratings(&s), s.undo.len());
+        let (before, undo) = (ratings(&s), s.history.undo.len());
         let typo = json!({"rating": 2, "idz": [ids[1].0]});
         let e = s.execute("photo.rate", &typo).unwrap_err().to_string();
         assert!(e.contains("photo.rate") && e.contains("unknown parameter `idz`") && e.contains("`ids`"), "{e}");
-        assert_eq!((ratings(&s), s.undo.len()), (before, undo));
+        assert_eq!((ratings(&s), s.history.undo.len()), (before, undo));
         s.execute("photo.rate", &json!({"rating": 2, "ids": [ids[1].0]})).unwrap();
         assert_eq!(s.catalog.photo(ids[1]).map(|p| p.rating), Some(2));
     }

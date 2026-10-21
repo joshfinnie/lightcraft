@@ -127,7 +127,7 @@ pub(crate) fn pump(app: &mut LightcraftApp, ctx: &egui::Context) {
         app.ui.status = tr("Pending photo action cancelled").into();
         return;
     }
-    if app.session.interaction.is_some() {
+    if app.session.history.interaction.is_some() {
         ctx.request_repaint_after(std::time::Duration::from_millis(250));
         return;
     }

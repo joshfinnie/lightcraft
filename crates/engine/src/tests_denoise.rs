@@ -802,10 +802,10 @@ fn the_denoise_switch_validates_arguments_and_accepts_explicit_targets_without_s
     let model = model_files(&x.dir, "toggle-model");
     x.s.execute("denoise.models.install", &json!({"path": model.to_string_lossy(), "acknowledged": true})).unwrap();
     x.s.selection = Default::default();
-    let undo = x.s.undo.len();
+    let undo = x.s.history.undo.len();
     let r = x.s.execute("denoise.toggle", &json!({"id": id.0, "enabled": true})).unwrap();
     assert_eq!(r["amount"], 50.0);
-    assert_eq!(x.s.undo.len(), undo + 1);
+    assert_eq!(x.s.history.undo.len(), undo + 1);
     x.s.execute("denoise.toggle", &json!({"id": id.0, "enabled": false})).unwrap();
     assert_eq!(x.s.develop_of(id).unwrap().denoise_amount(), 0.0);
     // the switch is its own setting: flipping it keeps the Amount (so it compares with and without), and an Amount of 0

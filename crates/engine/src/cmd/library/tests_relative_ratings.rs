@@ -33,10 +33,10 @@ fn ratings(s: &Session) -> Result<Vec<u8>> {
 #[test]
 fn relative_ratings_clamp_each_photo_and_form_one_history_step() {
     let mut s = session().unwrap();
-    let undo = s.undo.len();
+    let undo = s.history.undo.len();
     assert_eq!(s.execute("photo.increaseRating", &json!({})).unwrap()["changed"], 2);
     assert_eq!(ratings(&s).unwrap(), [1, 3, 5, 1]);
-    assert_eq!(s.undo.len(), undo + 1);
+    assert_eq!(s.history.undo.len(), undo + 1);
     assert_eq!(s.active(), Some(PhotoId(2)));
     s.execute("edit.undo", &json!({})).unwrap();
     assert_eq!(ratings(&s).unwrap(), [0, 2, 5, 1]);
@@ -53,16 +53,16 @@ fn bounds_active_fallback_explicit_targets_and_errors_preserve_history() {
     let mut s = session().unwrap();
     assert_eq!(s.execute("photo.decreaseRating", &json!({"ids": [1]})).unwrap()["changed"], 0);
     assert_eq!(s.execute("photo.increaseRating", &json!({"ids": [3]})).unwrap()["changed"], 0);
-    assert!(s.undo.is_empty());
+    assert!(s.history.undo.is_empty());
     s.selection = Selection { ids: vec![], active: Some(PhotoId(2)) };
     assert_eq!(s.execute("photo.increaseRating", &json!({})).unwrap()["changed"], 1);
     assert_eq!(ratings(&s).unwrap(), [0, 3, 5, 1]);
     assert_eq!(s.execute("photo.decreaseRating", &json!({"ids": [4]})).unwrap()["changed"], 1);
     assert_eq!(ratings(&s).unwrap(), [0, 3, 5, 0]);
-    let undo = s.undo.len();
+    let undo = s.history.undo.len();
     assert!(s.execute("photo.increaseRating", &json!({"ids": [1, 999]})).is_err());
     assert_eq!(ratings(&s).unwrap(), [0, 3, 5, 0]);
-    assert_eq!(s.undo.len(), undo);
+    assert_eq!(s.history.undo.len(), undo);
     s.execute("photo.increaseRating", &json!({"advance": true})).unwrap();
     assert_eq!(s.active(), Some(PhotoId(3)));
     s.selection = Selection::default();

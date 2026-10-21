@@ -598,12 +598,12 @@ mod tests {
             },
             hidden: Vec::new(),
         });
-        let undo = app.session.undo.len();
+        let undo = app.session.history.undo.len();
         app.run("panel.crop", json!({})).unwrap();
         assert_eq!(app.ui.right, crate::state::RightPanel::Crop);
         let workspace = app.ui.docking.as_ref().unwrap();
         assert!(workspace.exposed(Panel::Tools));
-        assert_eq!(app.session.undo.len(), undo);
+        assert_eq!(app.session.history.undo.len(), undo);
         let saved = serde_json::to_string(workspace).unwrap();
         let reloaded: Workspace = serde_json::from_str(&saved).unwrap();
         reloaded.validate().unwrap();

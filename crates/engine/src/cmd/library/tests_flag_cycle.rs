@@ -44,10 +44,10 @@ fn cycle_steps_unflagged_pick_reject_and_wraps() {
 #[test]
 fn cycle_uses_each_photos_own_flag_in_one_undo_step() {
     let mut s = session().unwrap();
-    let undo = s.undo.len();
+    let undo = s.history.undo.len();
     assert_eq!(s.execute("photo.cycleFlag", &json!({})).unwrap()["changed"], 3);
     assert_eq!(flags(&s), [Flag::Pick, Flag::Reject, Flag::None, Flag::None]);
-    assert_eq!(s.undo.len(), undo + 1);
+    assert_eq!(s.history.undo.len(), undo + 1);
     assert_eq!(s.active(), Some(PhotoId(2)));
     s.execute("edit.undo", &json!({})).unwrap();
     assert_eq!(flags(&s), [Flag::None, Flag::Pick, Flag::Reject, Flag::None]);
@@ -66,13 +66,13 @@ fn explicit_ids_active_fallback_advance_and_errors() {
     s.execute("photo.cycleFlag", &json!({"advance": true})).unwrap();
     assert_eq!(flags(&s)[1], Flag::None);
     assert_eq!(s.active(), Some(PhotoId(3)));
-    let undo = s.undo.len();
+    let undo = s.history.undo.len();
     assert!(s.execute("photo.cycleFlag", &json!({"ids": [1, 999]})).is_err());
     assert_eq!(flags(&s)[0], Flag::None);
-    assert_eq!(s.undo.len(), undo);
+    assert_eq!(s.history.undo.len(), undo);
     s.selection = Selection::default();
     assert!(s.execute("photo.cycleFlag", &json!({})).is_err());
-    assert_eq!(s.undo.len(), undo);
+    assert_eq!(s.history.undo.len(), undo);
 }
 
 #[test]
@@ -85,9 +85,9 @@ fn increase_and_decrease_clamp_without_wrapping() {
     assert_eq!(flags(&s), [Flag::None, Flag::None, Flag::Reject, Flag::None]);
     s.execute("photo.decreaseFlag", &json!({})).unwrap();
     assert_eq!(flags(&s), [Flag::Reject, Flag::Reject, Flag::Reject, Flag::None]);
-    let undo = s.undo.len();
+    let undo = s.history.undo.len();
     assert_eq!(s.execute("photo.decreaseFlag", &json!({})).unwrap()["changed"], 0);
-    assert_eq!(s.undo.len(), undo, "no change, no history step");
+    assert_eq!(s.history.undo.len(), undo, "no change, no history step");
 }
 
 #[test]

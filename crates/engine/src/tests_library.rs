@@ -564,9 +564,9 @@ fn set_rules_with_a_name_is_one_step() {
     // refused rules: the name stays too
     assert!(s.execute("album.setRules", &serde_json::json!({"id": id, "name": "New", "replace": true, "rules": bad})).is_err());
     assert_eq!(album(&s).name, "Old");
-    let undo = s.undo.len();
+    let undo = s.history.undo.len();
     s.execute("album.setRules", &serde_json::json!({"id": id, "name": "New", "replace": true, "rules": good})).unwrap();
-    assert_eq!((album(&s).name.as_str(), s.undo.len()), ("New", undo + 1), "one undo step");
+    assert_eq!((album(&s).name.as_str(), s.history.undo.len()), ("New", undo + 1), "one undo step");
     assert!(album(&s).smart.unwrap().rule_set.is_some());
     s.execute("edit.undo", &serde_json::json!({})).unwrap();
     assert_eq!(album(&s).name, "Old");

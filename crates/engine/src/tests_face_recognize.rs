@@ -129,12 +129,12 @@ fn naming_a_face_is_undoable_and_makes_it_yours() {
     let mut detected = region(0.1, None);
     detected.description = Some("Detected by YuNet 2023mar".into());
     set_regions(&mut s, a, vec![detected, region(0.5, None)]);
-    let undo = s.undo.len();
+    let undo = s.history.undo.len();
     let r = s.execute("faces.setName", &json!({"id": a.0, "index": 0, "name": "  Ann  "})).unwrap();
     assert_eq!(r["name"], "Ann");
     let regions = s.catalog.photo(a).unwrap().meta.regions.clone();
     assert_eq!((regions[0].name.as_deref(), regions[0].description.as_deref()), (Some("Ann"), None), "a named detection loses its detected marker");
-    assert_eq!(s.undo.len(), undo + 1);
+    assert_eq!(s.history.undo.len(), undo + 1);
     // a new detection run now leaves it alone
     if install_yunet(&mut s) {
         s.execute("faces.detect", &json!({"id": a.0})).unwrap();
@@ -361,7 +361,7 @@ fn many_faces_are_named_in_one_undo_step() {
     let detected = |x: f64| Region { description: Some("Detected by YuNet 2023mar".into()), ..region(x, None) };
     set_regions(&mut s, a, vec![detected(0.1), region(0.5, None)]);
     set_regions(&mut s, b, vec![detected(0.3)]);
-    let undo = s.undo.len();
+    let undo = s.history.undo.len();
     let r = s
         .execute(
             "faces.nameFaces",
@@ -369,7 +369,7 @@ fn many_faces_are_named_in_one_undo_step() {
         )
         .unwrap();
     assert_eq!((r["named"].clone(), r["photos"].clone()), (json!(3), json!(2)));
-    assert_eq!(s.undo.len(), undo + 1, "one step for the whole group");
+    assert_eq!(s.history.undo.len(), undo + 1, "one step for the whole group");
     for (id, i) in [(a, 0), (a, 1), (b, 0)] {
         let reg = &s.catalog.photo(id).unwrap().meta.regions[i];
         assert_eq!(reg.name.as_deref(), Some("Jane Doe"));
@@ -541,7 +541,7 @@ fn rename_person_rewrites_every_spelling_and_undoes() {
     pet.kind = RegionKind::Pet;
     set_regions(&mut s, b, vec![region(0.3, Some("ann")), pet]);
     s.execute("library.filter", &json!({"person": "ANN"})).unwrap();
-    let undo = s.undo.len();
+    let undo = s.history.undo.len();
     let r = s.execute("faces.renamePerson", &json!({"from": "  ann ", "to": "  Ada  "})).unwrap();
     assert_eq!((r["faces"].clone(), r["photos"].clone(), r["to"].clone(), r["merged"].clone()), (json!(3), json!(2), json!("Ada"), json!(false)));
     assert_eq!(face_names(&s, a), vec![Some("Ada".into()), Some("Ada".into()), Some("Rex".into())]);
@@ -549,8 +549,8 @@ fn rename_person_rewrites_every_spelling_and_undoes() {
     assert_eq!(face_names(&s, b)[1], Some("Ann".into()), "a pet is not a person");
     assert_eq!(s.catalog.people().iter().find(|p| p.name.eq_ignore_ascii_case("ada")).map(|p| p.name.as_str()), Some("Ada"));
     assert_eq!(s.filter.person.as_deref(), Some("Ada"));
-    assert_eq!(s.undo.len(), undo + 1);
-    assert_eq!(s.undo.last().map(|u| u.label.as_str()), Some("Rename Person"));
+    assert_eq!(s.history.undo.len(), undo + 1);
+    assert_eq!(s.history.undo.last().map(|u| u.label.as_str()), Some("Rename Person"));
     s.execute("edit.undo", &json!({})).unwrap();
     assert_eq!(face_names(&s, a), vec![Some("Ann".into()), Some("  ANN  ".into()), Some("Rex".into())]);
     assert_eq!(face_names(&s, b)[0], Some("ann".into()));
@@ -563,13 +563,13 @@ fn rename_person_refuses_a_merge_until_it_is_asked_for() {
     let (a, b) = two_photos(&s);
     set_regions(&mut s, a, vec![region(0.1, Some("Ann"))]);
     set_regions(&mut s, b, vec![region(0.3, Some("Bea"))]);
-    let before = (face_names(&s, a), face_names(&s, b), s.undo.len());
+    let before = (face_names(&s, a), face_names(&s, b), s.history.undo.len());
     let err = s.execute("faces.renamePerson", &json!({"from": "Ann", "to": "Bea"})).unwrap_err();
     assert!(err.to_string().contains("already another person"), "{err}");
-    assert_eq!((face_names(&s, a), face_names(&s, b), s.undo.len()), before, "a refusal changes nothing");
+    assert_eq!((face_names(&s, a), face_names(&s, b), s.history.undo.len()), before, "a refusal changes nothing");
     let r = s.execute("faces.renamePerson", &json!({"from": "Ann", "to": "Bea", "merge": true})).unwrap();
     assert_eq!(r["merged"], true);
-    assert_eq!(s.undo.last().map(|u| u.label.as_str()), Some("Merge People"));
+    assert_eq!(s.history.undo.last().map(|u| u.label.as_str()), Some("Merge People"));
     let names: Vec<String> = s.catalog.people().into_iter().map(|p| p.name).collect();
     assert_eq!(names, vec!["Bea".to_string()]);
     s.execute("edit.undo", &json!({})).unwrap();
@@ -585,7 +585,7 @@ fn rename_person_covers_more_than_the_person_query_and_rejects_bad_input() {
     let mut s = Session::with_demo();
     let (a, b) = two_photos(&s);
     set_regions(&mut s, a, vec![region(0.1, Some("Ann"))]);
-    let undo = s.undo.len();
+    let undo = s.history.undo.len();
     for p in [
         json!({}),
         json!({"from": "Ann"}),
@@ -599,7 +599,7 @@ fn rename_person_covers_more_than_the_person_query_and_rejects_bad_input() {
         json!({"from": "Ann", "to": "Ann"}),
     ] {
         let err = s.execute("faces.renamePerson", &p).unwrap_err();
-        assert!(s.undo.len() == undo, "{p} changed the catalog: {err}");
+        assert!(s.history.undo.len() == undo, "{p} changed the catalog: {err}");
     }
     assert_eq!(face_names(&s, a), vec![Some("Ann".into())]);
     let regions: Vec<_> = (0..5001).map(|i| region(0.1, Some(if i == 0 { "ANN" } else { "Ann" }))).collect();

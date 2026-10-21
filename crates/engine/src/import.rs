@@ -1459,7 +1459,7 @@ pub fn commit_prepared(s: &mut Session, opts: &ImportOptions, now: &str, prepare
     if !purge.is_empty() {
         ops.insert(0, s.catalog.delete_photos_permanently_ops(&purge));
     }
-    let log0 = s.pending_log.len();
+    let log0 = s.history.pending_log.len();
     let (verb, n) = if report.imported.is_empty() && !report.restored.is_empty() {
         ("Restore", report.restored.len())
     } else {
@@ -1482,8 +1482,8 @@ pub fn commit_prepared(s: &mut Session, opts: &ImportOptions, now: &str, prepare
 /// still intact. Nothing is removed when the library can't be saved.
 fn finish_moves(s: &mut Session, placed: Vec<crate::import_move::Placed>, log0: usize, report: &mut ImportReport) {
     // (saving here clears the pending ops, so the sidecars `execute` would auto-write are written here)
-    let auto: Vec<Op> = if s.prefs.xmp.auto_write { s.pending_log.get(log0..).map(<[Op]>::to_vec).unwrap_or_default() } else { Vec::new() };
-    let before = s.pending_log.len();
+    let auto: Vec<Op> = if s.prefs.xmp.auto_write { s.history.pending_log.get(log0..).map(<[Op]>::to_vec).unwrap_or_default() } else { Vec::new() };
+    let before = s.history.pending_log.len();
     if let Err(e) = s.persist() {
         for p in placed {
             let reason = format!("the library could not be saved ({e}): the original stays; the photo uses the copy at {}", p.dst.display());
@@ -1505,7 +1505,7 @@ fn finish_moves(s: &mut Session, placed: Vec<crate::import_move::Placed>, log0: 
             }
         }
     }
-    if s.pending_log.len() < before && s.interaction.is_none() && !auto.is_empty() {
+    if s.history.pending_log.len() < before && s.history.interaction.is_none() && !auto.is_empty() {
         s.auto_write_sidecars(&auto);
     }
 }

@@ -145,13 +145,13 @@ fn double_clicking_a_keyword_edits_it() {
     ask(&mut h, "ui.clickWidget", json!({"id": "keywordRow:Weddings", "count": 2}));
     let Some(crate::state::Dialog::KeywordTag { editing, name, synonyms, .. }) = h.app.ui.dialog.clone() else { panic!("{:?}", h.app.ui.dialog) };
     assert_eq!((editing.as_deref(), name.as_str(), synonyms.as_str()), (Some("Weddings"), "Weddings", "marriage"));
-    let undo = h.app.session.undo.len();
+    let undo = h.app.session.history.undo.len();
     ask(&mut h, "ui.text", json!({"text": "Marriages"}));
     ask(&mut h, "ui.clickWidget", json!({"id": "check:keywordIncludeOnExport"}));
     ask(&mut h, "ui.dialog.confirm", json!({}));
     let i = info(&mut h, "Marriages");
     assert_eq!((i["includeOnExport"].as_bool(), i["synonyms"].clone()), (Some(false), json!(["marriage"])), "{i}");
-    assert_eq!(h.app.session.undo.len(), undo + 1, "one undo step");
+    assert_eq!(h.app.session.history.undo.len(), undo + 1, "one undo step");
 }
 
 /// The − button deletes the picked keyword after asking how many photos lose it; Cancel keeps it, and undo
@@ -241,9 +241,9 @@ fn a_keyword_cant_be_dropped_inside_itself() {
     let (mut h, ids) = keywords_panel_at([1400.0, 2400.0]);
     run(&mut h, "photo.setMeta", json!({"ids": [ids[0]], "keywords": ["Portugal|Lisbon"]}));
     ask(&mut h, "ui.clickWidget", json!({"id": "keywordRowToggle:Portugal"}));
-    let undo = h.app.session.undo.len();
+    let undo = h.app.session.history.undo.len();
     drag(&mut h, "keywordRow:Portugal", "keywordRow:Portugal|Lisbon");
-    assert_eq!((keywords_of(&h, ids[0]), h.app.session.undo.len()), (vec!["Portugal|Lisbon".to_string()], undo));
+    assert_eq!((keywords_of(&h, ids[0]), h.app.session.history.undo.len()), (vec!["Portugal|Lisbon".to_string()], undo));
     assert_eq!(h.app.ui.dialog, None);
     assert_eq!(h.app.ui.toast, None, "not even tried: no error to show");
 }

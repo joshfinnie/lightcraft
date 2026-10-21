@@ -66,10 +66,10 @@ fn double_clicking_a_sliders_name_resets_it_in_one_step() {
     let mut h = edit_panel();
     for (control, edited) in EDITED {
         set(&mut h, control, edited);
-        let undo = h.app.session.undo.len();
+        let undo = h.app.session.history.undo.len();
         double_click(&mut h, &format!("sliderLabel:{control}"), 0.1);
         assert_eq!(value(&h, control), default(control), "{control} is back at its default");
-        assert_eq!(h.app.session.undo.len() - undo, 1, "{control}: one undo step");
+        assert_eq!(h.app.session.history.undo.len() - undo, 1, "{control}: one undo step");
         ask(&mut h, "engine.execute", json!({"command": "edit.undo"}));
         assert_eq!(value(&h, control), edited, "{control}: undo brings the edit back");
     }
@@ -82,11 +82,11 @@ fn double_clicking_a_sliders_thumb_resets_it_in_one_step() {
     let mut h = edit_panel();
     for (control, edited) in EDITED {
         set(&mut h, control, edited);
-        let undo = h.app.session.undo.len();
+        let undo = h.app.session.history.undo.len();
         let fx = thumb_fx(&h, control, 4.0);
         double_click(&mut h, &format!("slider:{control}"), fx);
         assert_eq!(value(&h, control), default(control), "{control} is back at its default");
-        assert_eq!(h.app.session.undo.len() - undo, 1, "{control}: one undo step");
+        assert_eq!(h.app.session.history.undo.len() - undo, 1, "{control}: one undo step");
         ask(&mut h, "engine.execute", json!({"command": "edit.undo"}));
         assert_eq!(value(&h, control), edited, "{control}: undo brings the edit back");
     }
@@ -141,11 +141,11 @@ fn a_typed_value_still_applies_after_a_reset() {
     set(&mut h, "light.exposure", 1.25);
     double_click(&mut h, "sliderLabel:light.exposure", 0.1);
     assert_eq!(value(&h, "light.exposure"), 0.0);
-    let undo = h.app.session.undo.len();
+    let undo = h.app.session.history.undo.len();
     ask(&mut h, "ui.clickWidget", json!({"id": "sliderValue:light.exposure"}));
     for (method, params) in [("ui.text", json!({"text": "0.5"})), ("ui.key", json!({"key": "Enter"}))] {
         ask(&mut h, method, params);
     }
     assert_eq!(value(&h, "light.exposure"), 0.5);
-    assert_eq!(h.app.session.undo.len() - undo, 1, "one undo step");
+    assert_eq!(h.app.session.history.undo.len() - undo, 1, "one undo step");
 }

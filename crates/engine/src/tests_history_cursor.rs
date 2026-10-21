@@ -139,7 +139,7 @@ fn invalid_command_indices_leave_the_catalog_and_history_unchanged() {
     }
     let before = s.catalog.to_snapshot();
     let history = s.execute("history.list", &json!({})).unwrap();
-    let undo_len = s.undo.len();
+    let undo_len = s.history.undo.len();
     // The integer beyond u64 is parsed as a float by serde_json; it must not saturate to usize::MAX.
     let oversized: serde_json::Value = serde_json::from_str("18446744073709551616").unwrap();
     for command in [
@@ -157,7 +157,7 @@ fn invalid_command_indices_leave_the_catalog_and_history_unchanged() {
             assert!(result.is_err(), "{command} accepted {index}: {result:?}");
             assert_eq!(s.catalog.to_snapshot(), before, "{command} changed the catalog for {index}");
             assert_eq!(s.execute("history.list", &json!({})).unwrap(), history, "{command} moved the History cursor for {index}");
-            assert_eq!(s.undo.len(), undo_len, "{command} added an undo step for {index}");
+            assert_eq!(s.history.undo.len(), undo_len, "{command} added an undo step for {index}");
         }
         assert!(s.execute(command, &json!({"name": "Changed"})).is_err(), "{command} accepted a missing index");
         assert_eq!(s.catalog.to_snapshot(), before);

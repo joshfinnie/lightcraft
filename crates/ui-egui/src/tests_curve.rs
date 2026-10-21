@@ -57,7 +57,7 @@ fn dragging_a_point_moves_it_in_both_axes_with_one_undo_step() {
     exec(&mut h, "develop.curve", json!({"channel": "master", "points": [[0.0, 0.0], [0.5, 0.5], [1.0, 1.0]]}));
     h.step();
     let side = curve_side(&mut h);
-    let undo_before = h.app.session.undo.len();
+    let undo_before = h.app.session.history.undo.len();
     // grab the middle point and drag it up-left: x 0.5 → 0.4, y 0.5 → 0.7
     let r = h.request("ui.dragWidget", json!({"id": "curve", "fx": 0.5, "fy": 0.5, "dx": -0.1 * side, "dy": -0.2 * side, "steps": 12}), T);
     assert_eq!(r["ok"], true, "{r}");
@@ -66,7 +66,7 @@ fn dragging_a_point_moves_it_in_both_axes_with_one_undo_step() {
     assert_eq!(c.len(), 3, "dragging moves the point, it doesn't add one: {c:?}");
     assert!((c[1].0 - 0.4).abs() < 0.03, "x follows the pointer: {c:?}");
     assert!((c[1].1 - 0.7).abs() < 0.03, "y follows the pointer: {c:?}");
-    assert_eq!(h.app.session.undo.len(), undo_before + 1, "one undo step per drag");
+    assert_eq!(h.app.session.history.undo.len(), undo_before + 1, "one undo step per drag");
 }
 
 #[test]
