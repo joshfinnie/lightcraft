@@ -11,3 +11,10 @@ plan/
 # model weights are never committed (SAM 3: docs/ai-masks.md)
 *.safetensors
 *.safetensors.part
+
+# cargo fuzz: generated seeds, findings and builds
+/fuzz/corpus/
+/fuzz/artifacts/
+/fuzz/coverage/
+/fuzz/target/
+/fuzz/Cargo.lock

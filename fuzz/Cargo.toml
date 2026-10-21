@@ -1,0 +1,53 @@
+[package]
+name = "lightcraft-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+license = "MIT OR Apache-2.0"
+
+[package.metadata]
+cargo-fuzz = true
+
+# its own workspace: built only by `cargo +nightly fuzz` (see README.md), never by the product's
+[workspace]
+
+[dependencies]
+libfuzzer-sys = "0.4"
+lightcraft-raw = { path = "../crates/raw" }
+lightcraft-codecs = { path = "../crates/codecs" }
+lightcraft-meta = { path = "../crates/meta" }
+lightcraft-tiff = { path = "../crates/tiff" }
+
+[[bin]]
+name = "raw_decode"
+path = "fuzz_targets/raw_decode.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "raw_probe"
+path = "fuzz_targets/raw_probe.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "codecs_decode"
+path = "fuzz_targets/codecs_decode.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "meta_extract"
+path = "fuzz_targets/meta_extract.rs"
+test = false
+doc = false
+bench = false
+
+# writes small valid files of every kind into corpus/<target>/ to start from (an example, not a
+# bin: cargo fuzz builds every bin as a fuzz target)
+[[example]]
+name = "seeds"
+path = "examples/seeds.rs"
