@@ -19,6 +19,8 @@
 #![forbid(unsafe_code)]
 #![cfg_attr(test, allow(clippy::disallowed_methods))]
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
+// every offset here comes from a file: read with `get`, never `[i]` (tests may index)
+#![cfg_attr(not(test), deny(clippy::indexing_slicing))]
 
 pub mod image;
 pub mod makernote;
@@ -83,15 +85,15 @@ impl ByteOrder {
     /// Read a `u16` at `off`, or `None` if out of bounds.
     #[inline]
     pub fn read_u16(self, data: &[u8], off: usize) -> Option<u16> {
-        data.get(off..off.checked_add(2)?).map(|s| self.u16([s[0], s[1]]))
+        data.get(off..off.checked_add(2)?).and_then(|s| s.try_into().ok()).map(|b| self.u16(b))
     }
     #[inline]
     pub fn read_u32(self, data: &[u8], off: usize) -> Option<u32> {
-        data.get(off..off.checked_add(4)?).map(|s| self.u32([s[0], s[1], s[2], s[3]]))
+        data.get(off..off.checked_add(4)?).and_then(|s| s.try_into().ok()).map(|b| self.u32(b))
     }
     #[inline]
     pub fn read_u64(self, data: &[u8], off: usize) -> Option<u64> {
-        data.get(off..off.checked_add(8)?).map(|s| self.u64([s[0], s[1], s[2], s[3], s[4], s[5], s[6], s[7]]))
+        data.get(off..off.checked_add(8)?).and_then(|s| s.try_into().ok()).map(|b| self.u64(b))
     }
     pub fn put_u16(self, out: &mut Vec<u8>, v: u16) {
         out.extend_from_slice(&match self {
@@ -313,8 +315,8 @@ impl Value {
         match self {
             Value::Ascii(s) => Some(s.trim_end_matches([' ', '\0']).to_string()),
             Value::Byte(b) | Value::Undefined(b) => {
-                let end = b.iter().position(|&c| c == 0).unwrap_or(b.len());
-                Some(String::from_utf8_lossy(&b[..end]).trim_end().to_string())
+                let text = b.split(|&c| c == 0).next().unwrap_or_default();
+                Some(String::from_utf8_lossy(text).trim_end().to_string())
             }
             _ => None,
         }
@@ -367,7 +369,7 @@ pub struct Ifd {
 
 impl Ifd {
     pub fn get(&self, tag: u16) -> Option<&Entry> {
-        self.entries.binary_search_by_key(&tag, |e| e.tag).ok().map(|i| &self.entries[i])
+        self.entries.binary_search_by_key(&tag, |e| e.tag).ok().and_then(|i| self.entries.get(i))
     }
     pub fn contains(&self, tag: u16) -> bool {
         self.get(tag).is_some()

@@ -105,7 +105,8 @@ impl TiffWriter {
         } else {
             self.order.put_u32(&mut tmp, u32::try_from(v).map_err(|_| TiffError::Limit("classic TIFF larger than 4 GiB"))?);
         }
-        buf[pos..pos + tmp.len()].copy_from_slice(&tmp);
+        let slot = buf.get_mut(pos..pos.saturating_add(tmp.len())).ok_or(TiffError::Invalid("offset slot outside the written file".into()))?;
+        slot.copy_from_slice(&tmp);
         Ok(())
     }
 

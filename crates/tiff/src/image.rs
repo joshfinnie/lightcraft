@@ -94,7 +94,7 @@ impl ImageInfo {
 
     /// Bits of the first sample.
     pub fn bits(&self) -> u16 {
-        self.bits_per_sample[0]
+        self.bits_per_sample.first().copied().unwrap_or(1)
     }
 
     /// Whether this IFD is a reduced-resolution image (NewSubfileType bit 0).
@@ -138,13 +138,13 @@ impl ImageInfo {
             let plane = i / per_plane.max(1);
             let j = i % per_plane.max(1);
             let (cx, cy) = (j as u32 % across, j as u32 / across);
-            let x = cx * cw;
-            let y = cy * ch;
+            let x = cx.saturating_mul(cw);
+            let y = cy.saturating_mul(ch);
             let height = match self.layout {
-                Layout::Strips { .. } => ch.min(self.height - y),
+                Layout::Strips { .. } => ch.min(self.height.saturating_sub(y)),
                 Layout::Tiles { .. } => ch,
             };
-            let offset = self.offsets[i];
+            let Some(&offset) = self.offsets.get(i) else { break };
             let len = match self.byte_counts.get(i) {
                 Some(&l) if l > 0 => l,
                 _ => {
@@ -167,7 +167,7 @@ pub fn chunk_bytes<'a>(data: &'a [u8], c: &Chunk) -> Option<&'a [u8]> {
         return None;
     }
     let end = (c.offset.saturating_add(c.len)).min(data.len() as u64) as usize;
-    Some(&data[start..end])
+    data.get(start..end)
 }
 
 #[cfg(test)]

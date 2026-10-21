@@ -314,8 +314,8 @@ pub fn decode(o: ByteOrder, typ: FieldType, b: &[u8]) -> Value {
         FieldType::Byte => Value::Byte(b.to_vec()),
         FieldType::Undefined => Value::Undefined(b.to_vec()),
         FieldType::Ascii => {
-            let end = b.iter().position(|&c| c == 0).unwrap_or(b.len());
-            Value::Ascii(String::from_utf8_lossy(&b[..end]).into_owned())
+            let text = b.split(|&c| c == 0).next().unwrap_or_default();
+            Value::Ascii(String::from_utf8_lossy(text).into_owned())
         }
         FieldType::SByte => Value::SByte(b.iter().map(|&x| x as i8).collect()),
         FieldType::Short => Value::Short(b.as_chunks::<2>().0.iter().map(|c| o.u16(arr(c))).collect()),
