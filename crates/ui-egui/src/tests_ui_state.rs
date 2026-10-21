@@ -28,3 +28,27 @@ fn an_old_saved_component_rename_is_ignored() {
     assert!(ui.mask_edit.renaming_component.is_none());
     assert_eq!(ui.left_width, 300.0);
 }
+
+/// `ui.set` changes the settings it names and nothing else: what is never saved (lights out, the
+/// People page, a compare pair, a soft-proofing profile) stays as it was.
+#[test]
+fn ui_set_keeps_what_is_not_saved() {
+    use crate::headless::Headless;
+    use crate::state::LightsOut;
+    let services = crate::Services { png: None, ..Default::default() };
+    let app = crate::LightcraftApp::new(lightcraft_engine::Session::with_demo(), services);
+    let mut h = Headless::new(app, [1200.0, 800.0], 1.0);
+    let t = std::time::Duration::from_secs(20);
+    let r = h.request("engine.execute", serde_json::json!({"command": "view.lightsOut", "params": {"mode": "off"}}), t);
+    assert_eq!(r["ok"], true, "{r}");
+    h.app.ui.people.person_page = Some("Ann".into());
+    h.app.ui.compare = Some((1, 2));
+    h.app.ui.proof_profile = Some(("paper.icc".into(), "Paper".into()));
+    let r = h.request("ui.set", serde_json::json!({"thumbSize": 200}), t);
+    assert_eq!(r["ok"], true, "{r}");
+    assert_eq!(h.app.ui.thumb_size, 200.0);
+    assert_eq!(h.app.ui.lights_out, LightsOut::Off);
+    assert_eq!(h.app.ui.people.person_page.as_deref(), Some("Ann"));
+    assert_eq!(h.app.ui.compare, Some((1, 2)));
+    assert_eq!(h.app.ui.proof_profile, Some(("paper.icc".into(), "Paper".into())));
+}

@@ -389,11 +389,9 @@ pub fn handle(app: &mut LightcraftApp, ctx: &egui::Context, req: &ControlRequest
                         }
                     }
                     u.collapsed_sidebar.clear();
-                    u.toast = app.ui.toast.clone();
-                    u.dialog = app.ui.dialog.clone();
-                    u.status = app.ui.status.clone();
                     crate::docking::cancel_replaced_gesture(app, u.docking.as_ref());
-                    app.ui = u;
+                    let old = std::mem::replace(&mut app.ui, u);
+                    app.ui.keep_unsaved(old);
                     crate::i18n::set_language(app.ui.language);
                     ctx.request_repaint();
                     ok(serde_json::to_value(&app.ui).unwrap_or_default())

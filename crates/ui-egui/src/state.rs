@@ -1445,6 +1445,149 @@ impl UiState {
             self.open_flyouts.push(id.to_string());
         }
     }
+    /// What `old` holds that is never saved (the session's own state: dialogs, lights out, the
+    /// People page, drags…), taken over by these settings read from JSON (`ui.set`). Every
+    /// field is named, so a new one does not compile until it is sorted into one or the other.
+    pub fn keep_unsaved(&mut self, old: UiState) {
+        let UiState {
+            window: _,
+            docking: _,
+            language: _,
+            view: _,
+            left_panel: _,
+            right: _,
+            left_width: _,
+            right_width: _,
+            presets: _,
+            preset_thumbs: _,
+            filmstrip: _,
+            zoom: _,
+            pan: _,
+            click_zoom: _,
+            before_after: _,
+            thumb_size: _,
+            open_sections: _,
+            open_flyouts: _,
+            single_panel: _,
+            show_clipping: _,
+            histogram: _,
+            soft_proof: _,
+            proof: _,
+            proof_paper_ink: _,
+            mask_overlay: _,
+            mask_overlay_mode: _,
+            mask_overlay_color: _,
+            mask_overlay_opacity: _,
+            mask_pins: _,
+            tool_overlay: _,
+            mask_overlay_all: _,
+            crop_overlay_orient: _,
+            crop_overlay: _,
+            crop_default_aspect: _,
+            show_filenames: _,
+            grid_info: _,
+            show_counts: _,
+            face_boxes: _,
+            sidebar: _,
+            collapsed_sidebar: _,
+            hidden_locations: _,
+            search: _,
+            curve_channel: _,
+            mixer_mode: _,
+            grading_mode: _,
+            tool: _,
+            brush_size: _,
+            brush_feather: _,
+            brush_flow: _,
+            brush_erase: _,
+            brush_auto_mask: _,
+            brush_pressure: _,
+            remove_size: _,
+            remove_feather: _,
+            remove_opacity: _,
+            point_color: _,
+            point_color_visualize: _,
+            hdr_visualize: _,
+            eye: _,
+            eye_pet: _,
+            visualize_spots: _,
+            spots_threshold: _,
+            filter_bar: _,
+            local_roots: _,
+            auto_advance: _,
+            fullscreen: _,
+            second_window: _,
+            keywording_view: _,
+            folded_sections: _,
+            keyword_list_open: _,
+            info_overlay: _,
+            layout_image: _,
+            navigator: _,
+            settings: _,
+            upkeep,
+            zoom_anim,
+            proof_profile,
+            proof_intent,
+            luminance_map_restore,
+            people,
+            drag,
+            focus_search,
+            mask_edit,
+            quit,
+            reveal_album,
+            reveal_keyword,
+            grading_hidden,
+            local_browse_root,
+            lights_out,
+            keyword_painter,
+            keyword_chips_all,
+            keyword_list_selected,
+            slideshow,
+            window_fullscreen,
+            compare,
+            reference,
+            toast,
+            last_find_missing,
+            last_find_missing_result,
+            #[cfg(test)]
+            find_missing_test_delay,
+            status,
+            dialog,
+            print,
+        } = old;
+        self.upkeep = upkeep;
+        self.zoom_anim = zoom_anim;
+        self.proof_profile = proof_profile;
+        self.proof_intent = proof_intent;
+        self.luminance_map_restore = luminance_map_restore;
+        self.people = people;
+        self.drag = drag;
+        self.focus_search = focus_search;
+        self.mask_edit = mask_edit;
+        self.quit = quit;
+        self.reveal_album = reveal_album;
+        self.reveal_keyword = reveal_keyword;
+        self.grading_hidden = grading_hidden;
+        self.local_browse_root = local_browse_root;
+        self.lights_out = lights_out;
+        self.keyword_painter = keyword_painter;
+        self.keyword_chips_all = keyword_chips_all;
+        self.keyword_list_selected = keyword_list_selected;
+        self.slideshow = slideshow;
+        self.window_fullscreen = window_fullscreen;
+        self.compare = compare;
+        self.reference = reference;
+        self.toast = toast;
+        self.last_find_missing = last_find_missing;
+        self.last_find_missing_result = last_find_missing_result;
+        #[cfg(test)]
+        {
+            self.find_missing_test_delay = find_missing_test_delay;
+        }
+        self.status = status;
+        self.dialog = dialog;
+        self.print = print;
+    }
     /// Clamp values restored from disk.
     pub fn sanitized(mut self) -> Self {
         self.thumb_size = self.thumb_size.clamp(THUMB_SIZE_MIN, THUMB_SIZE_MAX);
