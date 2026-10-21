@@ -162,6 +162,7 @@ pub(crate) fn decode(bytes: &[u8], mode: Mode) -> Result<RawImage> {
     let (fw, fh, nc, prec) = ljpeg::frame_info(src)?;
     let frame = match mode {
         Mode::Full => {
+            crate::check_dimensions((fw as u64).saturating_mul(nc as u64), fh as u64)?;
             let total = (fw as u64)
                 .checked_mul(fh as u64)
                 .and_then(|v| v.checked_mul(nc as u64))

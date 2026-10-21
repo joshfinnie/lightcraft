@@ -512,6 +512,7 @@ pub(crate) fn decode(bytes: &[u8], mode: Mode) -> Result<RawImage> {
     if w == 0 || h == 0 {
         return Err(RawError::Corrupt("RW2 without sensor size".into()));
     }
+    crate::check_dimensions(w as u64, h as u64)?;
     let n = w.checked_mul(h).filter(|n| *n <= MAX_SAMPLES).ok_or(RawError::Limit("image too large"))?;
     let bits = ifd0.u32(BITS).unwrap_or(12);
     let encoding = encoding(ifd0, bits)?;
