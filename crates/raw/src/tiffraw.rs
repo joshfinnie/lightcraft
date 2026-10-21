@@ -21,6 +21,9 @@ pub enum Packing {
     Words32Msb,
 }
 
+/// The longest tile edge allowed beyond an image smaller than it (DNG writers use 256 or 512).
+const MAX_TILE_OVERHANG: usize = 1024;
+
 pub(crate) enum ChunkPx {
     U16(Vec<u16>),
     F32(Vec<f32>),
@@ -35,6 +38,16 @@ pub fn check_image(data: &[u8], info: &ImageInfo) -> Result<usize> {
     let total = w.checked_mul(h).and_then(|v| v.checked_mul(cpp)).ok_or(RawError::Limit("image too large"))?;
     if total > MAX_SAMPLES || total == 0 {
         return Err(RawError::Limit("image too large"));
+    }
+    // nothing develops more than 4 samples a pixel; refused before a plane of chunks per sample is decoded
+    if cpp > 4 {
+        return Err(RawError::Unsupported(format!("{cpp} samples per pixel")));
+    }
+    // each chunk is decoded whole before it is cropped to the image, so its size is bounded too: a tile
+    // reaches past a small image's edge only up to a usual tile size
+    let (cw, ch) = info.chunk_size();
+    if cw as usize > w.max(MAX_TILE_OVERHANG) || ch as usize > h.max(MAX_TILE_OVERHANG) {
+        return Err(RawError::Corrupt(format!("a {cw} × {ch} tile for a {w} × {h} image")));
     }
     let bits = info.bits() as u32;
     let float = info.sample_format == 3;

@@ -107,6 +107,36 @@ fn hostile_dimensions_are_rejected_quickly() {
     assert!(t0.elapsed().as_secs_f64() < 2.0);
 }
 
+/// A 16 × 16 DNG whose one tile claims 32768 × 32768 pixels: each tile was allocated at its
+/// claimed size (2 GB of samples) from a 200-byte JPEG. A tile may exceed a small image, but not
+/// by more than a usual tile size; likewise more than 4 samples a pixel is refused before decoding.
+#[test]
+fn a_tile_far_larger_than_its_image_is_refused() {
+    use lightcraft_tiff::tags as t;
+    use lightcraft_tiff::{IfdBuilder, ImageData, TiffWriter, Value};
+    let mut jpeg = Vec::new();
+    jpeg_encoder::Encoder::new(&mut jpeg, 90).encode(&[128u8; 64], 8, 8, jpeg_encoder::ColorType::Luma).unwrap();
+    let dng = |tile: u32, cpp: u16| {
+        let mut ifd = IfdBuilder::new();
+        ifd.set(t::DNG_VERSION, Value::Byte(vec![1, 4, 0, 0]));
+        ifd.set(t::IMAGE_WIDTH, Value::Long(vec![16]));
+        ifd.set(t::IMAGE_LENGTH, Value::Long(vec![16]));
+        ifd.set(t::BITS_PER_SAMPLE, Value::Short(vec![8; cpp as usize]));
+        ifd.set(t::SAMPLES_PER_PIXEL, Value::Short(vec![cpp]));
+        ifd.set(t::PHOTOMETRIC, Value::Short(vec![32803]));
+        ifd.set(t::CFA_PATTERN_EP, Value::Byte(vec![0, 1, 1, 2]));
+        ifd.set(t::COMPRESSION, Value::Short(vec![34892]));
+        ifd.set_image(ImageData::Tiles { tile_width: tile, tile_height: tile, tiles: vec![jpeg.clone()] });
+        TiffWriter::default().write(&[ifd]).unwrap()
+    };
+    let t0 = std::time::Instant::now();
+    let err = lightcraft_raw::decode(&dng(32768, 1)).unwrap_err().to_string();
+    assert!(err.contains("tile"), "{err}");
+    assert!(t0.elapsed().as_secs_f64() < 2.0);
+    let err = lightcraft_raw::decode(&dng(16, 5)).unwrap_err().to_string();
+    assert!(err.contains("samples"), "{err}");
+}
+
 /// A Bayer DNG whose `BlackLevel` is a FLOAT holding NaN (or infinity), and a float CFA DNG with
 /// NaN samples: every normalised sample came out NaN, and AHD's green estimate clamped between two
 /// NaN neighbours, which panics (the 1:1 view and every export of such a file). Non-finite levels
