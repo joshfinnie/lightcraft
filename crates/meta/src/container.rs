@@ -30,7 +30,7 @@ pub struct Embedded {
 pub fn embedded(bytes: &[u8]) -> Embedded {
     if bytes.starts_with(b"FUJIFILMCCD-RAW") {
         // Fujifilm RAF: metadata lives in the embedded JPEG whose (offset, length) are big-endian u32s at byte 84
-        let be = |i: usize| bytes.get(i..i + 4).map(|s| u32::from_be_bytes([s[0], s[1], s[2], s[3]]) as usize);
+        let be = |i: usize| bytes.get(i..i + 4)?.try_into().ok().map(|a| u32::from_be_bytes(a) as usize);
         return match (be(84), be(88)) {
             (Some(o), Some(l)) if o > 0 => bytes.get(o..o.saturating_add(l).min(bytes.len())).map(jpeg_segments).unwrap_or_default(),
             _ => Embedded::default(),
@@ -43,10 +43,11 @@ pub fn embedded(bytes: &[u8]) -> Embedded {
         jpeg_segments(bytes)
     } else if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
         png_chunks(bytes)
-    } else if bytes.len() >= 12 && &bytes[..4] == b"RIFF" && &bytes[8..12] == b"WEBP" {
+    } else if bytes.starts_with(b"RIFF") && bytes.get(8..12) == Some(b"WEBP") {
         webp_chunks(bytes)
-    } else if let Ok(t) = Tiff::parse(bytes) {
-        let ifd0 = &t.ifds[0];
+    } else if let Ok(t) = Tiff::parse(bytes)
+        && let Some(ifd0) = t.ifds.first()
+    {
         Embedded {
             exif: Some(bytes.to_vec()),
             xmp: ifd0.bytes(tags::XMP).map(|b| String::from_utf8_lossy(b).into_owned()),
@@ -74,11 +75,7 @@ pub fn jpeg_segments(b: &[u8]) -> Embedded {
     let mut icc_parts: Vec<(u8, Vec<u8>)> = Vec::new();
     let mut ext: Vec<(u32, Vec<u8>)> = Vec::new();
     let mut i = 2usize;
-    while i + 4 <= b.len() {
-        if b[i] != 0xff {
-            break;
-        }
-        let marker = b[i + 1];
+    while let Some(&[0xff, marker, l0, l1]) = b.get(i..i + 4) {
         if marker == 0xff {
             i += 1; // fill byte
             continue;
@@ -90,27 +87,35 @@ pub fn jpeg_segments(b: &[u8]) -> Embedded {
         if marker == 0xd9 || marker == 0xda {
             break;
         }
-        let len = u16::from_be_bytes([b[i + 2], b[i + 3]]) as usize;
+        let len = u16::from_be_bytes([l0, l1]) as usize;
         if len < 2 {
             break;
         }
         let end = (i + 2 + len).min(b.len());
-        let payload = &b[i + 4..end];
+        let payload = b.get(i + 4..end).unwrap_or_default();
         match marker {
             0xe1 if payload.starts_with(b"Exif\0") && out.exif.is_none() => out.exif = Some(payload.get(6..).unwrap_or(&[]).to_vec()),
             0xe1 if payload.starts_with(XMP_SIG) && out.xmp.is_none() => {
-                out.xmp = Some(String::from_utf8_lossy(&payload[XMP_SIG.len()..]).into_owned());
+                out.xmp = payload.strip_prefix(XMP_SIG).map(|x| String::from_utf8_lossy(x).into_owned());
             }
             0xe1 if payload.starts_with(XMP_EXT_SIG) => {
                 // GUID (32) + full length (4) + offset (4) + data
-                let p = &payload[XMP_EXT_SIG.len()..];
-                if p.len() >= 40 {
-                    let off = u32::from_be_bytes([p[36], p[37], p[38], p[39]]);
-                    ext.push((off, p[40..].to_vec()));
+                if let Some((head, data)) = payload.get(XMP_EXT_SIG.len()..).and_then(|p| p.split_at_checked(40))
+                    && let Some(off) = head.get(36..40).and_then(|o| o.try_into().ok())
+                {
+                    ext.push((u32::from_be_bytes(off), data.to_vec()));
                 }
             }
-            0xe2 if payload.starts_with(b"ICC_PROFILE\0") && payload.len() >= 14 => icc_parts.push((payload[12], payload[14..].to_vec())),
-            0xed if payload.starts_with(b"Photoshop 3.0\0") && out.iptc.is_none() => out.iptc = photoshop_iptc(&payload[14..]),
+            0xe2 if payload.starts_with(b"ICC_PROFILE\0") => {
+                if let (Some(&seq), Some(data)) = (payload.get(12), payload.get(14..)) {
+                    icc_parts.push((seq, data.to_vec()));
+                }
+            }
+            0xed if out.iptc.is_none() => {
+                if let Some(res) = payload.strip_prefix(b"Photoshop 3.0\0") {
+                    out.iptc = photoshop_iptc(res);
+                }
+            }
             _ => {}
         }
         i = end;
@@ -128,9 +133,9 @@ pub fn jpeg_segments(b: &[u8]) -> Embedded {
 
 /// IPTC-IIM block (resource 0x0404) from a Photoshop image-resource stream (`8BIM` records).
 fn photoshop_iptc(mut b: &[u8]) -> Option<Vec<u8>> {
-    while b.len() >= 12 && &b[..4] == b"8BIM" {
-        let id = u16::from_be_bytes([b[4], b[5]]);
-        let name_len = b[6] as usize;
+    while let Some(&[b'8', b'B', b'I', b'M', i0, i1, name_len, ..]) = b.get(..12) {
+        let id = u16::from_be_bytes([i0, i1]);
+        let name_len = name_len as usize;
         let name_total = (1 + name_len).next_multiple_of(2);
         let size_at = 6 + name_total;
         let size = u32::from_be_bytes(b.get(size_at..size_at + 4)?.try_into().ok()?) as usize;
@@ -148,17 +153,15 @@ fn photoshop_iptc(mut b: &[u8]) -> Option<Vec<u8>> {
 pub fn png_chunks(b: &[u8]) -> Embedded {
     let mut out = Embedded::default();
     let mut i = 8usize;
-    while i + 12 <= b.len() {
-        let len = u32::from_be_bytes([b[i], b[i + 1], b[i + 2], b[i + 3]]) as usize;
-        let typ = &b[i + 4..i + 8];
+    while let Some(&[l0, l1, l2, l3, t0, t1, t2, t3, ..]) = b.get(i..i.saturating_add(12)) {
+        let len = u32::from_be_bytes([l0, l1, l2, l3]) as usize;
+        let typ = &[t0, t1, t2, t3];
         let Some(data) = b.get(i + 8..(i + 8).saturating_add(len)) else { break };
         match typ {
             b"eXIf" => out.exif = Some(crate::strip_exif_header(data).to_vec()),
             b"iTXt" if data.starts_with(b"XML:com.adobe.xmp\0") => {
                 // keyword\0 compression-flag compression-method language\0 translated\0 text
-                let rest = &data[18..];
-                if rest.len() >= 2 && rest[0] == 0 {
-                    let rest = &rest[2..];
+                if let Some(rest) = data.get(18..).and_then(|r| r.strip_prefix(&[0])).and_then(|r| r.get(1..)) {
                     let mut parts = rest.splitn(3, |&c| c == 0);
                     let (_, _, text) = (parts.next(), parts.next(), parts.next());
                     if let Some(t) = text {
@@ -169,7 +172,7 @@ pub fn png_chunks(b: &[u8]) -> Embedded {
             b"IEND" => break,
             _ => {}
         }
-        i += 12 + len;
+        i = i.saturating_add(12).saturating_add(len);
     }
     out
 }
@@ -178,9 +181,9 @@ pub fn png_chunks(b: &[u8]) -> Embedded {
 pub fn webp_chunks(b: &[u8]) -> Embedded {
     let mut out = Embedded::default();
     let mut i = 12usize;
-    while i + 8 <= b.len() {
-        let id = &b[i..i + 4];
-        let len = u32::from_le_bytes([b[i + 4], b[i + 5], b[i + 6], b[i + 7]]) as usize;
+    while let Some(&[i0, i1, i2, i3, l0, l1, l2, l3]) = b.get(i..i.saturating_add(8)) {
+        let id = &[i0, i1, i2, i3];
+        let len = u32::from_le_bytes([l0, l1, l2, l3]) as usize;
         let Some(data) = b.get(i + 8..(i + 8).saturating_add(len)) else { break };
         match id {
             b"EXIF" => out.exif = Some(crate::strip_exif_header(data).to_vec()),
@@ -188,7 +191,7 @@ pub fn webp_chunks(b: &[u8]) -> Embedded {
             b"ICCP" => out.icc = Some(data.to_vec()),
             _ => {}
         }
-        i += 8 + len + (len & 1);
+        i = i.saturating_add(8).saturating_add(len).saturating_add(len & 1);
     }
     out
 }

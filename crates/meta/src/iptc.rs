@@ -21,20 +21,14 @@ pub fn parse_iptc(b: &[u8]) -> Metadata {
     let mut date: Option<String> = None;
     let mut time: Option<String> = None;
     let mut i = 0usize;
-    while i + 5 <= b.len() {
-        if b[i] != 0x1c {
-            break;
-        }
-        let (rec, ds) = (b[i + 1], b[i + 2]);
-        let mut size = u16::from_be_bytes([b[i + 3], b[i + 4]]) as usize;
+    while let Some(&[0x1c, rec, ds, s0, s1]) = b.get(i..i + 5) {
+        let mut size = u16::from_be_bytes([s0, s1]) as usize;
         let mut at = i + 5;
         if size & 0x8000 != 0 {
             // extended dataset: next (size & 0x7fff) bytes hold the length
             let n = size & 0x7fff;
-            if n == 0 || n > 4 || at + n > b.len() {
-                break;
-            }
-            size = b[at..at + n].iter().fold(0usize, |a, &c| (a << 8) | c as usize);
+            let Some(len) = b.get(at..at + n).filter(|_| (1..=4).contains(&n)) else { break };
+            size = len.iter().fold(0usize, |a, &c| (a << 8) | c as usize);
             at += n;
         }
         let Some(data) = b.get(at..at.saturating_add(size)) else { break };

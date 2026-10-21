@@ -313,7 +313,9 @@ fn moov<'a>(bytes: &'a [u8], m: &BoxRef, out: &mut Cr3<'a>, budget: &mut usize) 
                         }
                         _ => continue,
                     };
-                    out.cmt[slot] = bytes.get(c.body..c.end);
+                    if let Some(s) = out.cmt.get_mut(slot) {
+                        *s = bytes.get(c.body..c.end);
+                    }
                 }
             }
             b"trak" => {
@@ -407,36 +409,35 @@ fn sample_entry(bytes: &[u8], e: &BoxRef, budget: &mut usize) -> Cr3TrackKind {
     Cr3TrackKind::Raw { width, height, cmp1, iad1 }
 }
 
+fn array<const N: usize>(b: &[u8], at: usize) -> Option<[u8; N]> {
+    b.get(at..at.checked_add(N)?)?.try_into().ok()
+}
 fn be16(b: &[u8], at: usize) -> Option<u16> {
-    b.get(at..at.checked_add(2)?).map(|s| u16::from_be_bytes([s[0], s[1]]))
+    array(b, at).map(u16::from_be_bytes)
 }
 fn be32(b: &[u8], at: usize) -> Option<u32> {
-    b.get(at..at.checked_add(4)?).map(|s| u32::from_be_bytes([s[0], s[1], s[2], s[3]]))
+    array(b, at).map(u32::from_be_bytes)
 }
 fn be64(b: &[u8], at: usize) -> Option<u64> {
-    let s = b.get(at..at.checked_add(8)?)?;
-    let mut a = [0u8; 8];
-    a.copy_from_slice(s);
-    Some(u64::from_be_bytes(a))
+    array(b, at).map(u64::from_be_bytes)
 }
 
 fn le16(b: &[u8], at: usize) -> Option<u16> {
-    let s = b.get(at..at.checked_add(2)?)?;
-    Some(u16::from_le_bytes([s[0], s[1]]))
+    array(b, at).map(u16::from_le_bytes)
 }
 
 fn le32(b: &[u8], at: usize) -> Option<u32> {
-    let s = b.get(at..at.checked_add(4)?)?;
-    Some(u32::from_le_bytes([s[0], s[1], s[2], s[3]]))
+    array(b, at).map(u32::from_le_bytes)
 }
 
 /// Merge `CMT1` (IFD0), `CMT2` (Exif) and `CMT4` (GPS) into one TIFF stream, so the Exif readers see a CR3
 /// like any TIFF-based raw. The maker note (`CMT3`) is left out: its offsets are relative to its own block.
 pub fn merged_exif(c: &Cr3<'_>) -> Option<Vec<u8>> {
     use lightcraft_tiff::{IfdBuilder, Tiff, TiffWriter, tags as t};
-    let ifd0 = Tiff::parse(c.cmt[0]?).ok()?;
+    let [cmt1, ..] = c.cmt;
+    let ifd0 = Tiff::parse(cmt1?).ok()?;
     let order = ifd0.order;
-    let first = |i: usize| c.cmt[i].and_then(|b| Tiff::parse(b).ok()).and_then(|t| t.ifds.into_iter().next());
+    let first = |i: usize| c.cmt.get(i).copied().flatten().and_then(|b| Tiff::parse(b).ok()).and_then(|t| t.ifds.into_iter().next());
     // pointers and offsets that would dangle once the IFDs move
     const SKIP: [u16; 9] = [t::EXIF_IFD, t::GPS_IFD, t::INTEROP_IFD, t::SUB_IFDS, t::MAKER_NOTE, 273, 279, 513, 514];
     let build = |ifd: &lightcraft_tiff::Ifd| {

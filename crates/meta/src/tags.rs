@@ -224,25 +224,36 @@ fn value_text(group: &str, tag: u16, v: &Value) -> String {
     let single = |x: i64| enumerated(group, tag, x).map(str::to_string).unwrap_or_else(|| x.to_string());
     match v {
         Value::Ascii(s) => s.trim().to_string(),
-        Value::Short(a) if a.len() == 1 => single(a[0] as i64),
-        Value::Long(a) if a.len() == 1 => single(a[0] as i64),
-        Value::Short(a) => list(a),
-        Value::Long(a) => list(a),
+        Value::Short(a) => {
+            if let &[x] = a.as_slice() {
+                single(x as i64)
+            } else {
+                list(a)
+            }
+        }
+        Value::Long(a) => {
+            if let &[x] = a.as_slice() {
+                single(x as i64)
+            } else {
+                list(a)
+            }
+        }
         Value::SShort(a) => list(a),
         Value::SLong(a) => list(a),
         Value::Long8(a) => list(a),
         Value::SLong8(a) => list(a),
         Value::Float(a) => list(a),
         Value::Double(a) => list(a),
-        Value::Rational(a) if tag == 0x829a && group != "GPS" && a.len() == 1 && a[0].1 != 0 => {
-            // exposure time as a fraction of a second
-            let (n, d) = a[0];
-            let s = n as f64 / d as f64;
-            if s >= 1.0 || n == 0 { format!("{} s", rational(n as f64, d as f64)) } else { format!("1/{} s", (1.0 / s).round()) }
-        }
-        Value::Rational(a) if tag == 0x829d && group != "GPS" && a.len() == 1 => format!("f/{}", rational(a[0].0 as f64, a[0].1 as f64)),
-        Value::Rational(a) if tag == 0x920a && group != "GPS" && a.len() == 1 => format!("{} mm", rational(a[0].0 as f64, a[0].1 as f64)),
-        Value::Rational(a) => a.iter().map(|(n, d)| rational(*n as f64, *d as f64)).collect::<Vec<_>>().join(", "),
+        Value::Rational(a) => match (a.as_slice(), tag) {
+            (&[(n, d)], 0x829a) if group != "GPS" && d != 0 => {
+                // exposure time as a fraction of a second
+                let s = n as f64 / d as f64;
+                if s >= 1.0 || n == 0 { format!("{} s", rational(n as f64, d as f64)) } else { format!("1/{} s", (1.0 / s).round()) }
+            }
+            (&[(n, d)], 0x829d) if group != "GPS" => format!("f/{}", rational(n as f64, d as f64)),
+            (&[(n, d)], 0x920a) if group != "GPS" => format!("{} mm", rational(n as f64, d as f64)),
+            _ => a.iter().map(|(n, d)| rational(*n as f64, *d as f64)).collect::<Vec<_>>().join(", "),
+        },
         Value::SRational(a) => a.iter().map(|(n, d)| rational(*n as f64, *d as f64)).collect::<Vec<_>>().join(", "),
         Value::Byte(b) | Value::Undefined(b) => {
             // version tags and short printable values read as text

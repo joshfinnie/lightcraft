@@ -11,6 +11,8 @@
 //! - [`cr3`] — the Canon CR3 container (metadata blocks, XMP, the JPEG and raw tracks).
 #![forbid(unsafe_code)]
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
+// every offset here comes from a file: read with `get`, never `[i]` (tests may index)
+#![cfg_attr(not(test), deny(clippy::indexing_slicing))]
 #![cfg_attr(test, allow(clippy::disallowed_methods))]
 
 mod container;

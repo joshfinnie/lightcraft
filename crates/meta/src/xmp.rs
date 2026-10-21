@@ -525,8 +525,8 @@ pub fn parse_xmp(s: &str) -> Result<XmpData, XmpError> {
     m.iso = [num("exif:ISOSpeedRatings"), num("exifEX:PhotographicSensitivity")].into_iter().flatten().find(|v| *v > 0.0).map(|v| v as u32);
     if let Some(spec) = props.get("exifEX:LensSpecification").filter(|v| v.len() == 4) {
         let v: Vec<f64> = spec.iter().filter_map(|s| parse_number(s)).collect();
-        if v.len() == 4 {
-            m.lens_spec = Some([v[0], v[1], v[2], v[3]]);
+        if let &[a, b, c, d] = v.as_slice() {
+            m.lens_spec = Some([a, b, c, d]);
         }
     }
     if let Some(creators) = props.get("dc:creator").filter(|c| !c.is_empty()) {

@@ -5,7 +5,10 @@ use lightcraft_tiff::{Ifd, Tiff, TiffError, tags as t};
 
 /// Strip an `Exif\0\0` (or `Exif\0\xff`) prefix as found in JPEG APP1 and some WebP `EXIF` chunks.
 pub fn strip_exif_header(b: &[u8]) -> &[u8] {
-    if b.len() >= 6 && &b[..4] == b"Exif" && b[4] == 0 { &b[6..] } else { b }
+    match b.strip_prefix(b"Exif\0").and_then(|r| r.get(1..)) {
+        Some(rest) => rest,
+        None => b,
+    }
 }
 
 /// Read metadata from a TIFF-structured Exif block (a whole TIFF/DNG/raw file, or the payload of a JPEG APP1
@@ -59,8 +62,10 @@ pub fn from_tiff(tiff: &Tiff) -> Metadata {
     };
     // Exif requires LensSpecification/LensInfo as 4 rationals.
     let spec = exif.and_then(|e| e.f64s(t::LENS_SPECIFICATION)).or_else(|| ifd0.and_then(|i| i.f64s(t::LENS_INFO)));
-    if let Some(s) = spec.filter(|s| s.len() == 4 && s[0] > 0.0) {
-        m.lens_spec = Some([s[0], s[1], s[2], s[3]]);
+    if let Some(&[a, b, c, d]) = spec.as_deref()
+        && a > 0.0
+    {
+        m.lens_spec = Some([a, b, c, d]);
     }
     // Nikon DSLRs write neither LensModel nor LensSpecification, only the same four values in their maker note
     if m.lens_spec.is_none() {

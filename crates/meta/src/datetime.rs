@@ -51,15 +51,13 @@ impl DateTime {
         let s = s.trim().trim_end_matches('\0');
         let (d, t) = s.split_once([' ', 'T']).unwrap_or((s, ""));
         let dp: Vec<&str> = d.split([':', '-']).collect();
-        if dp.len() != 3 {
-            return None;
-        }
+        let &[year, month, day] = dp.as_slice() else { return None };
         let tp: Vec<&str> = if t.is_empty() { vec![] } else { t.split(':').collect() };
         let g = |v: &Vec<&str>, i: usize| v.get(i).map(|x| num(x.trim())).unwrap_or(Some(0));
         DateTime {
-            year: num(dp[0])?.try_into().ok()?,
-            month: num(dp[1])?.try_into().ok()?,
-            day: num(dp[2])?.try_into().ok()?,
+            year: num(year)?.try_into().ok()?,
+            month: num(month)?.try_into().ok()?,
+            day: num(day)?.try_into().ok()?,
             hour: g(&tp, 0)?.try_into().ok()?,
             minute: g(&tp, 1)?.try_into().ok()?,
             second: g(&tp, 2)?.try_into().ok()?,
