@@ -10,6 +10,7 @@ mod ci_report;
 mod ico;
 mod layers;
 mod parity;
+mod slow_tests;
 mod stats;
 mod version;
 mod web;
@@ -43,6 +44,7 @@ commands:
   corpus [--download]
                   show where test corpora live; --download fetches PngSuite and CC0 raw samples (raw.pixls.us) into corpus/ and checks their sha256
   stats [--exact] count tests and lines per crate (--exact: ask the test harness via `-- --list`)
+  slow-tests [N]  the N slowest workspace tests (default 20), timed by libtest's --report-time
   raw-frame [--json] FILE…
                   measure where each raw's embedded camera JPEG sits in its sensor data, which edge bands hold no
                   picture and what the decoder's crop keeps beyond the camera frame (any make with a full-size
@@ -65,6 +67,7 @@ fn main() -> ExitCode {
         Some("ci") => cmd_ci(&rest),
         Some("corpus") => cmd_corpus(rest.contains(&"--download")),
         Some("stats") => stats::run(&root(), rest.contains(&"--exact")),
+        Some("slow-tests") => slow_tests::run(&rest),
         Some("raw-frame") => cmd_raw_frame(&rest),
         Some("-h" | "--help" | "help") | None => {
             print!("{USAGE}");
@@ -191,6 +194,50 @@ pub fn run(mut cmd: Command, what: &str) -> Result<(), String> {
     if status.success() { Ok(()) } else { Err(format!("{what}: exited with {status}")) }
 }
 
+/// How long a CI test step may run before it is stopped: a test that hangs fails the run instead
+/// of holding it for hours. `LIGHTCRAFT_CI_STEP_MINUTES` overrides it (a slow or busy machine).
+fn step_limit() -> std::time::Duration {
+    let minutes = std::env::var("LIGHTCRAFT_CI_STEP_MINUTES").ok().and_then(|m| m.trim().parse::<u64>().ok()).filter(|m| *m > 0).unwrap_or(90);
+    std::time::Duration::from_secs(minutes.saturating_mul(60))
+}
+
+/// [`run`], stopped with everything it started (cargo, the test binaries) after `limit`.
+pub fn run_limited(mut cmd: Command, what: &str, limit: std::time::Duration) -> Result<(), String> {
+    eprintln!("$ {what}");
+    // its own process group, so stopping it reaches the test binaries cargo runs
+    #[cfg(unix)]
+    std::os::unix::process::CommandExt::process_group(&mut cmd, 0);
+    let mut child = cmd.spawn().map_err(|e| format!("{what}: failed to spawn: {e}"))?;
+    let started = std::time::Instant::now();
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) if status.success() => return Ok(()),
+            Ok(Some(status)) => return Err(format!("{what}: exited with {status}")),
+            Ok(None) => {}
+            Err(e) => return Err(format!("{what}: {e}")),
+        }
+        if started.elapsed() > limit {
+            stop_tree(&mut child);
+            return Err(format!(
+                "{what}: still running after {} minutes, stopped (a test that hangs? LIGHTCRAFT_CI_STEP_MINUTES gives more time)",
+                limit.as_secs() / 60
+            ));
+        }
+        std::thread::sleep(std::time::Duration::from_millis(500));
+    }
+}
+
+/// Stop `child` and every process it started.
+fn stop_tree(child: &mut std::process::Child) {
+    let id = child.id().to_string();
+    #[cfg(unix)]
+    let _ = Command::new("kill").args(["-KILL", &format!("-{id}")]).status();
+    #[cfg(windows)]
+    let _ = Command::new("taskkill").args(["/T", "/F", "/PID", &id]).status();
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
 pub fn metadata() -> Result<serde_json::Value, String> {
     let out = cargo().args(["metadata", "--format-version", "1", "--no-deps"]).output().map_err(|e| format!("cargo metadata: {e}"))?;
     if !out.status.success() {
@@ -282,7 +329,7 @@ fn cmd_ci(args: &[&str]) -> Result<(), String> {
     let test = |cargo_args: &[&str], step: &str| {
         let mut c = cargo();
         c.args(cargo_args).env(ci_report::SKIP_LOG_ENV, ci_report::skip_log(&root, step));
-        run(c, &format!("cargo {}", cargo_args.join(" ")))
+        run_limited(c, &format!("cargo {}", cargo_args.join(" ")), step_limit())
     };
     let gpu = std::cell::RefCell::new(serde_json::Value::Null);
     let hardware_runs = std::cell::RefCell::new(Vec::new());
@@ -2799,5 +2846,25 @@ mod corpus_tests {
         for (name, _, sha256) in RAW_SAMPLES {
             assert!(sha256.len() == 64 && sha256.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')), "{name}: not a lowercase sha256");
         }
+    }
+}
+
+#[cfg(all(test, unix))]
+mod run_limited_tests {
+    use std::time::{Duration, Instant};
+
+    /// A step that outlives its limit is stopped, with what it started, and reported; one that
+    /// finishes in time passes.
+    #[test]
+    fn a_step_past_its_limit_is_stopped() {
+        let mut slow = super::Command::new("sh");
+        slow.args(["-c", "sleep 30 & sleep 30"]);
+        let t0 = Instant::now();
+        let err = super::run_limited(slow, "sleep", Duration::from_secs(1)).unwrap_err();
+        assert!(err.contains("still running after"), "{err}");
+        assert!(t0.elapsed() < Duration::from_secs(10));
+        let mut quick = super::Command::new("true");
+        quick.arg("--");
+        assert!(super::run_limited(quick, "true", Duration::from_secs(10)).is_ok());
     }
 }

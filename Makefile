@@ -13,7 +13,7 @@ WASM_BINDGEN := $(shell sed -n '/^name = "wasm-bindgen"$$/{n;s/^version = "\(.*\
 export PATH := $(HOME)/.cargo/bin:$(PATH)
 
 .DEFAULT_GOAL := all
-.PHONY: all setup rust tools corpus samples seeds build run web check test smoke fuzz coverage release publish help
+.PHONY: all setup rust tools corpus samples seeds build run web check test slow-tests smoke fuzz coverage release publish help
 
 all: setup build ## everything below, then a release build of the app and the CLI
 
@@ -74,6 +74,9 @@ check: ## the full quality gate: fmt, clippy, tests, parity, layers, assets, was
 
 test: ## the workspace tests only
 	cargo test --workspace
+
+slow-tests: ## the 20 slowest tests, to see where test time goes (make slow-tests N=40)
+	cargo xtask slow-tests $(or $(N),20)
 
 smoke: samples seeds ## decode and develop every sample and seed once: no panic, no runaway memory or time
 	cd fuzz && cargo +nightly fuzz run raw_decode -O corpus/raw_decode -- -runs=0 -rss_limit_mb=4096 -timeout=30

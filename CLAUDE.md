@@ -122,6 +122,8 @@ of it.
   with `/usr/bin/time`. Record numbers in `plan/STATUS.md` → Metrics. Budgets: slider update ≤ 16 ms (draft) / loupe
   ≤ 60 ms on ~2.5 MP; export ≤ 1 s per 24 MP JPEG.
 - Never commit media: test images are procedural (`lightcraft-scenes`) or CC0 downloads in the gitignored `corpus/`.
+- **Test time:** `make slow-tests` (`cargo xtask slow-tests [N]`) lists the slowest tests. `cargo xtask ci` stops a test
+  step after 90 minutes (`LIGHTCRAFT_CI_STEP_MINUTES`), so a test that hangs fails the run.
 - **Fuzzing:** [`fuzz/`](fuzz/README.md) runs the raw, codec and metadata parsers under cargo-fuzz (nightly,
   its own workspace). Run it after touching a parser; every finding becomes a synthetic regression test.
 - A test that can't run here (no GPU, corpus file, model) calls `lightcraft_testkit::skip!(Gpu, "why")`
