@@ -749,7 +749,7 @@ pub fn specs() -> Vec<CommandSpec> {
         ),
         cmd!("develop.profile", "Set Profile", [], None, "{id: profile id (see profiles.list), amount?: 0..200}", Profile, has_active, |s, p| {
             let id = p.id;
-            if !crate::presets::PROFILES.iter().any(|x| x.id == id) && !s.lut_profiles.iter().any(|x| x.id == id) {
+            if !crate::presets::PROFILES.iter().any(|x| x.id == id) && !s.prefs.lut_profiles.iter().any(|x| x.id == id) {
                 return Err(bad("develop.profile", format!("unknown profile `{id}`")));
             }
             edit(s, "develop.profile", "Profile", |d| {
@@ -762,7 +762,7 @@ pub fn specs() -> Vec<CommandSpec> {
         }),
         cmd!("profile.favorite", "Favorite Profile", [], None, "{id, favorite?: bool} (toggles when omitted)", Favorite, always, |s, p| {
             let id = p.id;
-            if crate::presets::profile(&id).is_none() && !s.lut_profiles.iter().any(|x| x.id == id) {
+            if crate::presets::profile(&id).is_none() && !s.prefs.lut_profiles.iter().any(|x| x.id == id) {
                 return Err(bad("profile.favorite", format!("unknown profile `{id}`")));
             }
             let on = s.profile_favorites.contains(&id);

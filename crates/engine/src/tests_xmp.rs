@@ -130,8 +130,8 @@ fn auto_write_and_naming_preference() {
     drop(s);
     let mut s = Session::new().with_fs();
     s.open_library(&lib, false).unwrap();
-    assert!(s.xmp.auto_write);
-    assert_eq!(s.xmp.naming, crate::sidecar::SidecarNaming::Full);
+    assert!(s.prefs.xmp.auto_write);
+    assert_eq!(s.prefs.xmp.naming, crate::sidecar::SidecarNaming::Full);
     let v = s.execute("library.toggleAutoWriteXmp", &json!({})).unwrap();
     assert_eq!(v["autoWrite"], false);
     let _ = std::fs::remove_dir_all(&src);

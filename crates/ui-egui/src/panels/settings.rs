@@ -234,7 +234,7 @@ fn cameras(app: &LightcraftApp) -> Vec<String> {
         .photos()
         .filter(|p| p.kind == lightcraft_catalog::MediaKind::Raw && !p.meta.camera.is_empty())
         .map(|p| p.meta.camera.clone())
-        .chain(app.session.import_defaults.cameras.iter().map(|c| c.camera.clone()))
+        .chain(app.session.prefs.import_defaults.cameras.iter().map(|c| c.camera.clone()))
         .collect();
     v.sort_by_key(|c| c.to_lowercase());
     v.dedup_by(|a, b| a.eq_ignore_ascii_case(b));
@@ -242,7 +242,7 @@ fn cameras(app: &LightcraftApp) -> Vec<String> {
 }
 
 fn import_tab(app: &mut LightcraftApp, ui: &mut egui::Ui, t: &Tokens) {
-    let d = app.session.import_defaults.clone();
+    let d = app.session.prefs.import_defaults.clone();
     heading(ui, t, crate::i18n::tr("Raw defaults"));
     hint(ui, t, crate::i18n::tr("Settings new raw photos start from. Changing them doesn't touch photos already in the library."));
     row(ui, t, crate::i18n::tr("Raw photos"), |ui| {
@@ -329,7 +329,7 @@ fn import_tab(app: &mut LightcraftApp, ui: &mut egui::Ui, t: &Tokens) {
             }
         });
     }
-    if !app.session.metadata_presets.is_empty() {
+    if !app.session.prefs.metadata_presets.is_empty() {
         row(ui, t, crate::i18n::tr("Metadata preset"), |ui| {
             let cur = d.metadata_preset.clone();
             let mut pick = None;
@@ -340,7 +340,7 @@ fn import_tab(app: &mut LightcraftApp, ui: &mut egui::Ui, t: &Tokens) {
                     if ui.selectable_label(cur.is_none(), crate::i18n::tr("None")).clicked() {
                         pick = Some(String::new());
                     }
-                    for m in &app.session.metadata_presets {
+                    for m in &app.session.prefs.metadata_presets {
                         if ui.selectable_label(cur.as_deref() == Some(m.name.as_str()), &m.name).clicked() {
                             pick = Some(m.name.clone());
                         }
@@ -353,7 +353,7 @@ fn import_tab(app: &mut LightcraftApp, ui: &mut egui::Ui, t: &Tokens) {
         });
     }
     heading(ui, t, crate::i18n::tr("XMP sidecars"));
-    let mut xmp = app.session.xmp;
+    let mut xmp = app.session.prefs.xmp;
     if check(ui, "settings.autoWriteXmp", &mut xmp.auto_write, "Automatically write changes into XMP sidecars") {
         let _ = app.run("library.xmpPreferences", json!({"autoWrite": xmp.auto_write}));
     }
@@ -471,7 +471,7 @@ fn performance_tab(app: &mut LightcraftApp, ui: &mut egui::Ui, t: &Tokens) {
     heading(ui, t, crate::i18n::tr("Local folders"));
     row(ui, t, crate::i18n::tr("Forget unchanged photos"), |ui| {
         let opts = [(0u32, "Never"), (7, "After 7 days"), (30, "After 30 days"), (90, "After 90 days"), (365, "After a year")];
-        let mut v = app.session.forget_local_days;
+        let mut v = app.session.prefs.forget_local_days;
         if choices(ui, "settingsForgetLocal", &opts, &mut v) {
             let _ = app.run("library.preferences", json!({"forgetLocalDays": v}));
         }
@@ -698,9 +698,9 @@ fn duration_slider(app: &mut LightcraftApp, ui: &mut egui::Ui, id: &str, key: &s
     let r = ui.add(egui::Slider::new(&mut v, range).logarithmic(key == "slideDuration").suffix(" s").max_decimals(1));
     register(ui.ctx(), format!("slider:{id}"), r.rect);
     if r.changed()
-        && let Ok(next) = app.session.slideshow.merged(&json!({ key: v }))
+        && let Ok(next) = app.session.prefs.slideshow.merged(&json!({ key: v }))
     {
-        app.session.slideshow = next;
+        app.session.prefs.slideshow = next;
     }
     if r.drag_stopped() || (r.changed() && !r.dragged()) {
         let _ = app.run("slideshow.playback", json!({ key: v }));
@@ -763,7 +763,7 @@ fn export_section(app: &mut LightcraftApp, ui: &mut egui::Ui, t: &Tokens) {
 fn playback_section(app: &mut LightcraftApp, ui: &mut egui::Ui, t: &Tokens) {
     use lightcraft_engine::slideshow::{FADE_MAX, SLIDE_MAX, SLIDE_MIN};
     heading(ui, t, crate::i18n::tr("Playback"));
-    let s = app.session.slideshow.clone();
+    let s = app.session.prefs.slideshow.clone();
     row(ui, t, crate::i18n::tr("Slide duration"), |ui| {
         duration_slider(app, ui, "slideshowSlide", "slideDuration", s.slide_duration, SLIDE_MIN..=SLIDE_MAX)
     });

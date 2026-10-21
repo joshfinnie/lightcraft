@@ -281,7 +281,7 @@ fn sized(ratio: f64, long: usize) -> (usize, usize) {
 pub fn prepare(s: &mut Session, p: &Value) -> Result<Prepared, String> {
     let request = Request::parse(p)?;
     let settings = &request.settings;
-    let ratio = s.slide_layout.aspect.ratio(16.0 / 9.0);
+    let ratio = s.prefs.slide_layout.aspect.ratio(16.0 / 9.0);
     let (width, height) = match settings.format {
         Format::Video => {
             let h = settings.size & !1;
@@ -299,10 +299,10 @@ pub fn prepare(s: &mut Session, p: &Value) -> Result<Prepared, String> {
     if ids.len() > MAX_SLIDES {
         return Err(format!("a slideshow export takes at most {MAX_SLIDES} photos; this view has {}", ids.len()));
     }
-    let play = s.slideshow.clone().sanitized();
-    let (intro, ending) = s.slide_titles.durations(play.slide_duration);
+    let play = s.prefs.slideshow.clone().sanitized();
+    let (intro, ending) = s.prefs.slide_titles.durations(play.slide_duration);
     let clamp = |d: f64| if d.is_finite() { d.clamp(SLIDE_MIN, SLIDE_MAX) } else { play.slide_duration };
-    let layout = s.slide_layout.clone().sanitized();
+    let layout = s.prefs.slide_layout.clone().sanitized();
     let mut warnings = Vec::new();
     let mut slides = Vec::with_capacity(ids.len() + 2);
     let title = |s: &Session, t: Title, d: f64| Slide {

@@ -386,8 +386,8 @@ fn merge_dialog_remembers_the_last_settings_per_kind() {
     assert_eq!(shown, &crate::merge::MergeDialog::for_command("merge.panorama"));
     h.app.ui.dialog = None;
     // older or hand-edited preferences: missing fields take their defaults, junk is ignored
-    h.app.session.last_merge.insert("merge.panorama".into(), json!({"projection": "cylindrical", "command": "merge.hdr"}));
-    h.app.session.last_merge.insert("merge.hdrPanorama".into(), json!("junk"));
+    h.app.session.prefs.last_merge.insert("merge.panorama".into(), json!({"projection": "cylindrical", "command": "merge.hdr"}));
+    h.app.session.prefs.last_merge.insert("merge.hdrPanorama".into(), json!("junk"));
     let pano = crate::merge::last_options(&h.app, "merge.panorama");
     assert_eq!((pano.command.as_str(), pano.projection.as_str(), pano.auto_crop), ("merge.panorama", "cylindrical", true));
     assert_eq!(crate::merge::last_options(&h.app, "merge.hdrPanorama"), crate::merge::MergeDialog::for_command("merge.hdrPanorama"));
@@ -462,11 +462,11 @@ fn auto_import_listing_has_no_row() {
     let mut h = demo();
     let dir = std::env::temp_dir().join(format!("lc-activity-autoimport-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
-    h.app.session.import_defaults.auto_folder = Some(dir.to_string_lossy().to_string());
+    h.app.session.prefs.import_defaults.auto_folder = Some(dir.to_string_lossy().to_string());
     // the watched folder is listed every few seconds, quietly
     assert!(h.step_until(Duration::from_secs(10), |h| h.app.tasks.is_running("Auto Import")));
     assert!(h.app.session.activity.list().is_empty(), "{:?}", h.app.session.activity.list());
-    h.app.session.import_defaults.auto_folder = None;
+    h.app.session.prefs.import_defaults.auto_folder = None;
     let _ = std::fs::remove_dir_all(dir);
 }
 

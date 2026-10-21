@@ -93,14 +93,14 @@ fn builtins_are_valid_distinct_and_apply_cleanly() {
     }
     // by name, case-insensitive
     run(&mut s, "slideshow.templates.apply", json!({"name": "edge TO edge"}));
-    assert!(s.slide_layout.zoom_to_fill);
+    assert!(s.prefs.slide_layout.zoom_to_fill);
     let _ = std::fs::remove_dir_all(dir);
 }
 
 #[test]
 fn save_list_apply_restores_exactly_and_previous_goes_back() {
     let (mut s, dir) = session("roundtrip");
-    s.slideshow.prepare_previews = false;
+    s.prefs.slideshow.prepare_previews = false;
     custom(&mut s);
     let saved = SlideLook::of(&s);
     let r = run(&mut s, "slideshow.templates.save", json!({"name": "My Look"}));
@@ -114,7 +114,7 @@ fn save_list_apply_restores_exactly_and_previous_goes_back() {
 
     run(&mut s, "slideshow.templates.apply", json!({"id": "builtin:plain-black"}));
     assert_ne!(SlideLook::of(&s), saved);
-    assert!(!s.slideshow.prepare_previews, "prepare previews is kept");
+    assert!(!s.prefs.slideshow.prepare_previews, "prepare previews is kept");
     let r = run(&mut s, "slideshow.templates.apply", json!({"id": "user:My Look"}));
     assert_eq!(r["applied"], "user:My Look");
     assert_eq!(SlideLook::of(&s), saved, "applying restores every setting exactly");
@@ -122,7 +122,7 @@ fn save_list_apply_restores_exactly_and_previous_goes_back() {
     // previous: back to Plain Black's, then forward again
     let plain = builtins().into_iter().find(|t| t.id == "builtin:plain-black").unwrap();
     run(&mut s, "slideshow.templates.apply", json!({"id": PREVIOUS}));
-    assert_eq!(s.slide_layout, plain.look.layout);
+    assert_eq!(s.prefs.slide_layout, plain.look.layout);
     run(&mut s, "slideshow.templates.apply", json!({"id": PREVIOUS}));
     assert_eq!(SlideLook::of(&s), saved);
     let _ = std::fs::remove_dir_all(dir);
@@ -304,7 +304,7 @@ fn missing_files_apply_with_a_warning() {
     let r = run(&mut s, "slideshow.templates.apply", json!({"id": "user:Logo"}));
     let w = r["warnings"].to_string();
     assert!(w.contains("background image") && w.contains("logo.png") && w.contains("mark.png"), "{w}");
-    assert_eq!(s.slide_overlays.identity_plate.image, "/no/such/logo.png", "applied anyway");
+    assert_eq!(s.prefs.slide_overlays.identity_plate.image, "/no/such/logo.png", "applied anyway");
     // the slide still renders (the backdrop colour, no plate)
     let id = s.active().unwrap();
     run(&mut s, "slideshow.preview", json!({"id": id.0, "width": 64}));
@@ -340,7 +340,7 @@ fn without_a_settings_folder_only_builtins() {
     assert_eq!(r["templates"].as_array().unwrap().len(), BUILTINS.len());
     assert!(err(&mut s, "slideshow.templates.save", json!({"name": "X"})).contains("settings folder"));
     run(&mut s, "slideshow.templates.apply", json!({"id": "builtin:gallery-wall"}));
-    assert!(s.slide_overlays.rating_stars.enabled);
+    assert!(s.prefs.slide_overlays.rating_stars.enabled);
 }
 
 #[test]

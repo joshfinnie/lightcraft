@@ -342,20 +342,20 @@ impl ImportDefaults {
 /// default preset ([`ImportDefaults::preset_for`]), remembered as the photo's import look.
 pub fn apply_import_defaults(s: &Session, p: &mut Photo) {
     // metadata defaults fill gaps only: the file's own copyright / creator win
-    let d = &s.import_defaults;
+    let d = &s.prefs.import_defaults;
     if p.meta.copyright.trim().is_empty() && !d.copyright.trim().is_empty() {
         p.meta.copyright = d.copyright.trim().to_string();
     }
     if p.meta.creator.trim().is_empty() && !d.creator.trim().is_empty() {
         p.meta.creator = d.creator.trim().to_string();
     }
-    if let Some(mp) = d.metadata_preset.as_ref().and_then(|n| s.metadata_presets.iter().find(|m| m.name.eq_ignore_ascii_case(n))) {
+    if let Some(mp) = d.metadata_preset.as_ref().and_then(|n| s.prefs.metadata_presets.iter().find(|m| m.name.eq_ignore_ascii_case(n))) {
         crate::cmd::metadata::apply_to(&mut p.meta, &mp.fields);
     }
     let base = p.camera_defaults();
     // a raw shown from its embedded JPEG gets the rendered-file default, not the raw one
     let raw = p.develops_raw();
-    let preset = s.import_defaults.preset_for(raw, &p.meta.camera).and_then(|id| s.presets.iter().find(|x| x.id == id));
+    let preset = s.prefs.import_defaults.preset_for(raw, &p.meta.camera).and_then(|id| s.presets.iter().find(|x| x.id == id));
     match preset {
         Some(pr) => {
             let look = std::sync::Arc::new(pr.apply(&base, 1.0));
@@ -933,7 +933,7 @@ impl ImportJob {
             probe: s.media.file_probe.clone(),
             file_bytes: s.media.file_bytes.clone(),
             cache: std::mem::take(&mut s.import_probes),
-            naming: s.xmp.naming,
+            naming: s.prefs.xmp.naming,
             now: (s.clock)(),
             total: Default::default(),
             done: Default::default(),
@@ -1428,7 +1428,8 @@ pub fn commit_prepared(s: &mut Session, opts: &ImportOptions, now: &str, prepare
                         warning
                     }));
                 }
-                if let Some(mp) = opts.metadata_preset.as_ref().and_then(|n| s.metadata_presets.iter().find(|m| m.name.eq_ignore_ascii_case(n))) {
+                if let Some(mp) = opts.metadata_preset.as_ref().and_then(|n| s.prefs.metadata_presets.iter().find(|m| m.name.eq_ignore_ascii_case(n)))
+                {
                     crate::cmd::metadata::apply_to(&mut p.meta, &mp.fields);
                 }
                 for k in &opts.keywords {
@@ -1481,7 +1482,7 @@ pub fn commit_prepared(s: &mut Session, opts: &ImportOptions, now: &str, prepare
 /// still intact. Nothing is removed when the library can't be saved.
 fn finish_moves(s: &mut Session, placed: Vec<crate::import_move::Placed>, log0: usize, report: &mut ImportReport) {
     // (saving here clears the pending ops, so the sidecars `execute` would auto-write are written here)
-    let auto: Vec<Op> = if s.xmp.auto_write { s.pending_log.get(log0..).map(<[Op]>::to_vec).unwrap_or_default() } else { Vec::new() };
+    let auto: Vec<Op> = if s.prefs.xmp.auto_write { s.pending_log.get(log0..).map(<[Op]>::to_vec).unwrap_or_default() } else { Vec::new() };
     let before = s.pending_log.len();
     if let Err(e) = s.persist() {
         for p in placed {

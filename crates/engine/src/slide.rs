@@ -96,14 +96,14 @@ impl crate::Session {
     /// Does a slide show nothing but the photo fitted on black (the plain layout and no
     /// overlays)? Playback then shows the photo's own render.
     pub fn slides_plain(&self) -> bool {
-        self.slide_layout.is_plain() && !self.slide_overlays.any()
+        self.prefs.slide_layout.is_plain() && !self.prefs.slide_overlays.any()
     }
 
     /// The composition of `settings` at `width × height`, with its background image's render job
     /// (the photo `settings.background_image` names, when it is in the catalog) and the library's
     /// overlays resolved for `photo`.
     pub fn slide_compose(&mut self, settings: &SlideSettings, width: usize, height: usize, photo: Option<PhotoId>) -> Arc<SlideCompose> {
-        let overlays = self.slide_overlays.clone();
+        let overlays = self.prefs.slide_overlays.clone();
         self.slide_compose_with(settings, &overlays, width, height, photo)
     }
 
@@ -138,7 +138,7 @@ impl crate::Session {
     /// `photo_edge`, when given), then composed on the worker. The photo's render is kept as its
     /// view preview, like the loupe's.
     pub fn slide_job(&mut self, id: PhotoId, width: usize, height: usize, photo_edge: Option<usize>) -> Option<RenderJob> {
-        let settings = self.slide_layout.clone();
+        let settings = self.prefs.slide_layout.clone();
         self.slide_job_with(&settings, id, width, height, photo_edge, true)
     }
 
@@ -153,7 +153,7 @@ impl crate::Session {
         photo_edge: Option<usize>,
         view: bool,
     ) -> Option<RenderJob> {
-        let overlays = self.slide_overlays.clone();
+        let overlays = self.prefs.slide_overlays.clone();
         self.slide_job_look(settings, &overlays, id, width, height, photo_edge, view)
     }
 
@@ -182,7 +182,7 @@ impl crate::Session {
 
     /// Photo `id`'s slide at `width × height` with `settings`, rendered now on this thread.
     pub fn slide_now(&mut self, settings: &SlideSettings, id: PhotoId, width: usize, height: usize) -> Result<Rgba8, String> {
-        let overlays = self.slide_overlays.clone();
+        let overlays = self.prefs.slide_overlays.clone();
         self.slide_now_look(settings, &overlays, id, width, height)
     }
 

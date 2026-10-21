@@ -726,7 +726,7 @@ pub fn ui_enabled(app: &LightcraftApp, id: &str) -> bool {
         }
         "photo.tagFromTracklog" => app.session.active().is_some() && app.services.pick_tracklog.is_some(),
         "photo.editInPhotoCraft" | "photo.editInExternal" => app.session.active().is_some() && app.services.open_with.is_some(),
-        "app.exportPrevious" => app.session.active().is_some() && app.session.last_export.is_some(),
+        "app.exportPrevious" => app.session.active().is_some() && app.session.prefs.last_export.is_some(),
         "dialog.pasteSettings" => app.session.active().is_some() && app.session.clipboard.is_some(),
         "photo.openOriginalInExternal" => {
             // only a file type LightCraft reads can be handed over (#2135); the extension alone
@@ -747,9 +747,9 @@ pub fn ui_enabled(app: &LightcraftApp, id: &str) -> bool {
         }
         "app.openSamModelFolder" => app.session.segmenter.dir.is_some() && app.services.open_with.is_some(),
         "file.exportPresets" => app.session.presets.iter().any(|p| !p.builtin),
-        "file.exportMaskEffects" => !app.session.mask_effects.is_empty(),
+        "file.exportMaskEffects" => !app.session.prefs.mask_effects.is_empty(),
         "dialog.saveMaskEffect" => app.session.active().is_some() && app.session.active_mask.is_some(),
-        "file.exportCurvePresets" => !app.session.curve_presets.is_empty(),
+        "file.exportCurvePresets" => !app.session.prefs.curve_presets.is_empty(),
         "view.compare" => app.session.catalog.len() > 1,
         "view.fullScreenPreview" | "view.infoOverlay" | "view.navigator" => app.session.active().is_some() || app.ui.fullscreen,
         "app.openLibrary" | "app.newLibrary" => app.services.pick_folder.is_some() && crate::panels::settings::can_switch_library(app).is_ok(),

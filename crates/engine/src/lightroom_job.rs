@@ -572,7 +572,7 @@ mod tests {
         std::fs::write(&sidecar, b"original sidecar").unwrap();
         let original = std::fs::read(&sidecar).unwrap();
         let mut session = crate::Session::new();
-        session.xmp.auto_write = true;
+        session.prefs.xmp.auto_write = true;
         let result = session.execute_fn("library.importLightroom", |s| {
             let prepared = prepared_for(s, &path.to_string_lossy(), 5);
             let completion = commit_prepared(s, prepared)?;

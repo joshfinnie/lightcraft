@@ -18,7 +18,7 @@ fn text_shapes(shape: &egui::Shape, out: &mut Vec<egui::epaint::TextShape>) {
 
 fn panel(width: f32) -> (Vec<egui::epaint::TextShape>, Vec<(String, Rect)>) {
     let mut app = LightcraftApp::new(lightcraft_engine::Session::with_demo(), Services::default());
-    app.session.lut_profiles.push(lightcraft_engine::cmd::lut_profiles::LutProfile {
+    app.session.prefs.lut_profiles.push(lightcraft_engine::cmd::lut_profiles::LutProfile {
         id: LONG_ID.into(),
         name: LONG_NAME.into(),
         group: "Film Stocks".into(),

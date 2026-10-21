@@ -132,7 +132,7 @@ pub(crate) fn dialog_print(app: &mut LightcraftApp, _: &Call, _: NoParams) -> Re
 }
 
 pub(crate) fn dialog_export(app: &mut LightcraftApp, _: &Call, _: NoParams) -> Result<Value, String> {
-    let prev = app.session.last_export.clone().unwrap_or_default();
+    let prev = app.session.prefs.last_export.clone().unwrap_or_default();
     let u = |k: &str, d: u64| prev.get(k).and_then(Value::as_u64).unwrap_or(d);
     let dir = prev.get("dir").and_then(Value::as_str).map(str::to_string).unwrap_or_else(crate::control::default_export_dir);
     let opts = lightcraft_engine::export::ExportOptions::from_json(&prev);

@@ -68,7 +68,7 @@ pub fn apply_to(m: &mut Meta, fields: &Value) {
 }
 
 fn list(s: &Session) -> Value {
-    json!(s.metadata_presets)
+    json!(s.prefs.metadata_presets)
 }
 
 params! {
@@ -136,9 +136,9 @@ fn save(s: &mut Session, p: SavePreset) -> Result<Value> {
         }
     };
     let preset = MetadataPreset { name: name.clone(), fields };
-    match s.metadata_presets.iter_mut().find(|m| m.name.eq_ignore_ascii_case(&name)) {
+    match s.prefs.metadata_presets.iter_mut().find(|m| m.name.eq_ignore_ascii_case(&name)) {
         Some(m) => *m = preset,
-        None => s.metadata_presets.push(preset),
+        None => s.prefs.metadata_presets.push(preset),
     }
     s.save_prefs()?;
     Ok(list(s))
@@ -147,13 +147,13 @@ fn save(s: &mut Session, p: SavePreset) -> Result<Value> {
 fn delete(s: &mut Session, p: PresetName) -> Result<Value> {
     const C: &str = "metadata.deletePreset";
     let name = p.name.as_deref().ok_or_else(|| bad(C, "missing `name`"))?;
-    let n = s.metadata_presets.len();
-    s.metadata_presets.retain(|m| !m.name.eq_ignore_ascii_case(name));
-    if s.metadata_presets.len() == n {
+    let n = s.prefs.metadata_presets.len();
+    s.prefs.metadata_presets.retain(|m| !m.name.eq_ignore_ascii_case(name));
+    if s.prefs.metadata_presets.len() == n {
         return Err(bad(C, format!("no metadata preset `{name}`")));
     }
-    if s.import_defaults.metadata_preset.as_deref().is_some_and(|m| m.eq_ignore_ascii_case(name)) {
-        s.import_defaults.metadata_preset = None;
+    if s.prefs.import_defaults.metadata_preset.as_deref().is_some_and(|m| m.eq_ignore_ascii_case(name)) {
+        s.prefs.import_defaults.metadata_preset = None;
     }
     s.save_prefs()?;
     Ok(list(s))
@@ -164,6 +164,7 @@ fn apply(s: &mut Session, p: ApplyPreset) -> Result<Value> {
     const C: &str = "metadata.applyPreset";
     let name = p.name.as_deref().ok_or_else(|| bad(C, "missing `name`"))?;
     let preset = s
+        .prefs
         .metadata_presets
         .iter()
         .find(|m| m.name.eq_ignore_ascii_case(name))

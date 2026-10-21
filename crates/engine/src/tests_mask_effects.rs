@@ -57,27 +57,27 @@ fn managing_effects() {
     assert!(s.execute("mask.duplicateEffect", &json!({"name": "Dark", "to": "dark copy"})).is_err());
     // stars and groups
     s.execute("mask.favoriteEffect", &json!({"name": "Dark copy"})).unwrap();
-    assert!(s.mask_effects[2].favorite);
+    assert!(s.prefs.mask_effects[2].favorite);
     s.execute("mask.favoriteEffect", &json!({"name": "Dark copy"})).unwrap();
-    assert!(!s.mask_effects[2].favorite, "toggles");
+    assert!(!s.prefs.mask_effects[2].favorite, "toggles");
     s.execute("mask.setEffectGroup", &json!({"names": ["Dark", "Dark copy"], "group": "Burn"})).unwrap();
     s.execute("mask.setEffectGroup", &json!({"name": "Dark copy 2", "group": "burn"})).unwrap();
-    assert_eq!(s.mask_effects[3].group, "Burn", "an existing group's spelling wins");
+    assert_eq!(s.prefs.mask_effects[3].group, "Burn", "an existing group's spelling wins");
     let v = s.execute("mask.effects", &json!({})).unwrap();
     assert_eq!(v["groups"], json!([{"name": "", "effects": ["Lift Shadows"]}, {"name": "Burn", "effects": ["Dark", "Dark copy", "Dark copy 2"]}]));
     s.execute("mask.renameEffectGroup", &json!({"group": "BURN", "to": "Darken"})).unwrap();
-    assert!(s.mask_effects.iter().skip(1).all(|e| e.group == "Darken"));
+    assert!(s.prefs.mask_effects.iter().skip(1).all(|e| e.group == "Darken"));
     assert!(s.execute("mask.renameEffectGroup", &json!({"group": "Burn", "to": "x"})).is_err());
     // update with the selected mask's sliders
     s.execute("mask.add", &json!({"kind": "linear"})).unwrap();
     s.execute("mask.adjust", &json!({"values": {"exposure": -2, "clarity": 10}})).unwrap();
     s.execute("mask.updateEffect", &json!({"name": "Dark"})).unwrap();
-    let dark = &s.mask_effects[1];
+    let dark = &s.prefs.mask_effects[1];
     assert_eq!((dark.adjust.exposure, dark.adjust.clarity, dark.group.as_str()), (-2.0, 10.0, "Darken"));
     // delete several (the menu asks first)
     s.execute("mask.deleteEffect", &json!({"names": ["Dark copy", "Dark copy 2"]})).unwrap();
     assert!(s.execute("mask.deleteEffect", &json!({"names": ["Dark", "gone"]})).is_err(), "nothing deleted when one is missing");
-    assert_eq!(s.mask_effects.len(), 2);
+    assert_eq!(s.prefs.mask_effects.len(), 2);
     for bad in [json!({}), json!({"name": ""}), json!({"name": 3}), json!({"names": [1, 2]})] {
         assert!(s.execute("mask.deleteEffect", &bad).is_err(), "{bad}");
         assert!(s.execute("mask.favoriteEffect", &bad).is_err());
@@ -90,12 +90,12 @@ fn saving_some_sliders_and_amount() {
     s.execute("mask.add", &json!({"kind": "brush"})).unwrap();
     s.execute("mask.adjust", &json!({"values": {"shadows": 25, "texture": -10, "amount": 60}})).unwrap();
     s.execute("mask.saveEffect", &json!({"name": "Only", "fields": "changed", "amount": true, "brush": {"size": 0.1, "flow": 40}})).unwrap();
-    let e = &s.mask_effects[0];
+    let e = &s.prefs.mask_effects[0];
     assert_eq!(e.fields, ["shadows", "texture"]);
     assert!(e.with_amount);
     assert_eq!(e.brush.map(|b| (b.size, b.flow)), Some((0.1, 40.0)));
     s.execute("mask.saveEffect", &json!({"name": "Pick", "fields": ["exposure", "bogus"]})).unwrap();
-    assert_eq!(s.mask_effects[1].fields, ["exposure"]);
+    assert_eq!(s.prefs.mask_effects[1].fields, ["exposure"]);
     for bad in [
         json!({"name": "x", "fields": []}),
         json!({"name": "x", "fields": 3}),
@@ -173,11 +173,11 @@ fn new_masks_start_with_the_last_effect_of_their_tool() {
     s.execute("mask.toolEffect", &json!({"tool": "radial", "name": "dodge"})).unwrap();
     assert!(s.execute("mask.toolEffect", &json!({"tool": "radial", "name": "nope"})).is_err());
     s.execute("mask.renameEffect", &json!({"name": "Dodge", "to": "Dodge 2"})).unwrap();
-    assert_eq!(s.mask_tool_effects.get("brush").map(String::as_str), Some("Dodge 2"));
+    assert_eq!(s.prefs.mask_tool_effects.get("brush").map(String::as_str), Some("Dodge 2"));
     s.execute("mask.deleteEffect", &json!({"name": "Dodge 2"})).unwrap();
-    assert!(!s.mask_tool_effects.contains_key("brush") && !s.mask_tool_effects.contains_key("radial"));
+    assert!(!s.prefs.mask_tool_effects.contains_key("brush") && !s.prefs.mask_tool_effects.contains_key("radial"));
     s.execute("mask.toolEffect", &json!({"tool": "linear"})).unwrap();
-    assert!(s.mask_tool_effects.is_empty());
+    assert!(s.prefs.mask_tool_effects.is_empty());
 }
 
 #[test]
@@ -202,12 +202,12 @@ fn lightroom_folder_import_groups_by_dividers_and_round_trips() {
         let mut s = Session::new().with_fs();
         s.open_library(&lib, true).unwrap();
         // an earlier import that kept the dividers as effects
-        s.mask_effects.push(crate::cmd::mask_effects::MaskEffect { name: "10 ----- DETAIL ----- 10".into(), ..Default::default() });
+        s.prefs.mask_effects.push(crate::cmd::mask_effects::MaskEffect { name: "10 ----- DETAIL ----- 10".into(), ..Default::default() });
         let r = s.execute("preset.import", &json!({"paths": [src.to_string_lossy()]})).unwrap();
         assert_eq!(r["imported"].as_array().unwrap().len(), 1, "the develop template stays a develop preset");
         assert_eq!(r["effectDividers"].as_array().unwrap().len(), 2);
         assert_eq!(r["failed"].as_array().unwrap().len(), 1, "{r}");
-        let groups: Vec<(String, String)> = s.mask_effects.iter().map(|e| (e.name.clone(), e.group.clone())).collect();
+        let groups: Vec<(String, String)> = s.prefs.mask_effects.iter().map(|e| (e.name.clone(), e.group.clone())).collect();
         assert_eq!(
             groups,
             [
@@ -223,7 +223,7 @@ fn lightroom_folder_import_groups_by_dividers_and_round_trips() {
         // the effects' own import: a dry run changes nothing
         let r = s.execute("mask.importEffects", &json!({"path": src.to_string_lossy(), "dryRun": true, "group": "X"})).unwrap();
         assert_eq!(r["imported"].as_array().unwrap().len(), 4);
-        assert!(s.mask_effects.iter().all(|e| e.group != "X"));
+        assert!(s.prefs.mask_effects.iter().all(|e| e.group != "X"));
         // export one group, everything; re-import keeps groups, stars and the kept grain
         s.execute("mask.favoriteEffect", &json!({"name": "21 Skin"})).unwrap();
         let out = lib.join("backup.lceffect");
@@ -231,19 +231,19 @@ fn lightroom_folder_import_groups_by_dividers_and_round_trips() {
         assert_eq!(r["count"], 1);
         assert!(s.execute("mask.exportEffects", &json!({"path": out.to_string_lossy(), "group": "none"})).is_err());
         s.execute("mask.exportEffects", &json!({"path": out.to_string_lossy()})).unwrap();
-        let before = s.mask_effects.clone();
+        let before = s.prefs.mask_effects.clone();
         s.execute("mask.deleteEffect", &json!({"names": before.iter().map(|e| e.name.clone()).collect::<Vec<_>>()})).unwrap();
         // through the general import too (File ▸ Import Profiles & Presets…, drag & drop)
         let r = s.execute("preset.import", &json!({"paths": [out.to_string_lossy()]})).unwrap();
         assert_eq!(r["effects"].as_array().unwrap().len(), 4);
-        assert_eq!(s.mask_effects, before, "round trip");
-        assert_eq!(s.mask_effects[1].extra.get("grain"), Some(&json!(0.06)));
+        assert_eq!(s.prefs.mask_effects, before, "round trip");
+        assert_eq!(s.prefs.mask_effects[1].extra.get("grain"), Some(&json!(0.06)));
         s.close_library().unwrap();
     }
     let mut s = Session::new().with_fs();
     s.open_library(&lib, false).unwrap();
-    assert_eq!(s.mask_effects.len(), 4, "persisted");
-    assert!(s.mask_effects[2].favorite);
+    assert_eq!(s.prefs.mask_effects.len(), 4, "persisted");
+    assert!(s.prefs.mask_effects[2].favorite);
     let _ = std::fs::remove_dir_all(&lib);
 }
 
@@ -267,9 +267,9 @@ fn zips_and_camera_raw_xmp_presets_import() {
     let r = s.execute("preset.import", &json!({"paths": [path.to_string_lossy()]})).unwrap();
     assert_eq!(r["imported"].as_array().unwrap().len(), 1, "the develop XMP: {r}");
     assert_eq!(r["effects"].as_array().unwrap().len(), 2);
-    let got: Vec<(String, String)> = s.mask_effects.iter().map(|e| (e.name.clone(), e.group.clone())).collect();
+    let got: Vec<(String, String)> = s.prefs.mask_effects.iter().map(|e| (e.name.clone(), e.group.clone())).collect();
     assert_eq!(got, [("Brush A".to_string(), "Skin Kit".to_string()), ("Mute".into(), "Skin Kit".into())]);
-    assert_eq!(s.mask_effects[1].adjust.saturation, -50.0);
+    assert_eq!(s.prefs.mask_effects[1].adjust.saturation, -50.0);
     // the effects' own import reads the zip and a lone XMP; a develop XMP named on its own fails
     let mut s = Session::with_demo();
     let lone = lib.join("Mute.xmp");
@@ -279,7 +279,7 @@ fn zips_and_camera_raw_xmp_presets_import() {
     let r = s.execute("mask.importEffects", &json!({"paths": [path.to_string_lossy(), lone.to_string_lossy(), dev.to_string_lossy()]})).unwrap();
     assert_eq!(r["imported"].as_array().unwrap().len(), 3);
     assert_eq!(r["failed"].as_array().unwrap().len(), 1);
-    assert_eq!(s.mask_effects.len(), 2, "same names replaced");
+    assert_eq!(s.prefs.mask_effects.len(), 2, "same names replaced");
     // unreadable things are errors, never panics
     std::fs::write(lib.join("junk.zip"), b"PK\x03\x04\xff\xff").unwrap();
     std::fs::write(lib.join("junk.lceffect"), b"{\"effects\": [{\"name\": \"x\", \"adjust\": {\"exposure\": \"high\"}}]}").unwrap();

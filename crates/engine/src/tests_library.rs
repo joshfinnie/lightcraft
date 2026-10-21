@@ -742,7 +742,7 @@ fn a_thumbnail_cache_from_before_is_tidied_in_the_background_when_the_library_op
 fn the_hold_of_the_view_is_kept_with_the_library_and_holds_nothing_over_from_another() {
     let dir = temp_dir("holdview");
     let mut s = open(&dir, true);
-    assert!(!s.hold_view, "off in a library that never asked for it");
+    assert!(!s.prefs.hold_view, "off in a library that never asked for it");
     s.execute("library.holdView", &json!({"on": true})).unwrap();
     // a filter over the demo photos, and one of them edited out from under it: held
     s.execute("library.filter", &json!({"rating": 0, "flag": "none"})).unwrap();
@@ -755,7 +755,7 @@ fn the_hold_of_the_view_is_kept_with_the_library_and_holds_nothing_over_from_ano
     drop(s);
     // opened again: the hold is on, and what was held is not (a library opens on what matches)
     let mut s = open(&dir, false);
-    assert!(s.hold_view);
+    assert!(s.prefs.hold_view);
     s.execute("library.filter", &json!({"rating": 0, "flag": "none"})).unwrap();
     assert!(!s.visible_cloned().contains(&id));
     s.close_library().unwrap();

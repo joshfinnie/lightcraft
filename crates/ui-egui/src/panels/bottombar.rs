@@ -288,7 +288,7 @@ fn sort_menu(app: &mut LightcraftApp, ui: &mut egui::Ui) {
         let _ = app.run("library.shuffle", json!({}));
     }
     // a view that holds its photos shows what matches now when asked to
-    if app.session.hold_view {
+    if app.session.prefs.hold_view {
         let r = ui.button(crate::i18n::tr("Refresh View"));
         crate::widgets::register(ui.ctx(), "button:refreshView", r.rect);
         if r.clicked() {

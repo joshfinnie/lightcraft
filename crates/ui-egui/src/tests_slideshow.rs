@@ -227,7 +227,7 @@ fn playback_settings_drive_the_slideshow_and_bad_ones_are_refused() {
     run(&mut h, "slideshow.end", json!({}));
     let r = run(&mut h, "view.slideshow", json!({"interval": 2}));
     assert_eq!(r["settings"]["slideDuration"], 2.0);
-    assert_eq!(h.app.session.slideshow.slide_duration, 9.0);
+    assert_eq!(h.app.session.prefs.slideshow.slide_duration, 9.0);
     // the options open in Settings
     run(&mut h, "slideshow.end", json!({}));
     run(&mut h, "view.slideshowOptions", json!({}));
@@ -238,7 +238,7 @@ fn playback_settings_drive_the_slideshow_and_bad_ones_are_refused() {
     let r = h.request("ui.clickWidget", json!({"id": "check:settings.slideshowRandom"}), T);
     assert_eq!(r["ok"], true, "{r}");
     h.step();
-    assert!(h.app.session.slideshow.random_order, "the checkbox goes through slideshow.playback");
+    assert!(h.app.session.prefs.slideshow.random_order, "the checkbox goes through slideshow.playback");
     h.settle(SETTLE);
 }
 
@@ -318,7 +318,7 @@ fn a_composed_slide_shows_during_playback() {
 #[test]
 fn the_default_layout_plays_the_photo_as_before() {
     let mut h = grid();
-    assert!(h.app.session.slide_layout.is_plain());
+    assert!(h.app.session.prefs.slide_layout.is_plain());
     run(&mut h, "view.slideshow", json!({"interval": 60, "fadeDuration": 0}));
     let current = photo_up(&h);
     assert!(h.step_until(SETTLE, |h| has_slide(h, current)));
@@ -366,7 +366,7 @@ fn settings_shows_the_slide_layout_and_a_live_preview() {
     let r = h.request("ui.clickWidget", json!({"id": "check:settings.slideshowShadow"}), T);
     assert_eq!(r["ok"], true, "{r}");
     h.step();
-    assert!(h.app.session.slide_layout.cast_shadow);
+    assert!(h.app.session.prefs.slide_layout.cast_shadow);
     assert!(has(&h, "slider:slideshowShadowAngle"));
     // a changed layout renders the preview again (once it has settled)
     let before = h.app.renderer.textures.get(&Slot::SlidePreview).map(|t| t.key);
@@ -422,7 +422,7 @@ fn settings_shows_the_overlays_and_the_preview_follows_them() {
     let r = h.request("ui.clickWidget", json!({"id": "button:slideshowAddText"}), T);
     assert_eq!(r["ok"], true, "{r}");
     h.step();
-    assert_eq!(h.app.session.slide_overlays.texts.len(), 1);
+    assert_eq!(h.app.session.prefs.slide_overlays.texts.len(), 1);
     h.step();
     assert!(has(&h, "field:slideshowText0"), "the text overlay's template field");
     // its rows are below the fold: scroll on down
@@ -431,19 +431,19 @@ fn settings_shows_the_overlays_and_the_preview_follows_them() {
     let r = h.request("ui.clickWidget", json!({"id": "button:slideshowText0Anchor-0"}), T);
     assert_eq!(r["ok"], true, "{r}");
     h.step();
-    assert_eq!(h.app.session.slide_overlays.texts[0].place.anchor, lightcraft_engine::export::Anchor::TopLeft, "picked in the grid");
+    assert_eq!(h.app.session.prefs.slide_overlays.texts[0].place.anchor, lightcraft_engine::export::Anchor::TopLeft, "picked in the grid");
     // removed from its row the text overlay from its row
     reveal(&mut h, "button:slideshowText0Remove");
     let r = h.request("ui.clickWidget", json!({"id": "button:slideshowText0Remove"}), T);
     assert_eq!(r["ok"], true, "{r}");
     h.step();
-    assert!(h.app.session.slide_overlays.texts.is_empty());
+    assert!(h.app.session.prefs.slide_overlays.texts.is_empty());
     h.step();
     reveal(&mut h, "check:settings.slideshowPlate");
     let r = h.request("ui.clickWidget", json!({"id": "check:settings.slideshowPlate"}), T);
     assert_eq!(r["ok"], true, "{r}");
     h.step();
-    assert!(h.app.session.slide_overlays.identity_plate.enabled);
+    assert!(h.app.session.prefs.slide_overlays.identity_plate.enabled);
     // the preview is rendered again with the overlays
     let before = h.app.renderer.textures.get(&Slot::SlidePreview).map(|t| t.key);
     run(&mut h, "slideshow.overlays", json!({"identityPlate": {"text": "Studio", "color": "#ff00ff"}}));
@@ -578,7 +578,7 @@ fn settings_shows_the_titles_and_the_preview_shows_a_title_screen() {
     let r = h.request("ui.clickWidget", json!({"id": "check:settings.slideshowIntro"}), T);
     assert_eq!(r["ok"], true, "{r}");
     h.step();
-    assert!(h.app.session.slide_titles.intro.enabled, "the checkbox goes through slideshow.titles");
+    assert!(h.app.session.prefs.slide_titles.intro.enabled, "the checkbox goes through slideshow.titles");
     h.step();
     for w in [
         "button:slideshowIntroColor",
@@ -602,7 +602,7 @@ fn settings_shows_the_titles_and_the_preview_shows_a_title_screen() {
     let r = h.request("ui.clickWidget", json!({"id": "button:settingsSlideshowIntroContent-1"}), T);
     assert_eq!(r["ok"], true, "{r}");
     h.step();
-    assert_eq!(h.app.session.slide_titles.intro.content, lightcraft_engine::slide_title::TitleContent::Text);
+    assert_eq!(h.app.session.prefs.slide_titles.intro.content, lightcraft_engine::slide_title::TitleContent::Text);
     h.step();
     assert!(has(&h, "field:slideshowIntroText"));
     // back to the photo's slide
@@ -658,7 +658,7 @@ fn template_browser_previews_on_hover_applies_and_manages_user_templates() {
     let r = h.request("ui.clickWidget", json!({"id": "template:builtin:gallery-wall"}), T);
     assert_eq!(r["ok"], true, "{r}");
     h.step();
-    assert!(h.app.session.slide_overlays.rating_stars.enabled && h.app.session.slide_layout.stroke_border);
+    assert!(h.app.session.prefs.slide_overlays.rating_stars.enabled && h.app.session.prefs.slide_layout.stroke_border);
     assert!(has(&h, "template:previous"), "Previous settings appear");
     // save as a template of our own
     let r = h.request("ui.clickWidget", json!({"id": "field:slideshowTemplateName"}), T);

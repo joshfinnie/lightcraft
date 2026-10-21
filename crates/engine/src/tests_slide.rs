@@ -56,7 +56,7 @@ fn slide_layout_is_validated_and_persists_with_the_library() {
         for bad in [json!({"marginLeft": "wide", "zoomToFill": true}), json!({"backdropColor": "red"}), json!({"glitter": 1})] {
             assert!(s.execute("slideshow.layout", &bad).is_err(), "{bad}");
         }
-        assert!(!s.slide_layout.zoom_to_fill);
+        assert!(!s.prefs.slide_layout.zoom_to_fill);
         // out of range: clamped
         let r = s.execute("slideshow.layout", &json!({"linkMargins": false, "marginRight": 9, "shadowOpacity": -1})).unwrap();
         assert_eq!((r["marginRight"].as_f64(), r["marginLeft"].as_f64(), r["shadowOpacity"].as_f64()), (Some(0.45), Some(0.1), Some(0.0)));
@@ -72,11 +72,11 @@ fn slide_layout_is_validated_and_persists_with_the_library() {
     std::fs::write(lib.join("prefs.json"), r#"{"slideLayout": {"marginTop": 1e9, "shadowAngle": 720, "strokeWidth": -3}}"#).unwrap();
     let mut s = Session::new().with_fs();
     s.open_library(&lib, false).unwrap();
-    assert_eq!((s.slide_layout.margin_top, s.slide_layout.shadow_angle, s.slide_layout.stroke_width), (0.45, 0.0, 0.0));
+    assert_eq!((s.prefs.slide_layout.margin_top, s.prefs.slide_layout.shadow_angle, s.prefs.slide_layout.stroke_width), (0.45, 0.0, 0.0));
     // and the playback settings beside them are untouched by a layout change
-    let before = s.slideshow.clone();
+    let before = s.prefs.slideshow.clone();
     s.execute("slideshow.layout", &json!({"zoomToFill": true})).unwrap();
-    assert_eq!(s.slideshow, before);
+    assert_eq!(s.prefs.slideshow, before);
     drop(s);
     let _ = std::fs::remove_dir_all(&lib);
 }
@@ -103,7 +103,7 @@ fn slide_preview_returns_the_composed_slide_at_the_asked_size() {
     let r = s.execute("slideshow.preview", &json!({"height": 90})).unwrap();
     assert_eq!((r["width"].as_u64(), r["height"].as_u64()), (Some(160), Some(90)));
     // the pixels: red margins, the photo inside
-    let img = s.slide_now(&s.slide_layout.clone(), photos[0], 320, 200).unwrap();
+    let img = s.slide_now(&s.prefs.slide_layout.clone(), photos[0], 320, 200).unwrap();
     assert_eq!((img.width, img.height), (320, 200));
     assert_eq!(img.get(3, 3), [255, 0, 0, 255]);
     assert_eq!(img.get(160, 196), [255, 0, 0, 255]);
@@ -119,13 +119,16 @@ fn slide_preview_returns_the_composed_slide_at_the_asked_size() {
 fn a_background_image_and_the_slide_key() {
     let mut s = Session::with_demo();
     let photos = s.visible_cloned();
-    let plain = s.slide_layout.clone();
+    let plain = s.prefs.slide_layout.clone();
     let job = s.slide_job(photos[0], 320, 200, None).unwrap();
     let loupe = s.loupe_job(photos[0], 320, 200, true).unwrap();
     assert_ne!(job.key, loupe.key, "a slide is not the photo's render");
     // a background image fills the slide around the photo
-    let bg =
-        s.slide_layout.merged(&json!({"margins": 0.2, "backdropColor": "#ff0000", "backgroundImage": photos[2].0, "backgroundOpacity": 1})).unwrap();
+    let bg = s
+        .prefs
+        .slide_layout
+        .merged(&json!({"margins": 0.2, "backdropColor": "#ff0000", "backgroundImage": photos[2].0, "backgroundOpacity": 1}))
+        .unwrap();
     let img = s.slide_now(&bg, photos[0], 320, 200).unwrap();
     assert_ne!(img.get(3, 3), [255, 0, 0, 255], "the background photo, not the colour");
     // it is rendered once and reused
@@ -164,7 +167,7 @@ fn slide_overlays_are_validated_and_persist_with_the_library() {
         {
             assert!(s.execute("slideshow.overlays", &bad).is_err(), "{bad}");
         }
-        assert!(s.slide_overlays.show_watermark);
+        assert!(s.prefs.slide_overlays.show_watermark);
         drop(s);
     }
     let mut s = Session::new().with_fs();
@@ -172,17 +175,20 @@ fn slide_overlays_are_validated_and_persist_with_the_library() {
     let r = s.execute("slideshow.overlays", &json!({})).unwrap();
     assert_eq!((r["identityPlate"]["text"].as_str(), r["texts"][0]["text"].as_str()), (Some("Studio Nord"), Some("{caption} {bogus}")));
     // the layout beside it is untouched by an overlay change
-    let before = s.slide_layout.clone();
+    let before = s.prefs.slide_layout.clone();
     s.execute("slideshow.overlays", &json!({"removeText": 0})).unwrap();
-    assert_eq!(s.slide_layout, before);
+    assert_eq!(s.prefs.slide_layout, before);
     drop(s);
     // hand-edited values out of range are clamped when the library opens
     std::fs::write(lib.join("prefs.json"), r#"{"slideOverlays": {"identityPlate": {"size": 1e9, "opacity": -2}, "texts": [{"size": 1e300}]}}"#)
         .unwrap();
     let mut s = Session::new().with_fs();
     s.open_library(&lib, false).unwrap();
-    assert_eq!((s.slide_overlays.identity_plate.size, s.slide_overlays.identity_plate.opacity), (crate::slide_overlay::PLATE_SIZE_MAX, 0.0));
-    assert_eq!(s.slide_overlays.texts[0].size, crate::slide_overlay::TEXT_SIZE_MAX);
+    assert_eq!(
+        (s.prefs.slide_overlays.identity_plate.size, s.prefs.slide_overlays.identity_plate.opacity),
+        (crate::slide_overlay::PLATE_SIZE_MAX, 0.0)
+    );
+    assert_eq!(s.prefs.slide_overlays.texts[0].size, crate::slide_overlay::TEXT_SIZE_MAX);
     drop(s);
     let _ = std::fs::remove_dir_all(&lib);
 }
@@ -195,7 +201,7 @@ fn slide_preview_draws_the_overlays() {
     s.execute("photo.rate", &json!({"rating": 4, "ids": [photos[0].0]})).unwrap();
     s.execute("slideshow.layout", &json!({"margins": 0.2, "backdropColor": "#000000"})).unwrap();
     let before = s.slide_job(photos[0], 320, 200, None).unwrap().key;
-    let plain = s.slide_now(&s.slide_layout.clone(), photos[0], 640, 400).unwrap();
+    let plain = s.slide_now(&s.prefs.slide_layout.clone(), photos[0], 640, 400).unwrap();
     s.execute(
         "slideshow.overlays",
         &json!({
@@ -209,7 +215,7 @@ fn slide_preview_draws_the_overlays() {
     let r = s.execute("slideshow.preview", &json!({"width": 640, "height": 400})).unwrap();
     let kinds: Vec<&str> = r["overlays"].as_array().unwrap().iter().filter_map(|o| o["kind"].as_str()).collect();
     assert_eq!(kinds, ["identityPlate", "ratingStars", "text0"]);
-    let img = s.slide_now(&s.slide_layout.clone(), photos[0], 640, 400).unwrap();
+    let img = s.slide_now(&s.prefs.slide_layout.clone(), photos[0], 640, 400).unwrap();
     let count = |img: &lightcraft_raster::Rgba8, b: &serde_json::Value, want: fn([u8; 4]) -> bool| {
         let v: Vec<usize> = (0..4).map(|i| b[i].as_f64().unwrap() as usize).collect();
         (v[1]..v[3]).flat_map(|y| (v[0]..v[2]).map(move |x| (x, y))).filter(|&(x, y)| want(img.get(x, y))).count()
@@ -255,7 +261,7 @@ fn slide_titles_are_validated_persist_and_preview() {
         ] {
             assert!(s.execute("slideshow.titles", &bad).is_err(), "{bad}");
         }
-        assert!(s.slide_titles.intro.enabled);
+        assert!(s.prefs.slide_titles.intro.enabled);
         // out of range: clamped
         let r = s.execute("slideshow.titles", &json!({"ending": {"scale": 4, "duration": 1e6}})).unwrap();
         assert_eq!((r["ending"]["scale"].as_f64(), r["ending"]["duration"].as_f64()), (Some(0.5), Some(crate::slideshow::SLIDE_MAX)));
@@ -268,15 +274,18 @@ fn slide_titles_are_validated_persist_and_preview() {
     }
     let mut s = Session::new().with_fs();
     s.open_library(&lib, false).unwrap();
-    assert_eq!(s.slide_titles.intro.text, "Iceland 2026", "saved with the library");
-    assert_eq!(s.slide_titles.durations(4.0), (Some(3.0), Some(crate::slideshow::SLIDE_MAX)));
+    assert_eq!(s.prefs.slide_titles.intro.text, "Iceland 2026", "saved with the library");
+    assert_eq!(s.prefs.slide_titles.durations(4.0), (Some(3.0), Some(crate::slideshow::SLIDE_MAX)));
     drop(s);
     // hand-edited values out of range are clamped when the library opens
     std::fs::write(lib.join("prefs.json"), r#"{"slideTitles": {"intro": {"enabled": true, "scale": -4, "duration": 1e99}}}"#).unwrap();
     let mut s = Session::new().with_fs();
     s.open_library(&lib, false).unwrap();
-    assert!(s.slide_titles.intro.enabled);
-    assert_eq!((s.slide_titles.intro.scale, s.slide_titles.intro.duration), (crate::slide_overlay::SIZE_MIN, Some(crate::slideshow::SLIDE_MAX)));
+    assert!(s.prefs.slide_titles.intro.enabled);
+    assert_eq!(
+        (s.prefs.slide_titles.intro.scale, s.prefs.slide_titles.intro.duration),
+        (crate::slide_overlay::SIZE_MIN, Some(crate::slideshow::SLIDE_MAX))
+    );
     drop(s);
     let _ = std::fs::remove_dir_all(&lib);
 }

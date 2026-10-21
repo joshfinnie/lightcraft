@@ -89,10 +89,10 @@ pub fn note_recent(s: &mut Session, added: &[String]) {
         if k.is_empty() {
             continue;
         }
-        s.recent_keywords.retain(|x| !same_set(x, &k));
-        s.recent_keywords.insert(0, k);
+        s.prefs.recent_keywords.retain(|x| !same_set(x, &k));
+        s.prefs.recent_keywords.insert(0, k);
     }
-    s.recent_keywords.truncate(9);
+    s.prefs.recent_keywords.truncate(9);
     let _ = s.save_prefs();
 }
 
@@ -136,17 +136,17 @@ pub fn slots(typed: &[String]) -> Vec<String> {
 
 /// The nine keywords ⌥1–⌥9 apply: the current set's, or the recent ones.
 pub fn current_keywords(s: &Session) -> Vec<String> {
-    let set = s.keyword_set.as_deref().and_then(|n| s.keyword_sets.iter().find(|x| same_set(&x.name, n)));
-    let mut v = set.map_or_else(|| s.recent_keywords.clone(), |x| x.keywords.clone());
+    let set = s.prefs.keyword_set.as_deref().and_then(|n| s.prefs.keyword_sets.iter().find(|x| same_set(&x.name, n)));
+    let mut v = set.map_or_else(|| s.prefs.recent_keywords.clone(), |x| x.keywords.clone());
     v.truncate(9);
     v
 }
 
 /// `{sets: [{name, keywords}], current, keywords}` (Recent Keywords first).
 pub fn keyword_sets_json(s: &Session) -> Value {
-    let mut sets = vec![json!({"name": RECENT, "keywords": s.recent_keywords})];
-    sets.extend(s.keyword_sets.iter().map(|x| json!({"name": x.name, "keywords": x.keywords})));
-    json!({"sets": sets, "current": s.keyword_set.clone().unwrap_or_else(|| RECENT.into()), "keywords": current_keywords(s)})
+    let mut sets = vec![json!({"name": RECENT, "keywords": s.prefs.recent_keywords})];
+    sets.extend(s.prefs.keyword_sets.iter().map(|x| json!({"name": x.name, "keywords": x.keywords})));
+    json!({"sets": sets, "current": s.prefs.keyword_set.clone().unwrap_or_else(|| RECENT.into()), "keywords": current_keywords(s)})
 }
 
 params! {
@@ -265,11 +265,12 @@ pub fn specs() -> Vec<CommandSpec> {
         cmd!(query "keyword.sets", "Keyword Sets", [], None, "{} → {sets: [{name, keywords}], current, keywords: the nine ⌥1–⌥9 apply}", NoParams, always, |s, _| Ok(keyword_sets_json(s))),
         cmd!("keyword.useSet", "Use Keyword Set", [], None, "{name} (\"Recent Keywords\" = the recently added ones)", SetName, always, |s, p| {
             let name = p.name.as_deref().map(str::trim).unwrap_or(RECENT);
-            s.keyword_set = if same_set(name, RECENT) || name.is_empty() {
+            s.prefs.keyword_set = if same_set(name, RECENT) || name.is_empty() {
                 None
             } else {
                 Some(
-                    s.keyword_sets
+                    s.prefs
+                        .keyword_sets
                         .iter()
                         .find(|x| same_set(&x.name, name))
                         .ok_or_else(|| bad("keyword.useSet", format!("no keyword set `{name}`")))?
@@ -300,7 +301,8 @@ pub fn specs() -> Vec<CommandSpec> {
                 // the set it renames, if any (an empty `replace` is none)
                 let renames = match p.replace.as_deref().map(str::trim).filter(|o| !o.is_empty()) {
                     Some(old) => Some(
-                        s.keyword_sets
+                        s.prefs
+                            .keyword_sets
                             .iter()
                             .position(|x| same_name(x, old))
                             .ok_or_else(|| bad("keyword.saveSet", format!("no keyword set `{old}`")))?,
@@ -311,7 +313,7 @@ pub fn specs() -> Vec<CommandSpec> {
                 let keywords = if let Some(k) = &p.keywords {
                     slots(&k.to_vec())
                 } else {
-                    match renames.and_then(|at| s.keyword_sets.get(at)) {
+                    match renames.and_then(|at| s.prefs.keyword_sets.get(at)) {
                         Some(x) => x.keywords.clone(),
                         None => current_keywords(s),
                     }
@@ -320,36 +322,36 @@ pub fn specs() -> Vec<CommandSpec> {
                 match renames {
                     // rename: in its place, onto a name no other set has
                     Some(at) => {
-                        if s.keyword_sets.iter().enumerate().any(|(i, x)| i != at && same_name(x, &name)) {
+                        if s.prefs.keyword_sets.iter().enumerate().any(|(i, x)| i != at && same_name(x, &name)) {
                             return Err(bad("keyword.saveSet", format!("there is a keyword set “{name}” already")));
                         }
-                        if let Some(x) = s.keyword_sets.get_mut(at) {
+                        if let Some(x) = s.prefs.keyword_sets.get_mut(at) {
                             *x = set;
                         }
                     }
                     // a new set (`new`) never takes another set's name
-                    None if p.new && s.keyword_sets.iter().any(|x| same_name(x, &name)) => {
+                    None if p.new && s.prefs.keyword_sets.iter().any(|x| same_name(x, &name)) => {
                         return Err(bad("keyword.saveSet", format!("there is a keyword set “{name}” already")));
                     }
-                    None => match s.keyword_sets.iter_mut().find(|x| same_name(x, &name)) {
+                    None => match s.prefs.keyword_sets.iter_mut().find(|x| same_name(x, &name)) {
                         Some(x) => *x = set,
-                        None => s.keyword_sets.push(set),
+                        None => s.prefs.keyword_sets.push(set),
                     },
                 }
-                s.keyword_set = Some(name);
+                s.prefs.keyword_set = Some(name);
                 s.save_prefs()?;
                 Ok(keyword_sets_json(s))
             }
         ),
         cmd!("keyword.deleteSet", "Delete Keyword Set", [], None, "{name}", SetName, always, |s, p| {
             let name = p.name.as_deref().ok_or_else(|| bad("keyword.deleteSet", "missing `name`"))?;
-            let before = s.keyword_sets.len();
-            s.keyword_sets.retain(|x| !same_set(&x.name, name));
-            if s.keyword_sets.len() == before {
+            let before = s.prefs.keyword_sets.len();
+            s.prefs.keyword_sets.retain(|x| !same_set(&x.name, name));
+            if s.prefs.keyword_sets.len() == before {
                 return Err(bad("keyword.deleteSet", format!("no keyword set `{name}`")));
             }
-            if s.keyword_set.as_deref().is_some_and(|c| same_set(c, name)) {
-                s.keyword_set = None;
+            if s.prefs.keyword_set.as_deref().is_some_and(|c| same_set(c, name)) {
+                s.prefs.keyword_set = None;
             }
             s.save_prefs()?;
             Ok(keyword_sets_json(s))
@@ -378,10 +380,10 @@ pub fn specs() -> Vec<CommandSpec> {
                 let ids: Vec<u64> = ids.iter().map(|i| i.0).collect();
                 let key = if all { "removeKeywords" } else { "addKeywords" };
                 // applying from Recent Keywords mustn't reshuffle the numbers under the keys
-                let recent = s.recent_keywords.clone();
+                let recent = s.prefs.recent_keywords.clone();
                 let mut r = s.execute("photo.setMeta", &json!({"ids": ids, key: [k.clone()]}))?;
-                if s.keyword_set.is_none() {
-                    s.recent_keywords = recent;
+                if s.prefs.keyword_set.is_none() {
+                    s.prefs.recent_keywords = recent;
                 }
                 r["keyword"] = json!(k);
                 r["added"] = json!(!all);

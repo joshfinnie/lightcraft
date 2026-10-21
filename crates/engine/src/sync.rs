@@ -182,7 +182,7 @@ impl SyncInput {
         }
         let (scan, _) = ScanInput::new(s, &[path.to_string()]);
         let labels = scan.library();
-        Ok(SyncInput { folder: path.to_string(), scan, ids, naming: s.xmp.naming, labels })
+        Ok(SyncInput { folder: path.to_string(), scan, ids, naming: s.prefs.xmp.naming, labels })
     }
 }
 

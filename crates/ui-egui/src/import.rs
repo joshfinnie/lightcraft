@@ -1285,14 +1285,14 @@ pub fn body(app: &mut LightcraftApp, ui: &mut egui::Ui, d: &mut ImportDialog) {
             }
         });
     });
-    if !app.session.metadata_presets.is_empty() {
+    if !app.session.prefs.metadata_presets.is_empty() {
         field(ui, "Metadata", |ui| {
             let cur = if d.metadata_preset.is_empty() { crate::i18n::tr("None").to_string() } else { d.metadata_preset.clone() };
             crate::widgets::combo_box("import-metadata").selected_text(cur).show_ui(ui, |ui| {
                 if ui.selectable_label(d.metadata_preset.is_empty(), crate::i18n::tr("None")).clicked() {
                     d.metadata_preset.clear();
                 }
-                for m in &app.session.metadata_presets {
+                for m in &app.session.prefs.metadata_presets {
                     if ui.selectable_label(d.metadata_preset == m.name, &m.name).clicked() {
                         d.metadata_preset = m.name.clone();
                     }

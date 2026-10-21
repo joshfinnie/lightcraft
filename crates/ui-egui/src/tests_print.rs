@@ -205,13 +205,13 @@ fn templates_save_apply_and_delete_from_the_dialog() {
     cmd(&mut h, "print.set", json!({"layout": {"grid": {"columns": 5, "rows": 6}}}));
     h.app.ui.print.template_name = "Sheet 5x6".into();
     click(&mut h, "button:printSaveTemplate");
-    assert_eq!(h.app.session.print_templates.len(), 1);
+    assert_eq!(h.app.session.prefs.print_templates.len(), 1);
     cmd(&mut h, "print.reset", json!({}));
     assert!(has(&h, "button:printTemplateApply-0"));
     click(&mut h, "button:printTemplateApply-0");
     assert_eq!(h.app.session.print.layout.grid.columns, 5);
     click(&mut h, "button:printTemplateDelete-0");
-    assert!(h.app.session.print_templates.is_empty());
+    assert!(h.app.session.prefs.print_templates.is_empty());
 }
 
 #[test]

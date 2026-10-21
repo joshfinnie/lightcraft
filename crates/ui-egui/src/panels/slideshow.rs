@@ -67,9 +67,9 @@ pub fn start(app: &mut LightcraftApp, p: &Value, now: f64) -> Result<Value, Stri
         None | Some(Value::Null) => (now.abs() * 1000.0) as u64 ^ 0x5eed_5eed,
         Some(v) => v.as_u64().ok_or_else(|| format!("view.slideshow: `seed` must be a whole number, not {v}"))?,
     };
-    let settings = app.session.slideshow.merged(&Value::Object(overrides)).map_err(|e| format!("view.slideshow: {e}"))?;
+    let settings = app.session.prefs.slideshow.merged(&Value::Object(overrides)).map_err(|e| format!("view.slideshow: {e}"))?;
     let photos = app.session.visible_cloned();
-    let (intro, ending) = app.session.slide_titles.durations(settings.slide_duration);
+    let (intro, ending) = app.session.prefs.slide_titles.durations(settings.slide_duration);
     let Some(play) = Playback::new(photos, app.session.active(), settings, seed, now) else {
         return Err("no photos to show".into());
     };

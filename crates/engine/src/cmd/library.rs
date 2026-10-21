@@ -103,7 +103,7 @@ fn import_request(s: &Session, p: Import) -> Result<ImportRequest> {
     }
     let metadata_preset = p.metadata_preset.as_deref().map(str::trim).filter(|n| !n.is_empty()).map(str::to_string);
     if let Some(n) = &metadata_preset
-        && !s.metadata_presets.iter().any(|m| m.name.eq_ignore_ascii_case(n))
+        && !s.prefs.metadata_presets.iter().any(|m| m.name.eq_ignore_ascii_case(n))
     {
         return Err(bad("library.import", format!("unknown metadata preset `{n}`")));
     }
@@ -914,18 +914,18 @@ pub fn specs() -> Vec<CommandSpec> {
             HoldView,
             always,
             |s, p| {
-                let on = p.on.unwrap_or(!s.hold_view);
-                if on != s.hold_view {
-                    let was = s.hold_view;
-                    s.hold_view = on;
+                let on = p.on.unwrap_or(!s.prefs.hold_view);
+                if on != s.prefs.hold_view {
+                    let was = s.prefs.hold_view;
+                    s.prefs.hold_view = on;
                     if let Err(e) = s.save_prefs() {
                         // not kept: not changed either, so asking again does what was asked
-                        s.hold_view = was;
+                        s.prefs.hold_view = was;
                         return Err(e);
                     }
                     s.refresh_view();
                 }
-                Ok(json!({"hold": s.hold_view}))
+                Ok(json!({"hold": s.prefs.hold_view}))
             }
         ),
         cmd!(
@@ -1714,20 +1714,20 @@ pub fn specs() -> Vec<CommandSpec> {
             always,
             |s, p| {
                 if let Some(f) = p.folder {
-                    s.import_defaults.auto_folder = match f.as_deref().map(str::trim).filter(|f| !f.is_empty()) {
+                    s.prefs.import_defaults.auto_folder = match f.as_deref().map(str::trim).filter(|f| !f.is_empty()) {
                         Some(f) if std::path::Path::new(f).is_dir() || cfg!(target_arch = "wasm32") => Some(f.to_string()),
                         Some(f) => return Err(bad("library.autoImport", format!("`{f}` is not a folder"))),
                         None => None,
                     };
                 }
                 if let Some(c) = p.copy {
-                    s.import_defaults.auto_copy = c;
+                    s.prefs.import_defaults.auto_copy = c;
                 }
                 if let Some(a) = p.album {
-                    s.import_defaults.auto_album = a.as_deref().map(str::trim).filter(|a| !a.is_empty()).map(str::to_string);
+                    s.prefs.import_defaults.auto_album = a.as_deref().map(str::trim).filter(|a| !a.is_empty()).map(str::to_string);
                 }
                 s.save_prefs()?;
-                let d = &s.import_defaults;
+                let d = &s.prefs.import_defaults;
                 Ok(json!({"folder": d.auto_folder, "copy": d.auto_copy, "album": d.auto_album}))
             }
         ),
@@ -1740,7 +1740,7 @@ pub fn specs() -> Vec<CommandSpec> {
             AutoImportScan,
             always,
             |s, p| {
-                let Some(folder) = s.import_defaults.auto_folder.clone() else { return Ok(json!({"imported": [], "folder": null})) };
+                let Some(folder) = s.prefs.import_defaults.auto_folder.clone() else { return Ok(json!({"imported": [], "folder": null})) };
                 // only files that stopped growing: a file still being written is left for later
                 let known: std::collections::HashSet<String> = s
                     .catalog
@@ -1772,11 +1772,11 @@ pub fn specs() -> Vec<CommandSpec> {
                 if fresh.is_empty() {
                     return Ok(json!({"imported": [], "folder": folder}));
                 }
-                let mode = if s.import_defaults.auto_copy { "copy" } else { "add" };
+                let mode = if s.prefs.import_defaults.auto_copy { "copy" } else { "add" };
                 // a photo deleted from the library doesn't come back on its own because its file
                 // is still in the watched folder (a copy's source is not a known path)
                 let mut params = json!({"paths": fresh, "mode": mode, "onDeleted": "skip"});
-                if let Some(a) = s.import_defaults.auto_album.clone() {
+                if let Some(a) = s.prefs.import_defaults.auto_album.clone() {
                     match s.catalog.albums().find(|al| al.name.eq_ignore_ascii_case(&a) && !al.folder && !al.is_smart()) {
                         Some(al) => params["album"] = json!(al.id.0),
                         None => params["albumName"] = json!(a),

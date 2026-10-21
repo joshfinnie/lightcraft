@@ -41,9 +41,9 @@ fn slider(app: &mut LightcraftApp, ui: &mut egui::Ui, id: &str, value: f64, lo: 
     register(ui.ctx(), format!("slider:{id}"), r.rect);
     let p = wrap(v / k);
     if r.changed()
-        && let Ok(next) = app.session.slide_overlays.merged(&p)
+        && let Ok(next) = app.session.prefs.slide_overlays.merged(&p)
     {
-        app.session.slide_overlays = next;
+        app.session.prefs.slide_overlays = next;
     }
     if r.drag_stopped() || (r.changed() && !r.dragged()) {
         set(app, p);
@@ -140,7 +140,7 @@ fn text_change(i: usize, n: usize, change: Value) -> Value {
 
 /// The Overlays sections.
 pub fn sections(app: &mut LightcraftApp, ui: &mut egui::Ui, t: &Tokens) {
-    let s: OverlaySettings = app.session.slide_overlays.clone();
+    let s: OverlaySettings = app.session.prefs.slide_overlays.clone();
     heading(ui, t, "Overlays");
 
     // identity plate
@@ -201,7 +201,7 @@ pub fn sections(app: &mut LightcraftApp, ui: &mut egui::Ui, t: &Tokens) {
                 set(app, json!({"removeText": i}));
             }
         });
-        if app.session.slide_overlays.texts.len() != n {
+        if app.session.prefs.slide_overlays.texts.len() != n {
             return; // removed: the indices moved; drawn again next frame
         }
         row(ui, t, "Size", |ui| {
@@ -251,7 +251,7 @@ pub fn sections(app: &mut LightcraftApp, ui: &mut egui::Ui, t: &Tokens) {
                 set(app, wm(json!({"anchor": lightcraft_engine::slide_overlay::anchor_id(a)})));
             }
         });
-        let export_wm = app.session.last_export.as_ref().and_then(|e| e.get("watermark")).filter(|v| v.is_object() || v.is_string()).cloned();
+        let export_wm = app.session.prefs.last_export.as_ref().and_then(|e| e.get("watermark")).filter(|v| v.is_object() || v.is_string()).cloned();
         if let Some(e) = export_wm
             && crate::widgets::text_button(ui, "slideshowUseExportWatermark", "Use export watermark", false).clicked()
         {
@@ -259,7 +259,7 @@ pub fn sections(app: &mut LightcraftApp, ui: &mut egui::Ui, t: &Tokens) {
         }
         hint(ui, t, "The export watermark, drawn on the photo and sized relative to it.");
     }
-    for warning in app.session.slide_overlays.warnings() {
+    for warning in app.session.prefs.slide_overlays.warnings() {
         ui.label(RichText::new(warning).size(11.0).color(t.caution));
     }
 }

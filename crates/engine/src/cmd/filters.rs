@@ -16,7 +16,7 @@ pub struct FilterPreset {
 }
 
 fn list(s: &Session) -> Value {
-    json!(s.filter_presets)
+    json!(s.prefs.filter_presets)
 }
 
 fn save(s: &mut Session, p: Named) -> Result<Value> {
@@ -26,9 +26,9 @@ fn save(s: &mut Session, p: Named) -> Result<Value> {
         return Err(bad(C, "the filter is empty: set some filters first"));
     }
     let preset = FilterPreset { name: name.clone(), filter: s.filter.clone() };
-    match s.filter_presets.iter_mut().find(|f| f.name.eq_ignore_ascii_case(&name)) {
+    match s.prefs.filter_presets.iter_mut().find(|f| f.name.eq_ignore_ascii_case(&name)) {
         Some(f) => *f = preset,
-        None => s.filter_presets.push(preset),
+        None => s.prefs.filter_presets.push(preset),
     }
     s.save_prefs()?;
     Ok(list(s))
@@ -37,7 +37,7 @@ fn save(s: &mut Session, p: Named) -> Result<Value> {
 fn apply(s: &mut Session, p: Named) -> Result<Value> {
     const C: &str = "filter.applyPreset";
     let name = p.name(C)?;
-    let f = s.filter_presets.iter().find(|f| f.name.eq_ignore_ascii_case(&name)).ok_or_else(|| bad(C, format!("no filter preset `{name}`")))?;
+    let f = s.prefs.filter_presets.iter().find(|f| f.name.eq_ignore_ascii_case(&name)).ok_or_else(|| bad(C, format!("no filter preset `{name}`")))?;
     s.filter = f.filter.clone();
     Ok(json!({"photos": s.visible().len()}))
 }
@@ -45,9 +45,9 @@ fn apply(s: &mut Session, p: Named) -> Result<Value> {
 fn delete(s: &mut Session, p: Named) -> Result<Value> {
     const C: &str = "filter.deletePreset";
     let name = p.name(C)?;
-    let n = s.filter_presets.len();
-    s.filter_presets.retain(|f| !f.name.eq_ignore_ascii_case(&name));
-    if n == s.filter_presets.len() {
+    let n = s.prefs.filter_presets.len();
+    s.prefs.filter_presets.retain(|f| !f.name.eq_ignore_ascii_case(&name));
+    if n == s.prefs.filter_presets.len() {
         return Err(bad(C, format!("no filter preset `{name}`")));
     }
     s.save_prefs()?;

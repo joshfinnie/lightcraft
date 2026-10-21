@@ -2284,7 +2284,7 @@ mod tests {
         let toast = h.app.ui.toast.as_ref().map(|t| t.0.clone()).unwrap_or_default();
         assert!(toast.contains("2 added to Apple Photos album “Trip “2026””"), "{toast}");
         // Export with Previous repeats it
-        assert_eq!(h.app.session.last_export.as_ref().unwrap()["addToPhotos"], true);
+        assert_eq!(h.app.session.prefs.last_export.as_ref().unwrap()["addToPhotos"], true);
         let _ = std::fs::remove_dir_all(&out);
     }
 
@@ -3204,7 +3204,7 @@ mod tests {
         let Some(crate::state::Dialog::Import { opts }) = &h.app.ui.dialog else { panic!("no import review") };
         assert!(opts.copy, "a card is copied into the library");
         // with the option off nothing is remembered, so turning it on again starts with a first look
-        assert!(!h.app.session.import_defaults.show_on_card);
+        assert!(!h.app.session.prefs.import_defaults.show_on_card);
         h.step();
         assert!(h.app.ui.known_cards.is_none());
         let _ = std::fs::remove_dir_all(&root);
@@ -4236,7 +4236,7 @@ mod tests {
         // Performance: the thumbnail cache size goes to the library preferences
         h.request("ui.clickWidget", json!({"id": "button:settingsTab-performance"}), t);
         h.request("ui.clickWidget", json!({"id": "button:settingsCache-0"}), t);
-        assert_eq!(h.app.session.cache_mb, 512);
+        assert_eq!(h.app.session.prefs.cache_mb, 512);
         h.request("ui.clickWidget", json!({"id": "button:settingsPreview-3"}), t);
         assert_eq!(h.app.ui.settings.preview_limit, 3840);
         h.request("ui.clickWidget", json!({"id": "button:settingsMemory-2"}), t);
@@ -4249,7 +4249,7 @@ mod tests {
         // Import: per-camera defaults
         h.request("ui.clickWidget", json!({"id": "button:settingsTab-import"}), t);
         h.request("ui.clickWidget", json!({"id": "check:settings.perCamera"}), t);
-        assert!(h.app.session.import_defaults.per_camera);
+        assert!(h.app.session.prefs.import_defaults.per_camera);
         let img = h.snapshot(SETTLE);
         assert_eq!(img.size, [1300, 820]);
         // Escape closes; ⌫ now asks first

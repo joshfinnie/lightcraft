@@ -353,7 +353,7 @@ pub fn checked(app: &LightcraftApp, id: &str) -> Option<bool> {
         "view.soloSections" => Some(u.single_panel),
         "view.navigator" => Some(u.navigator),
         "view.layoutImage" => Some(u.layout_image.show && !u.layout_image.path.trim().is_empty()),
-        "library.holdView" => Some(app.session.hold_view),
+        "library.holdView" => Some(app.session.prefs.hold_view),
         "view.fullScreenPreview" => Some(u.fullscreen),
         "view.lightsOut" => Some(u.lights_out != crate::state::LightsOut::On),
         "view.enterFullScreen" => Some(app.window_is_fullscreen),
@@ -368,7 +368,7 @@ pub fn checked(app: &LightcraftApp, id: &str) -> Option<bool> {
         "panel.info" => panel(RightPanel::Info),
         "panel.keywords" => panel(RightPanel::Keywords),
         "panel.presets" => Some(u.presets),
-        "library.toggleAutoWriteXmp" => Some(app.session.xmp.auto_write),
+        "library.toggleAutoWriteXmp" => Some(app.session.prefs.xmp.auto_write),
         _ => None,
     }
 }
@@ -661,6 +661,7 @@ pub(crate) fn expanded(app: &LightcraftApp, name: &str) -> Option<Vec<MenuNode>>
             let sel = !app.session.selection.ids.is_empty() || has;
             let mut v: Vec<MenuNode> = app
                 .session
+                .prefs
                 .metadata_presets
                 .iter()
                 .map(|m| item("metadata.applyPreset", json!({"name": m.name}), m.name.clone(), None, sel, None))
@@ -1277,7 +1278,7 @@ mod tests {
         assert!(w[0].0.starts_with("/nonexistent-lc-test/") && w[0].0.ends_with(".png"), "{}", w[0].0);
         assert!(w[0].1.starts_with(b"\x89PNG"));
         // remembered (expanded) for Export with Previous, folder included
-        let last = app.session.last_export.clone().unwrap();
+        let last = app.session.prefs.last_export.clone().unwrap();
         assert_eq!((last["format"].as_str(), last["width"].as_u64(), last.get("preset")), (Some("png"), Some(40), None));
         // a blank folder (the Export dialog's Folder field cleared) is refused with a clear message
         // instead of writing into the working directory

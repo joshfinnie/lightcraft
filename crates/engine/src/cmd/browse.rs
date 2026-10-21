@@ -228,7 +228,7 @@ impl Session {
     /// [`Session::forget_local_days`]; 0 = never). With `dry_run`, only report what would go.
     /// Journaled (durable, replayed after a crash) but not an undo step; nothing on disk changes.
     pub fn forget_local(&mut self, dry_run: bool, days: Option<u32>) -> lightcraft_catalog::ForgetPlan {
-        let days = days.unwrap_or(self.forget_local_days);
+        let days = days.unwrap_or(self.prefs.forget_local_days);
         let now = (self.clock)();
         let keep = in_use(self);
         let smart = self.media.smart_dir.clone();
@@ -254,7 +254,7 @@ impl Session {
 fn forget_local(s: &mut Session, p: ForgetLocal) -> Result<Value> {
     let dry_run = p.dry_run;
     let days = p.days.map(|d| d.min(u64::from(u32::MAX)) as u32);
-    let used = days.unwrap_or(s.forget_local_days);
+    let used = days.unwrap_or(s.prefs.forget_local_days);
     let plan = s.forget_local(dry_run, days);
     if !dry_run && !plan.evict.is_empty() {
         s.compact_soon();

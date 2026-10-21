@@ -169,7 +169,7 @@ fn spawn(app: &LightcraftApp, options: &MergeDialog, ids: &[PhotoId], preview: b
 /// the defaults the first time. Fields missing from an older or hand-edited prefs.json take their
 /// defaults; options that don't parse at all fall back to the defaults.
 pub fn last_options(app: &LightcraftApp, command: &str) -> MergeDialog {
-    let saved = app.session.last_merge.get(command).and_then(|v| serde_json::from_value::<MergeDialog>(v.clone()).ok());
+    let saved = app.session.prefs.last_merge.get(command).and_then(|v| serde_json::from_value::<MergeDialog>(v.clone()).ok());
     MergeDialog { command: command.into(), ..saved.unwrap_or_default() }
 }
 
@@ -205,7 +205,7 @@ pub fn start_final(app: &mut LightcraftApp, opts: &MergeDialog) -> Result<Value,
     guard.progress(0, 1000);
     task.guard = Some(guard);
     app.merge.final_task = Some(task);
-    app.session.last_merge.insert(opts.command.clone(), opts.params());
+    app.session.prefs.last_merge.insert(opts.command.clone(), opts.params());
     if let Err(e) = app.session.save_prefs() {
         log::warn!("merge: {e}");
     }

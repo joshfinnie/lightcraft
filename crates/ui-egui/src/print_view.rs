@@ -198,7 +198,7 @@ fn settings(app: &mut LightcraftApp, ui: &mut Ui, t: &Tokens, pu: &mut PrintUi, 
             run(app, &ctx, "print.template.save", json!({"name": pu.template_name}));
         }
     });
-    let names: Vec<String> = app.session.print_templates.iter().map(|t| t.name.clone()).collect();
+    let names: Vec<String> = app.session.prefs.print_templates.iter().map(|t| t.name.clone()).collect();
     for (i, name) in names.iter().enumerate() {
         ui.horizontal(|ui| {
             ui.label(egui::RichText::new(name).color(t.text_label));

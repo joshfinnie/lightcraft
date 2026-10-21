@@ -115,9 +115,9 @@ fn presets_conflicts_and_subfolders() {
     let web = s.export_params(&json!({"preset": "Web"})).unwrap();
     assert_eq!(web, json!({"format": "png", "width": 64}), "targets are not part of a preset");
     s.execute("export.savePreset", &json!({"name": "web", "params": {"format": "webp"}})).unwrap();
-    assert_eq!(s.export_presets.len(), 1, "same name (any case) replaces");
+    assert_eq!(s.prefs.export_presets.len(), 1, "same name (any case) replaces");
     s.execute("export.deletePreset", &json!({"name": "WEB"})).unwrap();
-    assert!(s.export_presets.is_empty());
+    assert!(s.prefs.export_presets.is_empty());
 
     // a fake file system: what exists, what was written
     let existing = ["out/Sub/LC01347.png".to_string()];

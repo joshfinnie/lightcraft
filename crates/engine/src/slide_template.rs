@@ -65,10 +65,10 @@ impl SlideLook {
     /// The library's current slideshow settings.
     pub fn of(s: &Session) -> SlideLook {
         SlideLook {
-            playback: s.slideshow.clone(),
-            layout: s.slide_layout.clone(),
-            overlays: s.slide_overlays.clone(),
-            titles: s.slide_titles.clone(),
+            playback: s.prefs.slideshow.clone(),
+            layout: s.prefs.slide_layout.clone(),
+            overlays: s.prefs.slide_overlays.clone(),
+            titles: s.prefs.slide_titles.clone(),
         }
     }
 
@@ -491,7 +491,7 @@ impl Session {
     pub fn apply_slide_look(&mut self, look: &SlideLook) -> crate::Result<Vec<String>> {
         let before = SlideLook::of(self);
         let mut next = look.clone();
-        next.playback.prepare_previews = self.slideshow.prepare_previews;
+        next.playback.prepare_previews = self.prefs.slideshow.prepare_previews;
         let next = SlideLook {
             playback: next.playback.sanitized(),
             layout: next.layout.sanitized(),
@@ -500,9 +500,10 @@ impl Session {
         };
         let warnings = next.warnings(self);
         if next != before {
-            (self.slideshow, self.slide_layout, self.slide_overlays, self.slide_titles) = (next.playback, next.layout, next.overlays, next.titles);
+            (self.prefs.slideshow, self.prefs.slide_layout, self.prefs.slide_overlays, self.prefs.slide_titles) =
+                (next.playback, next.layout, next.overlays, next.titles);
             if let Err(e) = self.save_prefs() {
-                (self.slideshow, self.slide_layout, self.slide_overlays, self.slide_titles) =
+                (self.prefs.slideshow, self.prefs.slide_layout, self.prefs.slide_overlays, self.prefs.slide_titles) =
                     (before.playback, before.layout, before.overlays, before.titles);
                 return Err(e);
             }

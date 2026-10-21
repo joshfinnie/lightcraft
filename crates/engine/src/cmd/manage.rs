@@ -80,7 +80,7 @@ pub fn builtin_label_sets() -> Vec<LabelSet> {
 }
 
 fn all_label_sets(s: &crate::Session) -> Vec<LabelSet> {
-    builtin_label_sets().into_iter().chain(s.label_sets.iter().cloned()).collect()
+    builtin_label_sets().into_iter().chain(s.prefs.label_sets.iter().cloned()).collect()
 }
 
 /// The set whose names are the catalog's current ones.
@@ -368,9 +368,9 @@ pub fn specs() -> Vec<CommandSpec> {
                     return Err(bad("label.saveSet", format!("`{name}` is a built-in set")));
                 }
                 let set = LabelSet { name: name.clone(), names: ColorLabel::ALL.map(|l| s.catalog.custom_label_name(l).unwrap_or("").to_string()) };
-                match s.label_sets.iter_mut().find(|x| x.name.eq_ignore_ascii_case(&name)) {
+                match s.prefs.label_sets.iter_mut().find(|x| x.name.eq_ignore_ascii_case(&name)) {
                     Some(x) => *x = set,
-                    None => s.label_sets.push(set),
+                    None => s.prefs.label_sets.push(set),
                 }
                 s.save_prefs()?;
                 Ok(json!({"name": name}))
@@ -378,9 +378,9 @@ pub fn specs() -> Vec<CommandSpec> {
         ),
         cmd!("label.deleteSet", "Delete Color Label Set", [], None, "{name} — user sets only", SetName, always, |s, p| {
             let name = p.name.as_deref().ok_or_else(|| bad("label.deleteSet", "missing `name`"))?;
-            let before = s.label_sets.len();
-            s.label_sets.retain(|x| !x.name.eq_ignore_ascii_case(name));
-            if s.label_sets.len() == before {
+            let before = s.prefs.label_sets.len();
+            s.prefs.label_sets.retain(|x| !x.name.eq_ignore_ascii_case(name));
+            if s.prefs.label_sets.len() == before {
                 return Err(bad("label.deleteSet", format!("no user label set `{name}`")));
             }
             s.save_prefs()?;

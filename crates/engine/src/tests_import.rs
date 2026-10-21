@@ -597,7 +597,7 @@ fn cube_luts_become_profiles() {
     lightcraft_pipeline::lut::unregister(&id);
     let mut s = Session::new().with_fs();
     s.open_library(&lib, false).unwrap();
-    assert!(s.lut_profiles.iter().any(|p| p.id == id));
+    assert!(s.prefs.lut_profiles.iter().any(|p| p.id == id));
     assert!(s.profile_favorites.contains(&id), "imported LUT favorite survives reopen");
     assert_eq!(s.profile_info(&id), Some(("Warm Test", "Film Looks")));
     assert!(lightcraft_pipeline::lut::get(&id).is_some(), "registered again on open");

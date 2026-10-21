@@ -125,7 +125,7 @@ pub fn report(look: &Value, r: &Resolved) -> Option<String> {
 /// Resolve every user preset's profile reference again (after profiles were imported or deleted).
 /// Only the presets that change are touched, so an unchanged list isn't saved again.
 pub fn refresh(s: &mut Session) {
-    let luts = s.lut_profiles.clone();
+    let luts = s.prefs.lut_profiles.clone();
     let stale: Vec<usize> = s
         .presets
         .iter()

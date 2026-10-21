@@ -200,56 +200,97 @@ impl Library {
     }
 }
 
-#[derive(Default, Serialize, Deserialize)]
+/// A library's preferences: what `prefs.json` holds, and [`Session::prefs`] in memory.
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
-struct PrefsFile {
-    xmp: crate::sidecar::XmpPrefs,
+pub struct LibraryPrefs {
+    /// XMP sidecar preferences.
+    pub xmp: crate::sidecar::XmpPrefs,
     /// Parameters of the last export (for Export with Previous).
     #[serde(alias = "last_export")]
-    last_export: Option<serde_json::Value>,
+    pub last_export: Option<serde_json::Value>,
     /// Options of the last Photo Merge, per command.
-    last_merge: std::collections::BTreeMap<String, serde_json::Value>,
+    pub last_merge: std::collections::BTreeMap<String, serde_json::Value>,
     /// The user's export presets.
-    export_presets: Vec<crate::export::ExportPreset>,
+    pub export_presets: Vec<crate::export::ExportPreset>,
     /// Print templates.
-    print_templates: Vec<crate::print::template::PrintTemplate>,
+    pub print_templates: Vec<crate::print::template::PrintTemplate>,
     /// Metadata presets.
-    metadata_presets: Vec<crate::cmd::metadata::MetadataPreset>,
+    pub metadata_presets: Vec<crate::cmd::metadata::MetadataPreset>,
     /// Filter presets.
-    filter_presets: Vec<crate::cmd::filters::FilterPreset>,
+    pub filter_presets: Vec<crate::cmd::filters::FilterPreset>,
     /// Point-curve presets.
-    curve_presets: Vec<crate::cmd::curves::CurvePreset>,
+    pub curve_presets: Vec<crate::cmd::curves::CurvePreset>,
     /// Mask effect presets.
-    mask_effects: Vec<crate::cmd::mask_effects::MaskEffect>,
+    pub mask_effects: Vec<crate::cmd::mask_effects::MaskEffect>,
     /// The effect new masks of each kind start with.
-    mask_tool_effects: std::collections::BTreeMap<String, String>,
+    pub mask_tool_effects: std::collections::BTreeMap<String, String>,
     /// Colour-label name sets.
-    label_sets: Vec<crate::cmd::manage::LabelSet>,
+    pub label_sets: Vec<crate::cmd::manage::LabelSet>,
     /// Imported LUT profiles.
-    lut_profiles: Vec<crate::cmd::lut_profiles::LutProfile>,
+    pub lut_profiles: Vec<crate::cmd::lut_profiles::LutProfile>,
     /// Keyword sets, the one in use, recent keywords.
-    keyword_sets: Vec<crate::cmd::keywords::KeywordSet>,
-    keyword_set: Option<String>,
-    recent_keywords: Vec<String>,
+    pub keyword_sets: Vec<crate::cmd::keywords::KeywordSet>,
+    pub keyword_set: Option<String>,
+    pub recent_keywords: Vec<String>,
     /// Develop defaults for imported photos.
-    import: crate::import::ImportDefaults,
+    #[serde(rename = "import")]
+    pub import_defaults: crate::import::ImportDefaults,
     /// Thumbnail disk cache budget (MB, 0 = default).
-    cache_mb: u32,
+    pub cache_mb: u32,
     /// Folder for smart previews (default: `Smart Previews` in the library).
-    smart_previews_dir: Option<String>,
+    #[serde(serialize_with = "lossy_path")]
+    pub smart_previews_dir: Option<PathBuf>,
     /// Days after which untouched Local records of unbrowsed folders are forgotten (missing =
     /// the default, 0 = never).
-    forget_local_days: Option<u32>,
+    pub forget_local_days: u32,
     /// Slideshow playback settings.
-    slideshow: crate::slideshow::PlaybackSettings,
+    pub slideshow: crate::slideshow::PlaybackSettings,
     /// Slideshow slide layout (margins, options, backdrop).
-    slide_layout: crate::slide::SlideSettings,
+    pub slide_layout: crate::slide::SlideSettings,
     /// Slideshow overlays.
-    slide_overlays: crate::slide_overlay::OverlaySettings,
+    pub slide_overlays: crate::slide_overlay::OverlaySettings,
     /// Slideshow intro and ending screens.
-    slide_titles: crate::slide_title::TitleSettings,
+    pub slide_titles: crate::slide_title::TitleSettings,
     /// A view holds the photos it shows until it is refreshed (`library.holdView`).
-    hold_view: bool,
+    pub hold_view: bool,
+}
+
+impl Default for LibraryPrefs {
+    fn default() -> Self {
+        LibraryPrefs {
+            xmp: Default::default(),
+            last_export: None,
+            last_merge: Default::default(),
+            export_presets: Vec::new(),
+            print_templates: Vec::new(),
+            metadata_presets: Vec::new(),
+            filter_presets: Vec::new(),
+            curve_presets: Vec::new(),
+            mask_effects: Vec::new(),
+            mask_tool_effects: Default::default(),
+            label_sets: Vec::new(),
+            lut_profiles: Vec::new(),
+            keyword_sets: Vec::new(),
+            keyword_set: None,
+            recent_keywords: Vec::new(),
+            import_defaults: Default::default(),
+            cache_mb: 0,
+            smart_previews_dir: None,
+            forget_local_days: lightcraft_catalog::DEFAULT_FORGET_DAYS,
+            slideshow: Default::default(),
+            slide_layout: Default::default(),
+            slide_overlays: Default::default(),
+            slide_titles: Default::default(),
+            hold_view: false,
+        }
+    }
+}
+
+/// A path as text in `prefs.json` (one that isn't UTF-8 is written as near as it can be, not lost
+/// with the whole file).
+fn lossy_path<S: serde::Serializer>(p: &Option<PathBuf>, s: S) -> std::result::Result<S::Ok, S::Error> {
+    p.as_ref().map(|p| p.to_string_lossy()).serialize(s)
 }
 
 fn presets_json(s: &Session) -> String {
@@ -491,34 +532,17 @@ impl Session {
         }
         let mut settings = SettingsLoad::default();
         // preferences
-        let prefs = settings.read::<PrefsFile>(files.as_mut(), "prefs.json").unwrap_or_default();
-        self.xmp = prefs.xmp;
-        self.last_export = prefs.last_export;
-        self.last_merge = prefs.last_merge;
-        self.export_presets = prefs.export_presets;
-        self.print_templates = prefs.print_templates;
-        self.metadata_presets = prefs.metadata_presets;
-        self.filter_presets = prefs.filter_presets;
-        self.curve_presets = prefs.curve_presets;
-        self.mask_effects = prefs.mask_effects;
-        self.mask_tool_effects = prefs.mask_tool_effects;
-        self.label_sets = prefs.label_sets;
-        self.lut_profiles = prefs.lut_profiles;
+        let mut prefs = settings.read::<LibraryPrefs>(files.as_mut(), "prefs.json").unwrap_or_default();
+        prefs.slideshow = prefs.slideshow.sanitized();
+        prefs.slide_layout = prefs.slide_layout.sanitized();
+        prefs.slide_overlays = prefs.slide_overlays.sanitized();
+        prefs.slide_titles = prefs.slide_titles.sanitized();
+        // a folder of its own only for a library on disk
+        prefs.smart_previews_dir = prefs.smart_previews_dir.filter(|_| on_disk);
+        self.prefs = prefs;
         crate::cmd::lut_profiles::register_all(self);
-        self.keyword_sets = prefs.keyword_sets;
-        self.keyword_set = prefs.keyword_set;
-        self.recent_keywords = prefs.recent_keywords;
-        self.import_defaults = prefs.import;
-        self.cache_mb = prefs.cache_mb;
-        self.slideshow = prefs.slideshow.sanitized();
-        self.slide_layout = prefs.slide_layout.sanitized();
-        self.slide_overlays = prefs.slide_overlays.sanitized();
-        self.slide_titles = prefs.slide_titles.sanitized();
-        self.forget_local_days = prefs.forget_local_days.unwrap_or(lightcraft_catalog::DEFAULT_FORGET_DAYS);
-        self.hold_view = prefs.hold_view;
         self.refresh_view();
-        self.smart_previews_dir = prefs.smart_previews_dir.filter(|_| on_disk).map(PathBuf::from);
-        if let Some(d) = &self.smart_previews_dir {
+        if let Some(d) = &self.prefs.smart_previews_dir {
             self.media.smart_dir = Some(d.clone());
         }
         // presets
@@ -532,7 +556,7 @@ impl Session {
                     self.presets.push(u);
                 }
             }
-            let known = |id: &String| crate::presets::profile(id).is_some() || self.lut_profiles.iter().any(|p| &p.id == id);
+            let known = |id: &String| crate::presets::profile(id).is_some() || self.prefs.lut_profiles.iter().any(|p| &p.id == id);
             self.profile_favorites = f.profile_favorites.into_iter().filter(known).collect();
             self.profile_recent = f.profile_recent.into_iter().filter(known).take(crate::presets::RECENT_PROFILES).collect();
         }
@@ -587,7 +611,7 @@ impl Session {
             lock: lock.take(),
         });
         // forget untouched Local records of folders not browsed for a while (journaled at once)
-        if self.forget_local_days > 0 {
+        if self.prefs.forget_local_days > 0 {
             let plan = self.forget_local(false, None);
             if !plan.evict.is_empty() {
                 self.compact_soon();
@@ -746,33 +770,7 @@ impl Session {
 
     /// Save the library preferences (no-op for in-memory sessions).
     pub fn save_prefs(&mut self) -> Result<()> {
-        let v = serde_json::to_vec_pretty(&PrefsFile {
-            xmp: self.xmp,
-            last_export: self.last_export.clone(),
-            last_merge: self.last_merge.clone(),
-            export_presets: self.export_presets.clone(),
-            print_templates: self.print_templates.clone(),
-            metadata_presets: self.metadata_presets.clone(),
-            filter_presets: self.filter_presets.clone(),
-            curve_presets: self.curve_presets.clone(),
-            mask_effects: self.mask_effects.clone(),
-            mask_tool_effects: self.mask_tool_effects.clone(),
-            label_sets: self.label_sets.clone(),
-            lut_profiles: self.lut_profiles.clone(),
-            keyword_sets: self.keyword_sets.clone(),
-            keyword_set: self.keyword_set.clone(),
-            recent_keywords: self.recent_keywords.clone(),
-            import: self.import_defaults.clone(),
-            cache_mb: self.cache_mb,
-            smart_previews_dir: self.smart_previews_dir.as_ref().map(|d| d.to_string_lossy().to_string()),
-            forget_local_days: Some(self.forget_local_days),
-            slideshow: self.slideshow.clone(),
-            slide_layout: self.slide_layout.clone(),
-            slide_overlays: self.slide_overlays.clone(),
-            slide_titles: self.slide_titles.clone(),
-            hold_view: self.hold_view,
-        })
-        .unwrap_or_default();
+        let v = serde_json::to_vec_pretty(&self.prefs).unwrap_or_default();
         let Some(lib) = self.library.as_mut() else { return Ok(()) };
         if lib.blocked.contains(&"prefs.json") {
             return Err(EngineError::Other(
@@ -793,14 +791,14 @@ impl Session {
 
     /// The thumbnail disk cache budget in bytes ([`Session::cache_mb`], else the default).
     pub fn cache_bytes(&self) -> u64 {
-        if self.cache_mb == 0 { crate::media::DISK_CACHE_BYTES } else { u64::from(self.cache_mb) << 20 }
+        if self.prefs.cache_mb == 0 { crate::media::DISK_CACHE_BYTES } else { u64::from(self.prefs.cache_mb) << 20 }
     }
 
     /// Change the thumbnail disk cache budget (MB, 0 = default) in place: the cached thumbnails
     /// stay (the next write trims to the new size), and so do the textures shown from them.
     /// Saved with the library preferences.
     pub fn set_cache_mb(&mut self, mb: u32) -> Result<()> {
-        self.cache_mb = mb;
+        self.prefs.cache_mb = mb;
         if let Some(lib) = self.library.as_ref().filter(|l| l.on_disk) {
             let dir = lib.thumbs_dir();
             self.media.set_disk_cache_bytes(&dir, self.cache_bytes());

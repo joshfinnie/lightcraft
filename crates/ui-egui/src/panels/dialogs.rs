@@ -1844,7 +1844,7 @@ pub fn confirm_dialog(app: &mut LightcraftApp, dlg: &Dialog) -> Result<serde_jso
             }
             // the set it renames: none when saving as new, or when it was deleted meanwhile (then it is
             // saved anew rather than refused)
-            let sets = &app.session.keyword_sets;
+            let sets = &app.session.prefs.keyword_sets;
             let renames = replaces.as_deref().filter(|_| !as_new).filter(|old| sets.iter().any(|x| same(&x.name, old)));
             if sets.iter().any(|x| same(&x.name, name) && !renames.is_some_and(|old| same(&x.name, old))) {
                 return Err(crate::i18n::tr_format!("There is a keyword set “{name}” already", name = name));
@@ -2104,8 +2104,8 @@ fn slideshow_export_body(app: &mut LightcraftApp, ui: &mut egui::Ui, settings: &
     use lightcraft_engine::slideshow_export::{ExportSettings, Format};
     let t = Tokens::get(ui.ctx());
     let photos = app.session.visible_cloned().len();
-    let slide = app.session.slideshow.slide_duration;
-    let (intro, ending) = app.session.slide_titles.durations(slide);
+    let slide = app.session.prefs.slideshow.slide_duration;
+    let (intro, ending) = app.session.prefs.slide_titles.durations(slide);
     let titles = usize::from(intro.is_some()) + usize::from(ending.is_some());
     let seconds = photos as f64 * slide + intro.unwrap_or(0.0) + ending.unwrap_or(0.0);
     let summary = crate::i18n::tr_format!(

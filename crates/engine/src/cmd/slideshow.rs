@@ -86,13 +86,13 @@ fn playback(s: &mut Session, p: Patch) -> Result<Value> {
     let p = &p.value();
     let changes = p.as_object().is_some_and(|o| !o.is_empty());
     if changes {
-        let next = s.slideshow.merged(p).map_err(|e| bad("slideshow.playback", e))?;
-        if next != s.slideshow {
-            s.slideshow = next;
+        let next = s.prefs.slideshow.merged(p).map_err(|e| bad("slideshow.playback", e))?;
+        if next != s.prefs.slideshow {
+            s.prefs.slideshow = next;
             s.save_prefs()?;
         }
     }
-    Ok(s.slideshow.to_json())
+    Ok(s.prefs.slideshow.to_json())
 }
 
 /// (`merged` refuses keys it doesn't know)
@@ -100,13 +100,13 @@ fn layout(s: &mut Session, p: Patch) -> Result<Value> {
     let p = &p.value();
     let changes = p.as_object().is_some_and(|o| !o.is_empty());
     if changes {
-        let next = s.slide_layout.merged(p).map_err(|e| bad("slideshow.layout", e))?;
-        if next != s.slide_layout {
-            s.slide_layout = next;
+        let next = s.prefs.slide_layout.merged(p).map_err(|e| bad("slideshow.layout", e))?;
+        if next != s.prefs.slide_layout {
+            s.prefs.slide_layout = next;
             s.save_prefs()?;
         }
     }
-    Ok(s.slide_layout.to_json())
+    Ok(s.prefs.slide_layout.to_json())
 }
 
 /// (`merged` refuses keys it doesn't know)
@@ -114,14 +114,14 @@ fn overlays(s: &mut Session, p: Patch) -> Result<Value> {
     let p = &p.value();
     let changes = p.as_object().is_some_and(|o| !o.is_empty());
     if changes {
-        let next = s.slide_overlays.merged(p).map_err(|e| bad("slideshow.overlays", e))?;
-        if next != s.slide_overlays {
-            s.slide_overlays = next;
+        let next = s.prefs.slide_overlays.merged(p).map_err(|e| bad("slideshow.overlays", e))?;
+        if next != s.prefs.slide_overlays {
+            s.prefs.slide_overlays = next;
             s.save_prefs()?;
         }
     }
-    let mut out = s.slide_overlays.to_json();
-    out["warnings"] = json!(s.slide_overlays.warnings());
+    let mut out = s.prefs.slide_overlays.to_json();
+    out["warnings"] = json!(s.prefs.slide_overlays.warnings());
     Ok(out)
 }
 
@@ -130,14 +130,14 @@ fn titles(s: &mut Session, p: Patch) -> Result<Value> {
     let p = &p.value();
     let changes = p.as_object().is_some_and(|o| !o.is_empty());
     if changes {
-        let next = s.slide_titles.merged(p).map_err(|e| bad("slideshow.titles", e))?;
-        if next != s.slide_titles {
-            s.slide_titles = next;
+        let next = s.prefs.slide_titles.merged(p).map_err(|e| bad("slideshow.titles", e))?;
+        if next != s.prefs.slide_titles {
+            s.prefs.slide_titles = next;
             s.save_prefs()?;
         }
     }
-    let mut out = s.slide_titles.to_json();
-    out["warnings"] = json!(s.slide_titles.warnings(&s.slide_overlays));
+    let mut out = s.prefs.slide_titles.to_json();
+    out["warnings"] = json!(s.prefs.slide_titles.warnings(&s.prefs.slide_overlays));
     Ok(out)
 }
 
@@ -277,10 +277,10 @@ fn base64(bytes: &[u8]) -> String {
 /// The settings as the `slideshow.*` commands return them (for template replies).
 fn settings_json(s: &Session) -> Value {
     json!({
-        "playback": s.slideshow.to_json(),
-        "layout": s.slide_layout.to_json(),
-        "overlays": s.slide_overlays.to_json(),
-        "titles": s.slide_titles.to_json(),
+        "playback": s.prefs.slideshow.to_json(),
+        "layout": s.prefs.slide_layout.to_json(),
+        "overlays": s.prefs.slide_overlays.to_json(),
+        "titles": s.prefs.slide_titles.to_json(),
     })
 }
 

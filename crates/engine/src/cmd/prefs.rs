@@ -12,10 +12,10 @@ const ID: &str = "library.preferences";
 
 fn current(s: &Session) -> Value {
     json!({
-        "xmp": s.xmp,
-        "import": s.import_defaults,
-        "cacheMb": if s.cache_mb == 0 { s.cache_bytes() >> 20 } else { u64::from(s.cache_mb) },
-        "forgetLocalDays": s.forget_local_days,
+        "xmp": s.prefs.xmp,
+        "import": s.prefs.import_defaults,
+        "cacheMb": if s.prefs.cache_mb == 0 { s.cache_bytes() >> 20 } else { u64::from(s.prefs.cache_mb) },
+        "forgetLocalDays": s.prefs.forget_local_days,
         "persistent": s.library.is_some(),
     })
 }
@@ -67,7 +67,7 @@ struct CameraPref {
 }
 
 fn prefs(s: &mut Session, p: Prefs) -> Result<Value> {
-    let mut d: ImportDefaults = s.import_defaults.clone();
+    let mut d: ImportDefaults = s.prefs.import_defaults.clone();
     let mut changed = false;
     if let Some(i) = p.import {
         if let Some(v) = i.raw_preset {
@@ -91,7 +91,7 @@ fn prefs(s: &mut Session, p: Prefs) -> Result<Value> {
         match i.metadata_preset {
             Some(Some(n)) if n.is_empty() || n == "none" => d.metadata_preset = None,
             Some(Some(n)) => {
-                if !s.metadata_presets.iter().any(|m| m.name.eq_ignore_ascii_case(&n)) {
+                if !s.prefs.metadata_presets.iter().any(|m| m.name.eq_ignore_ascii_case(&n)) {
                     return Err(bad(ID, format!("unknown metadata preset `{n}` (see metadata.presets)")));
                 }
                 d.metadata_preset = Some(n);
@@ -128,9 +128,9 @@ fn prefs(s: &mut Session, p: Prefs) -> Result<Value> {
         }
         changed = true;
     }
-    s.import_defaults = d;
+    s.prefs.import_defaults = d;
     if let Some(days) = p.forget_local_days {
-        s.forget_local_days = days.min(36_500) as u32;
+        s.prefs.forget_local_days = days.min(36_500) as u32;
         changed = true;
     }
     if let Some(mb) = p.cache_mb {

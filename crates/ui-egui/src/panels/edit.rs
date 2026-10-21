@@ -471,14 +471,14 @@ fn profile_menu(app: &mut LightcraftApp, ui: &mut egui::Ui, d: &DevelopSettings)
         register(ui.ctx(), format!("profileMenu:groupMenu:{g}"), r.response.rect);
     }
     // imported LUT profile groups
-    let mut lut_groups: Vec<String> = app.session.lut_profiles.iter().map(|p| p.group.clone()).collect();
+    let mut lut_groups: Vec<String> = app.session.prefs.lut_profiles.iter().map(|p| p.group.clone()).collect();
     lut_groups.sort_unstable();
     lut_groups.dedup();
     for g in &lut_groups {
         // a folder's name as it is, and its own widget id even when it matches a built-in group
         let r = crate::widgets::menu_button(ui, g.as_str(), |ui| {
             ui.set_min_width(170.0);
-            for p in app.session.lut_profiles.iter().filter(|p| &p.group == g) {
+            for p in app.session.prefs.lut_profiles.iter().filter(|p| &p.group == g) {
                 item(ui, "group", &p.id, &p.name, &mut pick);
             }
         });
@@ -1191,7 +1191,7 @@ fn curve_footer(app: &mut LightcraftApp, ui: &mut egui::Ui, d: &DevelopSettings)
                     let _ = app.run("file.importCurvePresets", json!({}));
                     ui.close();
                 }
-                let can_export = app.services.save_curve_preset_file.is_some() && !app.session.curve_presets.is_empty();
+                let can_export = app.services.save_curve_preset_file.is_some() && !app.session.prefs.curve_presets.is_empty();
                 if ui.add_enabled(can_export, egui::Button::new(crate::i18n::tr("Export Presets…"))).clicked() {
                     let _ = app.run("file.exportCurvePresets", json!({}));
                     ui.close();

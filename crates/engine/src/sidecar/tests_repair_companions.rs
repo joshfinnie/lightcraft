@@ -90,8 +90,8 @@ fn partial_move_companions_allow_save_and_autowrite_without_weakening_collisions
                     std::fs::write(&stem_a, &stem_bytes).unwrap();
                     std::fs::write(&full_a, &full_bytes).unwrap();
                     let mut s = session(&a);
-                    s.xmp.naming = naming;
-                    s.xmp.auto_write = auto;
+                    s.prefs.xmp.naming = naming;
+                    s.prefs.xmp.auto_write = auto;
                     let fs = Faults(vec![full_a.clone(), b.clone()]);
                     let plans = s.plan_rename_with(&fs, &[PhotoId(1)], "Trip", 1);
                     assert!(s.execute_fn("photo.rename", |s| Ok(json!({"renamed": s.apply_rename_with(&fs, &plans)?}))).is_err());
@@ -142,8 +142,8 @@ fn partial_move_companions_allow_save_and_autowrite_without_weakening_collisions
                         );
                         assert_eq!(std::fs::read_to_string(untouched).unwrap(), *expected);
                     }
-                    assert_eq!(s.xmp.naming, naming);
-                    assert_eq!(s.xmp.auto_write, auto);
+                    assert_eq!(s.prefs.xmp.naming, naming);
+                    assert_eq!(s.prefs.xmp.auto_write, auto);
                     drop(s);
                     std::fs::remove_dir_all(dir).unwrap();
                 }
@@ -176,7 +176,7 @@ fn rollback_repair_and_shared_copy_keep_known_companions() {
             assert_eq!(queues(&s).len(), 1);
             let actual = if rollback { &a } else { &b };
             assert_eq!(s.catalog.photo(PhotoId(1)).unwrap().source, Source::File { path: actual.to_string_lossy().into_owned() });
-            s.xmp.naming = naming;
+            s.prefs.xmp.naming = naming;
             s.execute("photo.setMeta", &json!({"title": "Fresh", "addKeywords": ["café"]})).unwrap();
             let result = save(&mut s);
             assert!(result["failed"].as_array().unwrap().is_empty(), "{result}");
@@ -208,7 +208,7 @@ fn a_later_save_recognizes_companions_after_an_earlier_repair_retires() {
         return; // This case requires two physically distinct full packets.
     }
     let mut s = session(&a);
-    s.xmp.naming = SidecarNaming::Full;
+    s.prefs.xmp.naming = SidecarNaming::Full;
     let fs = Faults(vec![full_a.clone(), upper_a.clone(), b.clone()]);
     let plans = s.plan_rename_with(&fs, &[PhotoId(1)], "Trip", 1);
     assert!(s.execute_fn("photo.rename", |s| Ok(json!({"renamed": s.apply_rename_with(&fs, &plans)?}))).is_err());
@@ -246,7 +246,7 @@ fn queued_stem_retry_preserves_shared_packet_after_batch_rollback() {
     let mut s = session(&a);
     let photo = Photo::new(PhotoId(2), Source::File { path: b.to_string_lossy().into_owned() }, "a.png", "PNG", 4, 3, "");
     s.catalog.apply(Op::AddPhoto { photo: Box::new(photo) }).unwrap();
-    s.xmp.auto_write = false;
+    s.prefs.xmp.auto_write = false;
 
     // Existing Faults refuses renames only: the first shared-packet copy must succeed.
     let faults = Faults(vec![shared.clone(), second.clone()]);

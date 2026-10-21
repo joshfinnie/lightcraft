@@ -1688,7 +1688,7 @@ fn effect_dropdown_applies_saves_and_shows_the_matching_effect() {
     }
     let r = crate::panels::dialogs::confirm_dialog(&mut h.app, &dlg);
     assert!(r.is_ok(), "{r:?}");
-    assert_eq!(h.app.session.mask_effects.len(), 1);
+    assert_eq!(h.app.session.prefs.mask_effects.len(), 1);
     // change the sliders, then pick the effect again: sliders back, Amount kept
     exec(&mut h, "mask.adjust", json!({"values": {"exposure": -1, "clarity": 40, "amount": 50}}));
     h.step();

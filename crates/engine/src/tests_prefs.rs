@@ -115,13 +115,13 @@ fn preferences_persist_with_the_library() {
     }
     let mut s = Session::new().with_fs();
     s.open_library(&lib, false).unwrap();
-    assert!(s.xmp.auto_write);
-    assert_eq!(s.import_defaults.raw_preset.as_deref(), Some("user.rawlook"));
-    assert!(s.import_defaults.per_camera);
-    assert!(s.import_defaults.show_on_card);
-    assert_eq!(s.import_defaults.cameras.len(), 1);
-    assert_eq!(s.import_defaults.preset_for(true, "Canon EOS R5"), Some("user.canonlook"));
-    assert_eq!(s.cache_mb, 512);
+    assert!(s.prefs.xmp.auto_write);
+    assert_eq!(s.prefs.import_defaults.raw_preset.as_deref(), Some("user.rawlook"));
+    assert!(s.prefs.import_defaults.per_camera);
+    assert!(s.prefs.import_defaults.show_on_card);
+    assert_eq!(s.prefs.import_defaults.cameras.len(), 1);
+    assert_eq!(s.prefs.import_defaults.preset_for(true, "Canon EOS R5"), Some("user.canonlook"));
+    assert_eq!(s.prefs.cache_mb, 512);
     assert_eq!(s.cache_bytes(), 512 << 20);
     let r = s.execute("library.preferences", &json!({})).unwrap();
     assert_eq!(r["cacheMb"], 512);
@@ -137,8 +137,8 @@ fn preferences_persist_with_the_library() {
     drop(s);
     let mut s = Session::new().with_fs();
     s.open_library(&lib, false).unwrap();
-    assert_eq!(s.last_export, Some(json!({"format": "png"})));
-    assert_eq!(s.import_defaults, Default::default());
+    assert_eq!(s.prefs.last_export, Some(json!({"format": "png"})));
+    assert_eq!(s.prefs.import_defaults, Default::default());
     let _ = std::fs::remove_dir_all(&lib);
 }
 
@@ -149,14 +149,14 @@ fn last_merge_settings_persist_with_the_library() {
     {
         let mut s = Session::new().with_fs();
         s.open_library(&lib, false).unwrap();
-        s.last_merge.insert("merge.hdr".into(), opts.clone());
+        s.prefs.last_merge.insert("merge.hdr".into(), opts.clone());
         s.save_prefs().unwrap();
         s.close_library().unwrap();
     }
     let mut s = Session::new().with_fs();
     s.open_library(&lib, false).unwrap();
-    assert_eq!(s.last_merge.get("merge.hdr"), Some(&opts));
-    assert!(!s.last_merge.contains_key("merge.panorama"));
+    assert_eq!(s.prefs.last_merge.get("merge.hdr"), Some(&opts));
+    assert!(!s.prefs.last_merge.contains_key("merge.panorama"));
     drop(s);
     let _ = std::fs::remove_dir_all(&lib);
 }
@@ -183,7 +183,7 @@ fn default_copyright_and_creator_fill_gaps_on_import() {
     drop(s);
     let mut s = Session::new().with_fs();
     s.open_library(&lib, false).unwrap();
-    assert_eq!(s.import_defaults.creator, "Me");
+    assert_eq!(s.prefs.import_defaults.creator, "Me");
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -214,15 +214,15 @@ fn metadata_presets_apply_to_photos_and_imports() {
     s.execute("library.select", &json!({"ids": [id.0]})).unwrap();
     s.execute("photo.setMeta", &json!({"city": "Lyon"})).unwrap();
     s.execute("metadata.savePreset", &json!({"name": "Here"})).unwrap();
-    let saved = s.metadata_presets.iter().find(|m| m.name == "Here").unwrap().fields.clone();
+    let saved = s.prefs.metadata_presets.iter().find(|m| m.name == "Here").unwrap().fields.clone();
     assert_eq!(saved, json!({"copyright": "© Studio", "creator": "Ann", "city": "Lyon"}));
     drop(s);
     let mut s = Session::new().with_fs();
     s.open_library(&lib, false).unwrap();
-    assert_eq!(s.metadata_presets.len(), 2);
-    assert_eq!(s.import_defaults.metadata_preset.as_deref(), Some("studio"));
+    assert_eq!(s.prefs.metadata_presets.len(), 2);
+    assert_eq!(s.prefs.import_defaults.metadata_preset.as_deref(), Some("studio"));
     s.execute("metadata.deletePreset", &json!({"name": "STUDIO"})).unwrap();
-    assert!(s.import_defaults.metadata_preset.is_none(), "deleting the import preset clears it");
+    assert!(s.prefs.import_defaults.metadata_preset.is_none(), "deleting the import preset clears it");
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -263,10 +263,10 @@ fn curve_presets_save_apply_export_import_and_persist() {
         assert!(path.ends_with(".lccurve"));
         assert!(s.execute("curve.deletePreset", &json!({"name": "Medium Contrast"})).is_err());
         s.execute("curve.deletePreset", &json!({"name": "faded red"})).unwrap();
-        assert!(s.curve_presets.is_empty());
+        assert!(s.prefs.curve_presets.is_empty());
         let r = s.execute("curve.importPresets", &json!({"path": path})).unwrap();
         assert_eq!(r["imported"], json!(["Faded Red"]));
-        assert_eq!(s.curve_presets.len(), 1);
+        assert_eq!(s.prefs.curve_presets.len(), 1);
         // a file carrying a built-in name doesn't shadow it; junk fails cleanly
         let other = lib.join("one.lccurve");
         std::fs::write(&other, r#"{"name": "Linear", "master": [[0, 0.05], [1, 1]]}"#).unwrap();
@@ -280,7 +280,7 @@ fn curve_presets_save_apply_export_import_and_persist() {
     // saved with the library preferences
     let mut s = Session::new().with_fs();
     s.open_library(&lib, false).unwrap();
-    let names: Vec<String> = s.curve_presets.iter().map(|p| p.name.clone()).collect();
+    let names: Vec<String> = s.prefs.curve_presets.iter().map(|p| p.name.clone()).collect();
     assert_eq!(names, ["Faded Red", "Linear (imported)"]);
     let _ = std::fs::remove_dir_all(&lib);
 }
@@ -306,7 +306,7 @@ fn mask_effects_import_apply_save_export_and_persist() {
         assert_eq!(r["imported"].as_array().unwrap().len(), 1, "the develop template stays a develop preset");
         assert_eq!(r["effects"][0]["name"], "Brighten");
         assert_eq!(r["effects"][0]["unmapped"], json!(["Grain"]));
-        assert_eq!(s.mask_effects.len(), 1);
+        assert_eq!(s.prefs.mask_effects.len(), 1);
         // apply to a mask: every slider set, Amount kept
         s.execute("mask.add", &json!({"kind": "radial"})).unwrap();
         s.execute("mask.adjust", &json!({"values": {"clarity": 30, "amount": 70}})).unwrap();
@@ -327,15 +327,15 @@ fn mask_effects_import_apply_save_export_and_persist() {
         assert!(s.execute("mask.deleteEffect", &json!({"name": "brighten + dehaze"})).is_err());
         let r = s.execute("mask.importEffects", &json!({"path": path})).unwrap();
         assert_eq!(r["imported"].as_array().unwrap().len(), 2);
-        assert_eq!(s.mask_effects.len(), 2, "same-named effects are replaced");
+        assert_eq!(s.prefs.mask_effects.len(), 2, "same-named effects are replaced");
         s.close_library().unwrap();
     }
     // saved with the library preferences
     let mut s = Session::new().with_fs();
     s.open_library(&lib, false).unwrap();
-    let names: Vec<String> = s.mask_effects.iter().map(|e| e.name.clone()).collect();
+    let names: Vec<String> = s.prefs.mask_effects.iter().map(|e| e.name.clone()).collect();
     assert_eq!(names, ["Brighten", "Brighten + Dehaze"]);
-    assert_eq!(s.mask_effects[1].adjust.dehaze, 15.0);
+    assert_eq!(s.prefs.mask_effects[1].adjust.dehaze, 15.0);
     let _ = std::fs::remove_dir_all(&lib);
 }
 
@@ -409,7 +409,7 @@ fn slideshow_playback_settings_persist_with_the_library() {
         assert_eq!(r["fadeColor"], "#000000");
         // a hostile value changes nothing
         assert!(s.execute("slideshow.playback", &json!({"slideDuration": "soon", "repeat": true})).is_err());
-        assert!(!s.slideshow.repeat);
+        assert!(!s.prefs.slideshow.repeat);
         drop(s);
     }
     let mut s = Session::new().with_fs();
@@ -427,7 +427,26 @@ fn slideshow_playback_settings_persist_with_the_library() {
         s.open_library(&lib, false).unwrap();
         s
     };
-    assert_eq!((s.slideshow.slide_duration, s.slideshow.fade_duration), (120.0, 0.0));
+    assert_eq!((s.prefs.slideshow.slide_duration, s.prefs.slideshow.fade_duration), (120.0, 0.0));
     drop(s);
     let _ = std::fs::remove_dir_all(&lib);
+}
+
+/// `prefs.json` keeps the keys earlier versions wrote: a renamed field would quietly drop what a
+/// library saved.
+#[test]
+fn prefs_json_keeps_its_keys() {
+    let v = serde_json::to_value(crate::library::LibraryPrefs::default()).unwrap();
+    let mut keys: Vec<&str> = v.as_object().unwrap().keys().map(String::as_str).collect();
+    keys.sort_unstable();
+    let mut want = vec![
+        "xmp", "lastExport", "lastMerge", "exportPresets", "printTemplates", "metadataPresets", "filterPresets", "curvePresets",
+        "maskEffects", "maskToolEffects", "labelSets", "lutProfiles", "keywordSets", "keywordSet", "recentKeywords", "import",
+        "cacheMb", "smartPreviewsDir", "forgetLocalDays", "slideshow", "slideLayout", "slideOverlays", "slideTitles", "holdView",
+    ];
+    want.sort_unstable();
+    assert_eq!(keys, want);
+    // an older file without forgetLocalDays gets the default, not 0
+    let old: crate::library::LibraryPrefs = serde_json::from_value(serde_json::json!({"cacheMb": 512})).unwrap();
+    assert_eq!((old.cache_mb, old.forget_local_days), (512, lightcraft_catalog::DEFAULT_FORGET_DAYS));
 }

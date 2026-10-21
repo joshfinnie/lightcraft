@@ -534,7 +534,7 @@ pub fn export_active(app: &mut LightcraftApp, p: &Value) -> Result<Value, String
         Some(d) => d.trim().to_string(),
         None => {
             let last_dir =
-                app.session.last_export.as_ref().and_then(|l| l.get("dir")).and_then(Value::as_str).map(str::trim).filter(|d| !d.is_empty());
+                app.session.prefs.last_export.as_ref().and_then(|l| l.get("dir")).and_then(Value::as_str).map(str::trim).filter(|d| !d.is_empty());
             last_dir.map(str::to_string).unwrap_or_else(default_export_dir)
         }
     };
@@ -568,7 +568,7 @@ pub fn export_active(app: &mut LightcraftApp, p: &Value) -> Result<Value, String
         o.remove("path");
         o.insert("dir".into(), json!(dir));
     }
-    app.session.last_export = Some(last);
+    app.session.prefs.last_export = Some(last);
     let _ = app.session.save_prefs();
     Ok(out)
 }

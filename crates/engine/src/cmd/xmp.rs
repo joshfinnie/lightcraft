@@ -78,10 +78,10 @@ fn read(s: &mut Session, p: Targets) -> Result<Value> {
 
 fn prefs(s: &mut Session, p: Prefs) -> Result<Value> {
     if let Some(a) = p.auto_write {
-        s.xmp.auto_write = a;
+        s.prefs.xmp.auto_write = a;
     }
     if let Some(n) = p.naming.as_deref() {
-        s.xmp.naming = match n {
+        s.prefs.xmp.naming = match n {
             "stem" => SidecarNaming::Stem,
             "full" => SidecarNaming::Full,
             other => return Err(bad("library.xmpPreferences", format!("unknown naming `{other}` (stem|full)"))),
@@ -90,7 +90,7 @@ fn prefs(s: &mut Session, p: Prefs) -> Result<Value> {
     if p.auto_write.is_some() || p.naming.is_some() {
         s.save_prefs()?;
     }
-    Ok(serde_json::to_value(s.xmp).unwrap_or_default())
+    Ok(serde_json::to_value(s.prefs.xmp).unwrap_or_default())
 }
 
 pub fn specs() -> Vec<CommandSpec> {
@@ -139,7 +139,7 @@ pub fn specs() -> Vec<CommandSpec> {
             }
         ),
         cmd!("library.toggleAutoWriteXmp", "Automatically Write Changes into XMP", ["File"], None, "{} → {autoWrite}", NoParams, always, |s, _| {
-            let on = !s.xmp.auto_write;
+            let on = !s.prefs.xmp.auto_write;
             prefs(s, Prefs { auto_write: Some(on), naming: None })
         }),
     ]

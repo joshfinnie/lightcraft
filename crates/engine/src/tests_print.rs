@@ -308,7 +308,7 @@ fn a_hostile_template_in_the_preferences_does_not_break_the_library() {
     let stores = LibraryStores { dir: "print".into(), catalog: Box::new(MemStore::new()), files: Box::new(files.clone()), on_disk: false };
     s.open_library_in(stores, false).unwrap();
     assert!(s.take_library_warnings().is_empty(), "the preferences are not damaged");
-    assert_eq!(s.cache_mb, 123);
+    assert_eq!(s.prefs.cache_mb, 123);
     assert_eq!(run(&mut s, "print.template.list", json!({}))["templates"].as_array().unwrap().len(), 3);
     fails(&mut s, "print.template.apply", json!({"name": "Bad"}));
     fails(&mut s, "print.template.apply", json!({"name": "Huge"}));

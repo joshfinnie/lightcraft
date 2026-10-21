@@ -613,13 +613,13 @@ impl Session {
     /// [`Session::sidecar_naming`] for many photos, their stems' owners worked out once (per
     /// photo that is a pass over the whole catalog).
     pub fn sidecar_namings(&self, ids: &[PhotoId]) -> Vec<SidecarNaming> {
-        namings_in(&self.catalog, self.xmp.naming, ids)
+        namings_in(&self.catalog, self.prefs.xmp.naming, ids)
     }
 
     pub fn sidecar_naming(&self, id: PhotoId) -> SidecarNaming {
         match self.catalog.photo(id) {
-            Some(p) if self.xmp.naming == SidecarNaming::Stem => StemOwners::among(&self.catalog, &[id]).naming(p, self.xmp.naming),
-            _ => self.xmp.naming,
+            Some(p) if self.prefs.xmp.naming == SidecarNaming::Stem => StemOwners::among(&self.catalog, &[id]).naming(p, self.prefs.xmp.naming),
+            _ => self.prefs.xmp.naming,
         }
     }
 
@@ -638,7 +638,7 @@ impl Session {
         if Path::new(orig).is_relative() || !Path::new(orig).is_file() {
             return Err(EngineError::Other(format!("{}: the original {orig} is missing; no XMP sidecar is written", p.file_name)));
         }
-        let naming = owners.naming(p, self.xmp.naming);
+        let naming = owners.naming(p, self.prefs.xmp.naming);
         let preferred = sidecar_path(orig, naming);
         let other = if naming == SidecarNaming::Stem { SidecarNaming::Full } else { SidecarNaming::Stem };
         let candidates: Vec<PathBuf> = [naming, other]
@@ -758,7 +758,7 @@ impl Session {
     /// touching the disk for the others); photos that are gone, or with auto-write off, are dropped from the wait.
     /// Returns how many were written.
     pub fn retry_unsaved_sidecars(&mut self) -> usize {
-        if !self.xmp.auto_write {
+        if !self.prefs.xmp.auto_write {
             self.unsaved_sidecars.clear();
             return 0;
         }

@@ -12,7 +12,7 @@ use crate::{Result, Session};
 impl Session {
     /// Built-in presets followed by the user's.
     pub fn all_export_presets(&self) -> Vec<(ExportPreset, bool)> {
-        builtin_presets().into_iter().map(|p| (p, true)).chain(self.export_presets.iter().cloned().map(|p| (p, false))).collect()
+        builtin_presets().into_iter().map(|p| (p, true)).chain(self.prefs.export_presets.iter().cloned().map(|p| (p, false))).collect()
     }
 
     /// `app.export` params with a named `preset` expanded: the preset's params, overridden by the
@@ -84,7 +84,7 @@ fn save(s: &mut Session, p: SavePreset) -> Result<Value> {
     let mut params = match &p.params {
         Some(v @ Value::Object(_)) => v.clone(),
         Some(_) => return Err(bad(ID, "`params` must be an object of app.export params")),
-        None => s.last_export.clone().ok_or_else(|| bad(ID, "no `params` and no previous export to save"))?,
+        None => s.prefs.last_export.clone().ok_or_else(|| bad(ID, "no `params` and no previous export to save"))?,
     };
     if let Some(o) = params.as_object_mut() {
         o.retain(|k, _| !NOT_SETTINGS.contains(&k.as_str()));
@@ -92,9 +92,9 @@ fn save(s: &mut Session, p: SavePreset) -> Result<Value> {
     // a preset that app.export would refuse is refused here, where the typo is on screen
     crate::export::ExportOptions::validate(ID, &params)?;
     let preset = ExportPreset { name: name.to_string(), params };
-    match s.export_presets.iter_mut().find(|x| x.name.eq_ignore_ascii_case(name)) {
+    match s.prefs.export_presets.iter_mut().find(|x| x.name.eq_ignore_ascii_case(name)) {
         Some(x) => *x = preset,
-        None => s.export_presets.push(preset),
+        None => s.prefs.export_presets.push(preset),
     }
     s.save_prefs()?;
     Ok(list(s))
@@ -104,9 +104,9 @@ fn delete(s: &mut Session, p: Named) -> Result<Value> {
     const ID: &str = "export.deletePreset";
     let name = p.name(ID)?;
     let name = name.as_str();
-    let before = s.export_presets.len();
-    s.export_presets.retain(|x| !x.name.eq_ignore_ascii_case(name.trim()));
-    if s.export_presets.len() == before {
+    let before = s.prefs.export_presets.len();
+    s.prefs.export_presets.retain(|x| !x.name.eq_ignore_ascii_case(name.trim()));
+    if s.prefs.export_presets.len() == before {
         return Err(bad(ID, format!("no user export preset `{name}`")));
     }
     s.save_prefs()?;

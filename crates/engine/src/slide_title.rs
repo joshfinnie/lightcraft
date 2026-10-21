@@ -370,7 +370,7 @@ impl TitleCompose {
 impl crate::Session {
     /// Title screen `title` at `width × height` with the library's titles and identity plate.
     pub fn title_compose(&self, title: Title, width: usize, height: usize) -> Arc<TitleCompose> {
-        Arc::new(TitleCompose::new(&self.slide_titles, &self.slide_overlays, title, width, height))
+        Arc::new(TitleCompose::new(&self.prefs.slide_titles, &self.prefs.slide_overlays, title, width, height))
     }
 }
 

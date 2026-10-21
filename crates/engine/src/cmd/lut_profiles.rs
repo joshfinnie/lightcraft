@@ -28,7 +28,7 @@ fn profiles_dir(s: &Session) -> Option<PathBuf> {
 
 /// Register every imported profile's LUT with the pipeline (missing files are skipped).
 pub fn register_all(s: &Session) {
-    for p in &s.lut_profiles {
+    for p in &s.prefs.lut_profiles {
         if let Some(l) = std::fs::read_to_string(&p.file).ok().and_then(|t| lightcraft_pipeline::lut::Lut3d::parse_cube(&t).ok()) {
             lightcraft_pipeline::lut::register(&p.id, l);
         }
@@ -128,7 +128,7 @@ fn import(s: &mut Session, p: Import) -> Result<Value> {
         let slug = crate::presets::slug(&format!("{group}-{display}"));
         let mut id = format!("lut:{slug}");
         let mut n = 2;
-        while s.lut_profiles.iter().any(|x| x.id == id) {
+        while s.prefs.lut_profiles.iter().any(|x| x.id == id) {
             id = format!("lut:{slug}-{n}");
             n += 1;
         }
@@ -146,7 +146,7 @@ fn import(s: &mut Session, p: Import) -> Result<Value> {
             }
         };
         lightcraft_pipeline::lut::register(&id, lut);
-        s.lut_profiles.push(LutProfile { id: id.clone(), name: display.clone(), group: group.clone(), file });
+        s.prefs.lut_profiles.push(LutProfile { id: id.clone(), name: display.clone(), group: group.clone(), file });
         imported.push(json!({"id": id, "name": display, "group": group}));
     }
     s.save_prefs()?;
@@ -169,10 +169,10 @@ pub fn specs() -> Vec<CommandSpec> {
         ),
         cmd!("profile.deleteImported", "Delete Imported Profile", [], None, "{id: lut:…}", ProfileRef, always, |s, p| {
             let id = p.id.ok_or_else(|| bad("profile.deleteImported", "missing id"))?;
-            let Some(i) = s.lut_profiles.iter().position(|x| x.id == id) else {
+            let Some(i) = s.prefs.lut_profiles.iter().position(|x| x.id == id) else {
                 return Err(bad("profile.deleteImported", format!("no imported profile `{id}`")));
             };
-            let gone = s.lut_profiles.remove(i);
+            let gone = s.prefs.lut_profiles.remove(i);
             if profiles_dir(s).is_some_and(|d| Path::new(&gone.file).starts_with(d)) {
                 let _ = std::fs::remove_file(&gone.file);
             }

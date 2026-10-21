@@ -397,7 +397,7 @@ pub fn add_found(s: &mut Session, found: Vec<Found>, group: Option<&str>, dry: b
     if dry || (effects.is_empty() && dividers.is_empty()) {
         return Ok((rows, div_rows));
     }
-    s.mask_effects.retain(|e| !(e.is_empty() && dividers.iter().any(|(d, _)| d.effect.name.eq_ignore_ascii_case(&e.name))));
+    s.prefs.mask_effects.retain(|e| !(e.is_empty() && dividers.iter().any(|(d, _)| d.effect.name.eq_ignore_ascii_case(&e.name))));
     for f in effects {
         upsert(s, f.effect);
     }
@@ -499,6 +499,7 @@ pub fn export_effects(s: &mut Session, p: ExportEffects) -> Result<Value> {
     let names = p.names;
     let group = p.group.as_deref().map(str::trim);
     let chosen: Vec<&MaskEffect> = s
+        .prefs
         .mask_effects
         .iter()
         .filter(|e| names.as_ref().is_none_or(|n| n.iter().any(|x| x.eq_ignore_ascii_case(&e.name))))

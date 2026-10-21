@@ -862,7 +862,7 @@ fn filter_presets_save_and_apply() {
     let r = s.execute("filter.applyPreset", &json!({"name": "best"})).unwrap();
     assert_eq!(r["photos"].as_u64(), Some(four as u64));
     s.execute("filter.deletePreset", &json!({"name": "Best"})).unwrap();
-    assert!(s.filter_presets.is_empty());
+    assert!(s.prefs.filter_presets.is_empty());
 }
 
 #[test]
@@ -1312,7 +1312,7 @@ fn selecting_an_unknown_photo_is_an_error_and_keeps_the_selection() {
 fn saved_presets_with_unknown_keys_still_export() {
     use crate::export::{ExportOptions, ExportPreset};
     let mut s = demo();
-    s.export_presets.push(ExportPreset {
+    s.prefs.export_presets.push(ExportPreset {
         name: "Old".into(),
         params: json!({"format": "png", "retiredOption": 3, "watermark": {"text": "©", "retiredKey": true}}),
     });

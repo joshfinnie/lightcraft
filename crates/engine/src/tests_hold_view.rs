@@ -51,7 +51,7 @@ fn a_keyword_given_in_a_held_view_leaves_the_photo_and_the_order_where_they_are(
 #[test]
 fn a_view_that_is_not_held_follows_every_edit_as_before() {
     let mut s = unkeyworded();
-    assert!(!s.hold_view, "off unless asked for");
+    assert!(!s.prefs.hold_view, "off unless asked for");
     let before = s.visible_cloned();
     keyword(&mut s, before[3]);
     let after = s.visible_cloned();
@@ -196,5 +196,5 @@ fn asking_for_the_state_it_has_changes_nothing_and_a_word_is_not_a_bool() {
     hold(&mut s);
     assert!(s.visible_cloned().contains(&before[2]), "on, asked for again: the held photos stay");
     assert!(s.execute("library.holdView", &json!({"on": "false"})).is_err());
-    assert!(s.hold_view, "a refused call changes nothing");
+    assert!(s.prefs.hold_view, "a refused call changes nothing");
 }

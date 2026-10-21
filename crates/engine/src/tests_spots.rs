@@ -110,8 +110,8 @@ fn target_state(s: &Session) -> serde_json::Value {
         "undo": format!("{:?}", s.undo),
         "redo": format!("{:?}", s.redo),
         "commits": s.commits(),
-        "effects": s.mask_effects,
-        "rememberedEffects": s.mask_tool_effects,
+        "effects": s.prefs.mask_effects,
+        "rememberedEffects": s.prefs.mask_tool_effects,
         "journal": s.journal,
         "revision": s.catalog.revision,
     })
@@ -204,18 +204,18 @@ fn malformed_mask_effect_targets_are_rejected_without_changes() {
 fn mask_effect_targets_preserve_explicit_defaults_and_lists() {
     let mut s = target_session();
     s.execute("mask.saveEffect", &json!({"id": 1, "name": "Explicit"})).unwrap();
-    assert_eq!(s.mask_effects.last().unwrap().adjust.exposure, 0.0);
+    assert_eq!(s.prefs.mask_effects.last().unwrap().adjust.exposure, 0.0);
     for (name, target) in [("Omitted", json!({})), ("Null", json!({"id": null}))] {
         let mut params = target;
         params["name"] = json!(name);
         s.execute("mask.saveEffect", &params).unwrap();
-        assert_eq!(s.mask_effects.last().unwrap().adjust.exposure, 1.0);
+        assert_eq!(s.prefs.mask_effects.last().unwrap().adjust.exposure, 1.0);
         params["name"] = json!("Existing");
         s.execute("mask.updateEffect", &params).unwrap();
-        assert_eq!(s.mask_effects[0].adjust.exposure, 1.0);
+        assert_eq!(s.prefs.mask_effects[0].adjust.exposure, 1.0);
     }
     s.execute("mask.updateEffect", &json!({"id": 1, "name": "Existing"})).unwrap();
-    assert_eq!(s.mask_effects[0].adjust.exposure, 0.0);
+    assert_eq!(s.prefs.mask_effects[0].adjust.exposure, 0.0);
     for mut params in [json!({}), json!({"id": null}), json!({"ids": null})] {
         s.execute("mask.adjust", &json!({"values": {"exposure": 1.0}})).unwrap();
         params["name"] = json!("Existing");

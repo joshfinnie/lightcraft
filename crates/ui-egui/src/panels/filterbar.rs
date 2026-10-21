@@ -285,7 +285,7 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
     let presets = crate::widgets::dropdown(ui, "filterPresets", crate::i18n::tr("Presets"), t.font(12.5), t.text);
     register(ui.ctx(), "button:filterPresets", presets.rect);
     egui::Popup::menu(&presets).show(|ui| {
-        let names: Vec<String> = app.session.filter_presets.iter().map(|f| f.name.clone()).collect();
+        let names: Vec<String> = app.session.prefs.filter_presets.iter().map(|f| f.name.clone()).collect();
         for n in &names {
             let r = ui.button(n);
             if r.clicked() {

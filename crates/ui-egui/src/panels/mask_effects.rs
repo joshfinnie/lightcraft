@@ -60,8 +60,8 @@ pub fn display_name(name: &str) -> String {
 /// The effect the selected mask's tool last applied (what Update / Rename in the menu act on).
 fn last_applied(app: &LightcraftApp, mask: &Mask) -> Option<String> {
     let tool = fx::mask_tool(mask)?;
-    let name = app.session.mask_tool_effects.get(&tool)?;
-    app.session.mask_effects.iter().find(|e| e.name.eq_ignore_ascii_case(name)).map(|e| e.name.clone())
+    let name = app.session.prefs.mask_tool_effects.get(&tool)?;
+    app.session.prefs.mask_effects.iter().find(|e| e.name.eq_ignore_ascii_case(name)).map(|e| e.name.clone())
 }
 
 /// Apply an effect to `mask` (and take the brush settings it carries).
@@ -178,7 +178,7 @@ fn menu(app: &mut LightcraftApp, ui: &mut egui::Ui, mask: &Mask, current: Option
     if st.search != before {
         st.highlight = None;
     }
-    let rows = menu_rows(&app.session.mask_effects, &st.search);
+    let rows = menu_rows(&app.session.prefs.mask_effects, &st.search);
     // ↑ ↓ move through the list, Return applies
     let (down, up, enter) = ui.input_mut(|i| {
         (
@@ -203,7 +203,7 @@ fn menu(app: &mut LightcraftApp, ui: &mut egui::Ui, mask: &Mask, current: Option
         chosen = rows.get(st.highlight.unwrap_or(0)).map(|(_, n, _)| n.clone());
     }
     let mut hovered: Option<String> = None;
-    if app.session.mask_effects.is_empty() {
+    if app.session.prefs.mask_effects.is_empty() {
         ui.label(egui::RichText::new(crate::i18n::tr("No effect presets yet")).color(t.text_dim));
     } else if rows.is_empty() {
         ui.label(egui::RichText::new(crate::i18n::tr("No effect matches")).color(t.text_dim));
@@ -219,7 +219,7 @@ fn menu(app: &mut LightcraftApp, ui: &mut egui::Ui, mask: &Mask, current: Option
                     ui.label(egui::RichText::new(heading).font(t.semibold(11.5)).color(t.text_dim));
                 }
             }
-            let fav = app.session.mask_effects.iter().any(|e| e.favorite && &e.name == name);
+            let fav = app.session.prefs.mask_effects.iter().any(|e| e.favorite && &e.name == name);
             let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 22.0), Sense::click());
             // (rows scrolled out of view can't be clicked)
             if ui.is_rect_visible(rect) {
@@ -295,7 +295,7 @@ fn menu(app: &mut LightcraftApp, ui: &mut egui::Ui, mask: &Mask, current: Option
         let _ = app.run("file.importPresets", json!({}));
         ui.close();
     }
-    let any = !app.session.mask_effects.is_empty();
+    let any = !app.session.prefs.mask_effects.is_empty();
     if item(ui, "maskEffectMenu:export", crate::i18n::tr("Export Presets…").to_string(), any && app.services.save_preset_file.is_some()) {
         let _ = app.run("file.exportMaskEffects", json!({}));
         ui.close();
@@ -305,7 +305,7 @@ fn menu(app: &mut LightcraftApp, ui: &mut egui::Ui, mask: &Mask, current: Option
 /// The photo with `name` applied to `mask`, shown while the pointer rests on it.
 fn preview(app: &mut LightcraftApp, mask: &Mask, name: &str) {
     let Some(id) = app.session.active() else { return };
-    let Some(e) = app.session.mask_effects.iter().find(|e| e.name == name) else { return };
+    let Some(e) = app.session.prefs.mask_effects.iter().find(|e| e.name == name) else { return };
     let Some(d) = app.session.develop_of(id) else { return };
     let mut d = (*d).clone();
     let Some(m) = d.masks.iter_mut().find(|m| m.id == mask.id) else { return };
@@ -355,7 +355,7 @@ fn row_menu(app: &mut LightcraftApp, ui: &mut egui::Ui, mask: &Mask, name: &str,
 
 /// The groups to move effects `names` to, None, and New Group….
 fn group_menu(app: &mut LightcraftApp, ui: &mut egui::Ui, names: &[String]) {
-    let groups: Vec<String> = fx::menu_order(&app.session.mask_effects).into_iter().map(|(g, _)| g).filter(|g| !g.is_empty()).collect();
+    let groups: Vec<String> = fx::menu_order(&app.session.prefs.mask_effects).into_iter().map(|(g, _)| g).filter(|g| !g.is_empty()).collect();
     for g in groups.iter().map(String::as_str).chain(std::iter::once("")) {
         let label = if g.is_empty() { crate::i18n::tr("None").to_string() } else { g.to_string() };
         if ui.button(label).clicked() {
@@ -395,7 +395,7 @@ pub fn save_body(
         let pick = ui.small_button("…").on_hover_text(crate::i18n::tr("Choose a group"));
         register(ui.ctx(), "button:effectGroupPick", pick.rect);
         egui::Popup::menu(&pick).show(|ui| {
-            for (g, _) in fx::menu_order(&app.session.mask_effects) {
+            for (g, _) in fx::menu_order(&app.session.prefs.mask_effects) {
                 if ui.button(if g.is_empty() { crate::i18n::tr("None").to_string() } else { g.clone() }).clicked() {
                     *group = g;
                 }
@@ -485,17 +485,17 @@ pub fn manage_body(
     let t = Tokens::get(ui.ctx());
     ui.set_min_width(500.0);
     // effects that went away (deleted, renamed) leave the selection
-    selected.retain(|n| app.session.mask_effects.iter().any(|e| &e.name == n));
+    selected.retain(|n| app.session.prefs.mask_effects.iter().any(|e| &e.name == n));
     ui.horizontal(|ui| {
         crate::text_field::TextField::singleline("field:effectSearch", search)
             .hint(crate::i18n::tr("Search effects"))
             .width(ui.available_width() - 120.0)
             .show(ui);
-        let n = app.session.mask_effects.len();
+        let n = app.session.prefs.mask_effects.len();
         ui.label(egui::RichText::new(crate::i18n::tr_format!("{n} preset{}", if n == 1 { "" } else { "s" }, n = n)).color(t.text_dim));
     });
     let q = search.trim().to_lowercase();
-    let effects = app.session.mask_effects.clone();
+    let effects = app.session.prefs.mask_effects.clone();
     let mut toggle_star: Option<(String, bool)> = None;
     let mut commit_rename: Option<(String, String)> = None;
     egui::ScrollArea::vertical().id_salt("manageEffects").max_height(380.0).auto_shrink([false, true]).show(ui, |ui| {
@@ -651,7 +651,7 @@ pub fn manage_body(
         register(ui.ctx(), "button:effectGroup", g.rect);
         egui::Popup::menu(&g).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(|ui| {
             let names = selected.clone();
-            for (grp, _) in fx::menu_order(&app.session.mask_effects) {
+            for (grp, _) in fx::menu_order(&app.session.prefs.mask_effects) {
                 let label = if grp.is_empty() { crate::i18n::tr("None").to_string() } else { grp.clone() };
                 if ui.button(label).clicked() {
                     let _ = app.run("mask.setEffectGroup", json!({"names": names, "group": grp}));

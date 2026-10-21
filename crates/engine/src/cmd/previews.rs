@@ -345,7 +345,7 @@ fn smart(s: &mut Session, p: Smart) -> Result<Value> {
         let source = (!discard).then(|| s.media.source_ref(&ph, crate::media::SourceLevel::Preview));
         jobs.push((id, path, source, ph.fitted_look()));
     }
-    let custom = s.smart_previews_dir.is_some();
+    let custom = s.prefs.smart_previews_dir.is_some();
     if background {
         let what = if discard { "discarding smart previews" } else { "smart previews" };
         let state = Arc::new(PreviewBuild { total: jobs.len(), what, ..Default::default() });
@@ -429,8 +429,8 @@ fn location_json(s: &Session) -> Value {
     json!({
         "path": dir.as_ref().map(|d| d.to_string_lossy()),
         "default": default.map(|d| d.to_string_lossy().to_string()),
-        "custom": s.smart_previews_dir.is_some(),
-        "available": dir.as_ref().is_some_and(|d| d.is_dir()) || s.smart_previews_dir.is_none(),
+        "custom": s.prefs.smart_previews_dir.is_some(),
+        "available": dir.as_ref().is_some_and(|d| d.is_dir()) || s.prefs.smart_previews_dir.is_none(),
         "count": count,
         "bytes": bytes,
     })
@@ -473,7 +473,7 @@ fn smart_location(s: &mut Session, p: SmartLocation) -> Result<Value> {
         return Err(bad(C, format!("{held} smart preview(s) are in {}: pass existing = move, leave or discard", current.display())));
     };
     let (moved, failed) = crate::smart::migrate(&current, &new_dir, existing);
-    s.smart_previews_dir = custom;
+    s.prefs.smart_previews_dir = custom;
     s.media.smart_dir = Some(new_dir);
     s.save_prefs()?;
     let mut r = location_json(s);

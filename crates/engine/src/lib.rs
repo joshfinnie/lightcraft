@@ -199,6 +199,8 @@ static VISIBLE_GEN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64:
 static LIBRARY_GEN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
 pub struct Session {
+    /// The library's preferences (`prefs.json`): saved with [`Session::save_prefs`], read when it opens.
+    pub prefs: library::LibraryPrefs,
     library_generation: u64,
     /// Auto Sync: edits to the active photo also change the other selected photos (the settings
     /// that changed, nothing else).
@@ -212,9 +214,6 @@ pub struct Session {
     /// Shared, so frontends can hold it across frames without copying ([`Session::visible_shared`]).
     visible: Arc<[PhotoId]>,
     visible_key: Option<(u64, String)>,
-    /// A view holds the photos it shows until it is refreshed (`library.holdView`): an edit that makes a photo stop
-    /// matching a smart album's rules, Picks or the filter bar leaves it where it is. Off: the photo goes at once.
-    pub hold_view: bool,
     /// The view last worked out, the catalog's revision then, and the photos in it before stacks are arranged.
     /// A small edit is followed from it: only the photos the edit touched are asked about again and put at their
     /// place in the order ([`Session::visible`]). It is also what a held view holds ([`Session::hold_view`]).
@@ -299,49 +298,16 @@ pub struct Session {
     pub library: Option<library::Library>,
     /// Identity of current library opening; refreshed only after a successful open.
     pub(crate) library_identity: Arc<()>,
-    /// XMP sidecar preferences (persisted with the library).
-    pub xmp: sidecar::XmpPrefs,
-    /// Parameters of the last export (`app.export` params, minus targets), persisted in prefs.json.
-    pub last_export: Option<serde_json::Value>,
-    /// The options of the last Photo Merge started, per command (`merge.hdr`, `merge.panorama`,
-    /// `merge.hdrPanorama`): the merge dialog opens with them and "… with Last Settings" uses
-    /// them. Persisted in prefs.json.
-    pub last_merge: std::collections::BTreeMap<String, serde_json::Value>,
-    /// The user's export presets (built-ins: [`export::builtin_presets`]), persisted in prefs.json.
-    pub export_presets: Vec<export::ExportPreset>,
     /// The Print module's current layout, image settings, page, guides and job (`print.*`). Lives
     /// with the session, so the app, CLI, control channel and MCP all see the same print.
     pub print: print::template::PrintSettings,
-    /// Saved print templates (`print.template.*`), persisted in prefs.json.
-    pub print_templates: Vec<print::template::PrintTemplate>,
-    /// Metadata presets (`metadata.*`), persisted in prefs.json.
-    pub metadata_presets: Vec<cmd::metadata::MetadataPreset>,
-    /// Saved filter-bar settings (`filter.*`), persisted in prefs.json.
-    pub filter_presets: Vec<cmd::filters::FilterPreset>,
-    /// The user's point-curve presets (`curve.*`; built-ins: [`cmd::curves::builtin_presets`]),
-    /// persisted in prefs.json.
-    pub curve_presets: Vec<cmd::curves::CurvePreset>,
-    /// Mask effect presets (the Masking panel's Effect menu).
-    pub mask_effects: Vec<cmd::mask_effects::MaskEffect>,
-    /// The effect a new mask of each kind (`brush`, `linear`…) starts with: the one last applied
-    /// to a mask of that kind.
-    pub mask_tool_effects: std::collections::BTreeMap<String, String>,
-    /// Saved colour-label name sets.
-    pub label_sets: Vec<cmd::manage::LabelSet>,
     /// Look-alike signatures by content key (Find Similar).
     pub signatures: std::collections::HashMap<String, [f32; 64]>,
-    /// Imported `.cube` LUT profiles.
-    pub lut_profiles: Vec<cmd::lut_profiles::LutProfile>,
     /// The target album B adds to (`None` = the Quick Collection).
     pub target_album: Option<lightcraft_catalog::AlbumId>,
     /// Auto import: files seen in the watched folder and their size then (a file is imported once
     /// its size held between two scans).
     pub auto_import_seen: std::collections::HashMap<String, u64>,
-    /// Keyword sets (⌥1–⌥9 apply the current set's keywords), the one in use (`None` = Recent
-    /// Keywords) and the recently added keywords, newest first.
-    pub keyword_sets: Vec<cmd::keywords::KeywordSet>,
-    pub keyword_set: Option<String>,
-    pub recent_keywords: Vec<String>,
     /// Before/After: the "before" settings chosen per photo (this session; default: the photo's
     /// import state). See `cmd/before.rs`.
     pub before: std::collections::HashMap<PhotoId, Arc<DevelopSettings>>,
@@ -357,19 +323,6 @@ pub struct Session {
     pub slideshow_export: Option<std::sync::Arc<slideshow_export::ExportRun>>,
     /// The last (or running) Build Previews.
     pub preview_build: Option<std::sync::Arc<cmd::previews::PreviewBuild>>,
-    /// Develop defaults applied on import (persisted in prefs.json).
-    pub import_defaults: import::ImportDefaults,
-    /// Disk budget of the library's thumbnail cache in MB (0 = default; persisted in prefs.json).
-    pub cache_mb: u32,
-    /// Slideshow playback settings (`slideshow.playback`; persisted in prefs.json).
-    pub slideshow: slideshow::PlaybackSettings,
-    /// Slideshow slide layout: Layout, Options and Backdrop (`slideshow.layout`; persisted in
-    /// prefs.json).
-    pub slide_layout: slide::SlideSettings,
-    /// Slideshow overlays (identity plate, rating stars, text overlays, watermark).
-    pub slide_overlays: slide_overlay::OverlaySettings,
-    /// Slideshow intro and ending screens (`slideshow.titles`; persisted in prefs.json).
-    pub slide_titles: slide_title::TitleSettings,
     /// Where user slideshow templates are kept (`<config>/slideshow-templates`;
     /// [`Session::with_default_slide_templates`]). `None`: the built-in templates only.
     pub slide_templates_dir: Option<std::path::PathBuf>,
@@ -380,11 +333,6 @@ pub struct Session {
     pub(crate) slide_templates_cache: slide_template::Cache,
     /// The background image the slides last rendered (shared by slide jobs: rendered once).
     pub slide_backdrop: std::sync::Arc<slide::BackdropCache>,
-    /// Where smart previews are kept when not in the library folder (persisted in prefs.json).
-    pub smart_previews_dir: Option<std::path::PathBuf>,
-    /// Untouched Local records of folders not browsed for this many days are forgotten when the
-    /// library opens (0 = never; persisted in prefs.json). See `cmd/browse.rs`.
-    pub forget_local_days: u32,
     /// Adds exported files to Apple Photos ([`apple_photos`]): `/usr/bin/osascript`, installed by
     /// [`Session::with_fs`] on macOS; `None` elsewhere and in sessions without a file system. Tests
     /// put a fake here.
@@ -414,6 +362,7 @@ impl Session {
 
     pub fn new() -> Session {
         Session {
+            prefs: Default::default(),
             library_generation: LIBRARY_GEN.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
             auto_sync: false,
             catalog: Catalog::new(),
@@ -423,7 +372,6 @@ impl Session {
             selection: Selection::default(),
             visible: Vec::new().into(),
             visible_key: None,
-            hold_view: false,
             base: None,
             view_followed: 0,
             view_worked_out: 0,
@@ -466,43 +414,20 @@ impl Session {
             active_spot: None,
             library: None,
             library_identity: Arc::new(()),
-            xmp: sidecar::XmpPrefs::default(),
-            last_export: None,
-            last_merge: Default::default(),
-            export_presets: Vec::new(),
             print: Default::default(),
-            print_templates: Vec::new(),
-            metadata_presets: Vec::new(),
-            filter_presets: Vec::new(),
-            curve_presets: Vec::new(),
-            mask_effects: Vec::new(),
-            mask_tool_effects: Default::default(),
-            label_sets: Vec::new(),
             signatures: Default::default(),
-            lut_profiles: Vec::new(),
             target_album: None,
             auto_import_seen: Default::default(),
-            keyword_sets: Vec::new(),
-            keyword_set: None,
-            recent_keywords: Vec::new(),
             before: Default::default(),
             import_probes: Default::default(),
             folder_changes: None,
             activity: Default::default(),
             preview_build: None,
             slideshow_export: None,
-            import_defaults: import::ImportDefaults::default(),
-            cache_mb: 0,
-            slideshow: slideshow::PlaybackSettings::default(),
-            slide_layout: slide::SlideSettings::default(),
-            slide_overlays: slide_overlay::OverlaySettings::default(),
-            slide_titles: slide_title::TitleSettings::default(),
             slide_templates_dir: None,
             slide_templates_previous: None,
             slide_templates_cache: None,
             slide_backdrop: Default::default(),
-            smart_previews_dir: None,
-            forget_local_days: lightcraft_catalog::DEFAULT_FORGET_DAYS,
             #[cfg(not(target_arch = "wasm32"))]
             apple_photos: None,
             #[cfg(not(target_arch = "wasm32"))]
@@ -566,7 +491,7 @@ impl Session {
         }
         if self.depth == 0 {
             let skip = std::mem::take(&mut self.skip_auto_write);
-            if r.is_ok() && !skip && self.xmp.auto_write && self.interaction.is_none() && self.pending_log.len() > log_start {
+            if r.is_ok() && !skip && self.prefs.xmp.auto_write && self.interaction.is_none() && self.pending_log.len() > log_start {
                 self.auto_write_sidecars_since(log_start);
             }
         }
@@ -1000,7 +925,7 @@ impl Session {
             // or the library takes it out of the view at once, held or not.
             // (only a view that asks something can lose a photo to an edit: the others are queried as ever, at no
             // cost for the hold)
-            let holds = self.hold_view && (asks || self.filter != Filter::default());
+            let holds = self.prefs.hold_view && (asks || self.filter != Filter::default());
             let within = holds.then(|| {
                 if asks {
                     self.view_filter(LibrarySource::All, &Filter::default())
@@ -1148,7 +1073,7 @@ impl Session {
         if self.source == LibrarySource::Missing {
             return None;
         }
-        if self.filter == Filter::default() && !self.hold_view {
+        if self.filter == Filter::default() && !self.prefs.hold_view {
             // nothing narrows the source: what the view lists is all of it, and is counted already (not a view
             // that holds photos that stopped matching: those are not of the source any more)
             let _ = self.visible();

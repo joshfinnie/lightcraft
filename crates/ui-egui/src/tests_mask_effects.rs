@@ -107,13 +107,13 @@ fn effect_menu_right_click_and_delete_asks_first() {
     // the row's actions are commands; delete goes through a confirmation
     h.app.ui.dialog = Some(Dialog::DeleteEffects { names: vec!["01 Dodge".into()] });
     h.step();
-    assert_eq!(h.app.session.mask_effects.len(), 3, "nothing deleted before confirming");
+    assert_eq!(h.app.session.prefs.mask_effects.len(), 3, "nothing deleted before confirming");
     click(&mut h, "button:dialogCancel");
-    assert_eq!(h.app.session.mask_effects.len(), 3);
+    assert_eq!(h.app.session.prefs.mask_effects.len(), 3);
     h.app.ui.dialog = Some(Dialog::DeleteEffects { names: vec!["01 Dodge".into()] });
     h.step();
     req(&mut h, "ui.dialog.confirm", json!({}));
-    assert_eq!(h.app.session.mask_effects.len(), 2);
+    assert_eq!(h.app.session.prefs.mask_effects.len(), 2);
     // Reset Sliders zeroes the mask and forgets the tool's effect
     exec(&mut h, "mask.applyEffect", json!({"name": "12 Sky"}));
     h.step();
@@ -122,7 +122,7 @@ fn effect_menu_right_click_and_delete_asks_first() {
     click(&mut h, "maskEffectMenu:reset");
     h.step();
     assert_eq!(mask(&h).adjust.highlights, 0.0);
-    assert!(h.app.session.mask_tool_effects.is_empty());
+    assert!(h.app.session.prefs.mask_tool_effects.is_empty());
 }
 
 #[test]
@@ -148,7 +148,7 @@ fn save_dialog_picks_sliders_amount_and_brush() {
     let Some(Dialog::SaveEffect { fields, amount, .. }) = &h.app.ui.dialog else { panic!("{:?}", h.app.ui.dialog) };
     assert_eq!((fields.clone(), *amount), (vec!["shadows".to_string(), "texture".into()], true));
     req(&mut h, "ui.dialog.confirm", json!({}));
-    let e = h.app.session.mask_effects.iter().find(|e| e.name == "Lift").expect("saved");
+    let e = h.app.session.prefs.mask_effects.iter().find(|e| e.name == "Lift").expect("saved");
     assert_eq!((e.fields.clone(), e.with_amount, e.adjust.amount), (vec!["shadows".to_string(), "texture".into()], true, 70.0));
     assert!(e.brush.is_none(), "not the brush tool");
 }
@@ -170,9 +170,9 @@ fn manage_window_renames_groups_stars_duplicates_and_deletes() {
     h.step();
     h.step();
     assert!(
-        h.app.session.mask_effects.iter().any(|e| e.name == "12 Sky Darken"),
+        h.app.session.prefs.mask_effects.iter().any(|e| e.name == "12 Sky Darken"),
         "{:?}",
-        h.app.session.mask_effects.iter().map(|e| &e.name).collect::<Vec<_>>()
+        h.app.session.prefs.mask_effects.iter().map(|e| &e.name).collect::<Vec<_>>()
     );
     // duplicate selects the copy; star it; apply it to the mask
     click(&mut h, "button:effectDuplicate");
@@ -181,7 +181,7 @@ fn manage_window_renames_groups_stars_duplicates_and_deletes() {
     assert_eq!(selected, &vec!["12 Sky Darken copy".to_string()]);
     click(&mut h, "effectStar:12 Sky Darken copy");
     h.step();
-    assert!(h.app.session.mask_effects.iter().any(|e| e.name == "12 Sky Darken copy" && e.favorite));
+    assert!(h.app.session.prefs.mask_effects.iter().any(|e| e.name == "12 Sky Darken copy" && e.favorite));
     click(&mut h, "button:effectApply");
     h.step();
     assert_eq!(mask(&h).adjust.highlights, -60.0);
@@ -196,10 +196,10 @@ fn manage_window_renames_groups_stars_duplicates_and_deletes() {
     // delete asks first, inside the window
     click(&mut h, "button:effectDelete");
     h.step();
-    assert_eq!(h.app.session.mask_effects.len(), 4);
+    assert_eq!(h.app.session.prefs.mask_effects.len(), 4);
     click(&mut h, "button:effectDeleteConfirm");
     h.step();
-    assert_eq!(h.app.session.mask_effects.len(), 3);
+    assert_eq!(h.app.session.prefs.mask_effects.len(), 3);
     assert!(matches!(h.app.ui.dialog, Some(Dialog::ManageEffects { .. })), "stays open");
 }
 

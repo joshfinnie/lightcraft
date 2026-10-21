@@ -150,7 +150,7 @@ fn following_an_edit_gives_the_list_worked_out_from_every_photo() {
                 edit(&mut s, &mut dice, &mut ids, album);
                 let followed = s.visible_cloned();
                 let whole = s.visible_in_full();
-                assert_eq!(followed, whole, "source {source}, sort {sort}, filter {filter}, hold {}, edit {step}", s.hold_view);
+                assert_eq!(followed, whole, "source {source}, sort {sort}, filter {filter}, hold {}, edit {step}", s.prefs.hold_view);
                 checked += 1;
             }
         }

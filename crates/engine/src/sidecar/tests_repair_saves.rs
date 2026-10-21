@@ -89,8 +89,8 @@ fn autowrite_repairs_partial_rename_before_merging_foreign_xmp_across_library_sw
                         id = s.catalog.photos().next().unwrap().id;
                         s.selection = crate::Selection::single(id);
                     }
-                    s.xmp.naming = save_naming;
-                    s.xmp.auto_write = true;
+                    s.prefs.xmp.naming = save_naming;
+                    s.prefs.xmp.auto_write = true;
                     s.execute("photo.rate", &json!({"rating": 4})).unwrap();
                     let preferred = sidecar_path(&b.to_string_lossy(), save_naming);
                     assert!(!preferred.exists() && !preferred.with_extension("XMP").exists());
@@ -200,7 +200,7 @@ fn unowned_shared_stem_repair_does_not_block_healthy_jpeg_full_sidecar_save() {
     std::fs::rename(&old, &held).unwrap();
     assert_eq!(s.sidecar_naming(jpeg_id), SidecarNaming::Full);
     s.selection = crate::Selection::single(jpeg_id);
-    s.xmp.auto_write = true;
+    s.prefs.xmp.auto_write = true;
     s.execute("photo.setMeta", &json!({"title": "Healthy JPEG"})).unwrap();
     let full = sidecar_path(&jpeg.to_string_lossy(), SidecarNaming::Full);
     let packet = std::fs::read_to_string(&full).unwrap();

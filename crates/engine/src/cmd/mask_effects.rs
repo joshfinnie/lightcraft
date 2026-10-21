@@ -242,22 +242,22 @@ pub fn menu_order(effects: &[MaskEffect]) -> Vec<(String, Vec<usize>)> {
 
 /// Name of the effect the mask adjustments `a` match, if any (full presets before partial ones).
 pub fn matching_effect(s: &Session, a: &LocalAdjustments) -> Option<String> {
-    let full = s.mask_effects.iter().filter(|e| e.fields.is_empty()).find(|e| e.matches(a));
-    full.or_else(|| s.mask_effects.iter().find(|e| e.matches(a))).map(|e| e.name.clone())
+    let full = s.prefs.mask_effects.iter().filter(|e| e.fields.is_empty()).find(|e| e.matches(a));
+    full.or_else(|| s.prefs.mask_effects.iter().find(|e| e.matches(a))).map(|e| e.name.clone())
 }
 
 fn position(s: &Session, name: &str) -> Option<usize> {
-    s.mask_effects.iter().position(|x| x.name.eq_ignore_ascii_case(name.trim()))
+    s.prefs.mask_effects.iter().position(|x| x.name.eq_ignore_ascii_case(name.trim()))
 }
 
 /// Add or replace (same name, ignoring case) an effect; a replaced one keeps its star.
 pub(crate) fn upsert(s: &mut Session, e: MaskEffect) {
-    match position(s, &e.name).and_then(|i| s.mask_effects.get_mut(i)) {
+    match position(s, &e.name).and_then(|i| s.prefs.mask_effects.get_mut(i)) {
         Some(x) => {
             let favorite = x.favorite || e.favorite;
             *x = MaskEffect { favorite, ..e };
         }
-        None => s.mask_effects.push(e),
+        None => s.prefs.mask_effects.push(e),
     }
 }
 
@@ -355,10 +355,11 @@ pub fn mask_tool(m: &Mask) -> Option<String> {
 /// The adjustments a new mask made with `tool` starts with: the effect last applied to a mask of
 /// that kind (Lightroom carries the chosen effect over to the next mask), else all at 0.
 pub fn new_mask_adjust(s: &Session, tool: &str) -> LocalAdjustments {
-    s.mask_tool_effects
+    s.prefs
+        .mask_tool_effects
         .get(tool)
         .and_then(|name| position(s, name))
-        .and_then(|i| s.mask_effects.get(i))
+        .and_then(|i| s.prefs.mask_effects.get(i))
         .map(|e| super::masks::clamp_local(e.apply(&LocalAdjustments::default())))
         .unwrap_or_default()
 }
@@ -369,11 +370,11 @@ fn list(s: &Session) -> Value {
         .and_then(|id| s.develop_of(id))
         .and_then(|d| s.active_mask.and_then(|mid| d.masks.iter().find(|m| m.id == mid).map(|m| m.adjust)))
         .and_then(|a| matching_effect(s, &a));
-    let groups: Vec<Value> = menu_order(&s.mask_effects)
+    let groups: Vec<Value> = menu_order(&s.prefs.mask_effects)
         .into_iter()
-        .map(|(g, ix)| json!({"name": g, "effects": ix.iter().filter_map(|i| s.mask_effects.get(*i)).map(|e| e.name.clone()).collect::<Vec<_>>()}))
+        .map(|(g, ix)| json!({"name": g, "effects": ix.iter().filter_map(|i| s.prefs.mask_effects.get(*i)).map(|e| e.name.clone()).collect::<Vec<_>>()}))
         .collect();
-    json!({"effects": s.mask_effects, "groups": groups, "current": current, "toolEffects": s.mask_tool_effects})
+    json!({"effects": s.prefs.mask_effects, "groups": groups, "current": current, "toolEffects": s.prefs.mask_tool_effects})
 }
 
 /// Masks on `d` named like one of `names` (ignoring case).
@@ -384,7 +385,7 @@ fn masks_named(d: &DevelopSettings, names: &[String]) -> Vec<u32> {
 fn apply_effect(s: &mut Session, p: ApplyEffect) -> Result<Value> {
     const C: &str = "mask.applyEffect";
     let name = name_of(p.name.as_deref(), "name", C)?;
-    let effect = s.mask_effects.get(effect_index(s, &name, C)?).cloned().ok_or_else(|| bad(C, format!("no effect `{name}`")))?;
+    let effect = s.prefs.mask_effects.get(effect_index(s, &name, C)?).cloned().ok_or_else(|| bad(C, format!("no effect `{name}`")))?;
     let id = s.active().ok_or_else(|| bad(C, "no active photo"))?;
     let d = s.develop_of(id).unwrap_or_default();
     // the masks: `ids`, `all`, else `id` or the selected one
@@ -440,7 +441,7 @@ fn apply_effect(s: &mut Session, p: ApplyEffect) -> Result<Value> {
     if p.remember.unwrap_or(true) {
         for m in d.masks.iter().filter(|m| ids.contains(&m.id)) {
             if let Some(tool) = mask_tool(m) {
-                s.mask_tool_effects.insert(tool, effect.name.clone());
+                s.prefs.mask_tool_effects.insert(tool, effect.name.clone());
             }
         }
         s.save_prefs()?;
@@ -502,7 +503,7 @@ fn update_effect(s: &mut Session, p: SaveEffect) -> Result<Value> {
     let i = effect_index(s, &name, C)?;
     let adjust = selected_mask(s, p.id, C)?.adjust;
     let brush = brush_param(p.brush.as_ref(), C)?;
-    let e = s.mask_effects.get_mut(i).ok_or_else(|| bad(C, format!("no effect `{name}`")))?;
+    let e = s.prefs.mask_effects.get_mut(i).ok_or_else(|| bad(C, format!("no effect `{name}`")))?;
     let mut next = MaskEffect { adjust, extra: Map::new(), ..e.clone() };
     if let Some(f) = p.fields.as_ref().filter(|v| !v.is_null()) {
         next.fields = fields_param(Some(f), &adjust, C)?;
@@ -526,10 +527,10 @@ fn rename_effect(s: &mut Session, p: RenameEffect) -> Result<Value> {
     if position(s, &to).is_some_and(|j| j != i) {
         return Err(bad(C, format!("an effect named `{to}` exists already")));
     }
-    if let Some(e) = s.mask_effects.get_mut(i) {
+    if let Some(e) = s.prefs.mask_effects.get_mut(i) {
         e.name = to.clone();
     }
-    for v in s.mask_tool_effects.values_mut() {
+    for v in s.prefs.mask_tool_effects.values_mut() {
         if v.eq_ignore_ascii_case(&name) {
             *v = to.clone();
         }
@@ -549,13 +550,13 @@ fn free_name(s: &Session, base: &str) -> String {
 fn duplicate_effect(s: &mut Session, p: RenameEffect) -> Result<Value> {
     const C: &str = "mask.duplicateEffect";
     let name = name_of(p.name.as_deref(), "name", C)?;
-    let e = s.mask_effects.get(effect_index(s, &name, C)?).cloned().ok_or_else(|| bad(C, format!("no effect `{name}`")))?;
+    let e = s.prefs.mask_effects.get(effect_index(s, &name, C)?).cloned().ok_or_else(|| bad(C, format!("no effect `{name}`")))?;
     let to = match p.to.as_deref().map(str::trim).filter(|t| !t.is_empty()) {
         Some(t) if position(s, t).is_some() => return Err(bad(C, format!("an effect named `{t}` exists already"))),
         Some(t) => t.to_string(),
         None => free_name(s, &format!("{} copy", e.name)),
     };
-    s.mask_effects.push(MaskEffect { name: to.clone(), favorite: false, ..e });
+    s.prefs.mask_effects.push(MaskEffect { name: to.clone(), favorite: false, ..e });
     s.save_prefs()?;
     let mut out = list(s);
     out["name"] = json!(to);
@@ -571,8 +572,8 @@ fn delete_effect(s: &mut Session, p: Effects) -> Result<Value> {
     if let Some(missing) = names.iter().find(|n| position(s, n).is_none()) {
         return Err(bad(C, format!("no effect `{missing}`")));
     }
-    s.mask_effects.retain(|x| !names.iter().any(|n| n.eq_ignore_ascii_case(&x.name)));
-    s.mask_tool_effects.retain(|_, v| !names.iter().any(|n| n.eq_ignore_ascii_case(v)));
+    s.prefs.mask_effects.retain(|x| !names.iter().any(|n| n.eq_ignore_ascii_case(&x.name)));
+    s.prefs.mask_tool_effects.retain(|_, v| !names.iter().any(|n| n.eq_ignore_ascii_case(v)));
     s.save_prefs()?;
     Ok(list(s))
 }
@@ -589,7 +590,7 @@ fn favorite_effect(s: &mut Session, p: Effects) -> Result<Value> {
     }
     let want = p.favorite;
     for i in idx {
-        if let Some(e) = s.mask_effects.get_mut(i) {
+        if let Some(e) = s.prefs.mask_effects.get_mut(i) {
             e.favorite = want.unwrap_or(!e.favorite);
         }
     }
@@ -609,9 +610,9 @@ fn set_group(s: &mut Session, p: Effects) -> Result<Value> {
         idx.push(effect_index(s, n, C)?);
     }
     // an existing group's spelling wins
-    let group = s.mask_effects.iter().map(|e| &e.group).find(|g| g.eq_ignore_ascii_case(&group)).cloned().unwrap_or(group);
+    let group = s.prefs.mask_effects.iter().map(|e| &e.group).find(|g| g.eq_ignore_ascii_case(&group)).cloned().unwrap_or(group);
     for i in idx {
-        if let Some(e) = s.mask_effects.get_mut(i) {
+        if let Some(e) = s.prefs.mask_effects.get_mut(i) {
             e.group = group.clone();
         }
     }
@@ -624,7 +625,7 @@ fn rename_group(s: &mut Session, p: RenameGroup) -> Result<Value> {
     let group = name_of(p.group.as_deref(), "group", C)?;
     let to = p.to.as_deref().map(|g| g.trim().to_string()).ok_or_else(|| bad(C, "missing `to` (\"\" = ungroup)"))?;
     let mut n = 0;
-    for e in s.mask_effects.iter_mut().filter(|e| e.group.eq_ignore_ascii_case(&group)) {
+    for e in s.prefs.mask_effects.iter_mut().filter(|e| e.group.eq_ignore_ascii_case(&group)) {
         e.group = to.clone();
         n += 1;
     }
@@ -641,15 +642,15 @@ fn tool_effect(s: &mut Session, p: ToolEffect) -> Result<Value> {
     match p.name.as_deref().map(str::trim).filter(|n| !n.is_empty()) {
         Some(n) => {
             let i = effect_index(s, n, C)?;
-            let name = s.mask_effects.get(i).map(|e| e.name.clone()).unwrap_or_default();
-            s.mask_tool_effects.insert(tool, name);
+            let name = s.prefs.mask_effects.get(i).map(|e| e.name.clone()).unwrap_or_default();
+            s.prefs.mask_tool_effects.insert(tool, name);
         }
         None => {
-            s.mask_tool_effects.remove(&tool);
+            s.prefs.mask_tool_effects.remove(&tool);
         }
     }
     s.save_prefs()?;
-    Ok(json!({"toolEffects": s.mask_tool_effects}))
+    Ok(json!({"toolEffects": s.prefs.mask_tool_effects}))
 }
 
 pub fn specs() -> Vec<CommandSpec> {

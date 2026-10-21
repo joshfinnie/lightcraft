@@ -397,7 +397,7 @@ fn keyword_sets_and_recent_keywords() {
     assert!(s.execute("keyword.saveSet", &json!({"name": "Recent Keywords"})).is_err(), "reserved");
     s.execute("keyword.useSet", &json!({"name": "Recent Keywords"})).unwrap();
     s.execute("keyword.useSet", &json!({"name": "wedding"})).unwrap();
-    assert_eq!(s.keyword_set.as_deref(), Some("Wedding"));
+    assert_eq!(s.prefs.keyword_set.as_deref(), Some("Wedding"));
     s.execute("keyword.deleteSet", &json!({"name": "Wedding"})).unwrap();
     assert_eq!(s.execute("keyword.sets", &json!({})).unwrap()["current"], "Recent Keywords");
 }

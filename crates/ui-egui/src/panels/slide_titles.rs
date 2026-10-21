@@ -67,8 +67,8 @@ fn slider(
     register(ui.ctx(), format!("slider:{id}"), r.rect);
     let p = json!({ t.id(): { key: v / k } });
     if r.changed() {
-        if let Ok(next) = app.session.slide_titles.merged(&p) {
-            app.session.slide_titles = next;
+        if let Ok(next) = app.session.prefs.slide_titles.merged(&p) {
+            app.session.prefs.slide_titles = next;
         }
         set_preview_shows(ui.ctx(), Some(t));
     }
@@ -142,7 +142,7 @@ fn screen(app: &mut LightcraftApp, ui: &mut egui::Ui, t: &Tokens, title: Title, 
     });
     let mut own = s.duration.is_some();
     if check(ui, &format!("settings.{name}OwnDuration"), &mut own, "Own duration (off: the slide duration)") {
-        let d = if own { json!(app.session.slideshow.slide_duration) } else { Value::Null };
+        let d = if own { json!(app.session.prefs.slideshow.slide_duration) } else { Value::Null };
         set(app, ui.ctx(), title, "duration", d);
     }
     if let Some(d) = s.duration {
@@ -152,7 +152,7 @@ fn screen(app: &mut LightcraftApp, ui: &mut egui::Ui, t: &Tokens, title: Title, 
 
 /// The Titles section.
 pub fn sections(app: &mut LightcraftApp, ui: &mut egui::Ui, t: &Tokens) {
-    let s = app.session.slide_titles.clone();
+    let s = app.session.prefs.slide_titles.clone();
     heading(ui, t, "Titles");
     screen(app, ui, t, Title::Intro, &s.intro);
     screen(app, ui, t, Title::Ending, &s.ending);
@@ -161,7 +161,7 @@ pub fn sections(app: &mut LightcraftApp, ui: &mut egui::Ui, t: &Tokens) {
         t,
         "The intro plays once before the first photo; the ending after the last photo when Repeat is off. The identity plate is the one set under Overlays. Titles fade like slides and random order never moves them.",
     );
-    let warnings = s.warnings(&app.session.slide_overlays);
+    let warnings = s.warnings(&app.session.prefs.slide_overlays);
     for w in warnings {
         ui.label(egui::RichText::new(w).size(11.0).color(t.caution));
     }

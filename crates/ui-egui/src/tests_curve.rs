@@ -143,7 +143,7 @@ fn point_curve_preset_dropdown_applies_and_saves() {
     }
     let r = crate::panels::dialogs::confirm_dialog(&mut h.app, &dlg);
     assert!(r.is_ok(), "{r:?}");
-    assert_eq!(h.app.session.curve_presets.len(), 1);
+    assert_eq!(h.app.session.prefs.curve_presets.len(), 1);
     // Linear from the dropdown flattens every channel
     click_widget(&mut h, "dropdown:curvePreset", 1);
     click_widget(&mut h, "curvePreset:Linear", 1);

@@ -243,7 +243,7 @@ pub fn builtin_presets() -> Vec<CurvePreset> {
 /// Built-in presets, then the user's.
 pub fn all_presets(s: &Session) -> Vec<CurvePreset> {
     let mut v = builtin_presets();
-    v.extend(s.curve_presets.iter().cloned());
+    v.extend(s.prefs.curve_presets.iter().cloned());
     v
 }
 
@@ -258,9 +258,9 @@ fn is_builtin_name(name: &str) -> bool {
 
 /// Add or replace (same name, ignoring case) a user preset.
 fn upsert(s: &mut Session, p: CurvePreset) {
-    match s.curve_presets.iter_mut().find(|x| x.name.eq_ignore_ascii_case(&p.name)) {
+    match s.prefs.curve_presets.iter_mut().find(|x| x.name.eq_ignore_ascii_case(&p.name)) {
         Some(x) => *x = p,
-        None => s.curve_presets.push(p),
+        None => s.prefs.curve_presets.push(p),
     }
 }
 
@@ -307,9 +307,9 @@ fn delete_preset(s: &mut Session, p: PresetName) -> Result<Value> {
     if is_builtin_name(&name) {
         return Err(bad(C, "built-in presets can't be deleted"));
     }
-    let n = s.curve_presets.len();
-    s.curve_presets.retain(|x| !x.name.eq_ignore_ascii_case(&name));
-    if n == s.curve_presets.len() {
+    let n = s.prefs.curve_presets.len();
+    s.prefs.curve_presets.retain(|x| !x.name.eq_ignore_ascii_case(&name));
+    if n == s.prefs.curve_presets.len() {
         return Err(bad(C, format!("no curve preset `{name}`")));
     }
     s.save_prefs()?;
@@ -379,7 +379,7 @@ fn export_presets(s: &mut Session, p: ExportPresets) -> Result<Value> {
     let names = p.names;
     let chosen: Vec<CurvePreset> = match &names {
         Some(n) => all_presets(s).into_iter().filter(|x| n.iter().any(|m| m.eq_ignore_ascii_case(&x.name))).collect(),
-        None => s.curve_presets.clone(),
+        None => s.prefs.curve_presets.clone(),
     };
     if chosen.is_empty() {
         return Err(bad(C, "no curve presets to export (save one first, or pass names)"));

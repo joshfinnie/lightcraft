@@ -75,7 +75,7 @@ fn import(s: &mut Session, p: Import) -> Result<Value> {
                         }
                         // the profile it names (issue #1001): one the user imported, or ours for a basic one
                         let mut profile = Value::Null;
-                        if let Some((r, _)) = crate::profile_refs::apply(&mut it.preset.settings, &s.lut_profiles) {
+                        if let Some((r, _)) = crate::profile_refs::apply(&mut it.preset.settings, &s.prefs.lut_profiles) {
                             let look = it.preset.settings["profile"]["look"].clone();
                             it.unmapped.retain(|u| u != "Look");
                             it.unmapped.extend(crate::profile_refs::report(&look, &r));

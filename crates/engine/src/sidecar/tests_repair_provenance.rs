@@ -82,7 +82,7 @@ fn partial(style: SidecarNaming, upper_stem: bool, upper_full: bool, shared: boo
         std::fs::write(dir.join("a.CR3"), b"shared physical sibling").unwrap();
     }
     let mut s = session(&a);
-    s.xmp.naming = style;
+    s.prefs.xmp.naming = style;
     let rollback = style == SidecarNaming::Full;
     let faults = Faults(vec![full_a.clone(), if rollback { stem_b.clone() } else { b.clone() }]);
     let plans = s.plan_rename_with(&faults, &[PhotoId(1)], "Trip", 1);
@@ -130,7 +130,7 @@ fn replaced_and_in_place_companions_block_save_autowrite_retry_and_file_history(
                     let queue = queued(&f.s);
                     let source = std::fs::read(&f.source).unwrap();
                     let before = f.s.catalog.photo(PhotoId(1)).unwrap().source.clone();
-                    f.s.xmp.auto_write = true;
+                    f.s.prefs.xmp.auto_write = true;
                     f.s.execute("photo.setMeta", &json!({"title": "Fresh", "addKeywords": ["café"]})).unwrap();
                     assert_eq!(queued(&f.s), queue, "AutoWrite must retain the exact repair");
                     assert_eq!(std::fs::read(&f.companion).unwrap(), foreign);
@@ -305,7 +305,7 @@ fn replaced_copy_keeps_its_shared_original_and_repair_source_byte_identical() {
     let held = f.dir.join("copied-original-held.xmp");
     let (original, foreign) = replace(&f.companion, &held, false);
     let queue = queued(&f.s);
-    f.s.xmp.auto_write = true;
+    f.s.prefs.xmp.auto_write = true;
     f.s.execute("photo.setMeta", &json!({"title": "Fresh"})).unwrap();
     assert!(!save(&mut f.s)["failed"].as_array().unwrap().is_empty());
     assert!(f.s.repair_sidecars_with(&RealFs).is_err());
@@ -361,7 +361,7 @@ fn detached_history_entry_is_checked_before_unrelated_global_retirement() {
     let image = lightcraft_raster::Rgba8::from_fn(4, 3, |_, _| [40, 80, 120, 255]);
     let png = lightcraft_codecs::encode_png(&lightcraft_codecs::EncodeImage::rgba8(&image), &Default::default()).unwrap();
     let mut s = Session::new();
-    s.xmp.naming = SidecarNaming::Stem;
+    s.prefs.xmp.naming = SidecarNaming::Stem;
     let mut native = Vec::new();
     for (i, name) in ["first", "second"].into_iter().enumerate() {
         let dir = root.join(name);

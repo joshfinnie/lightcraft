@@ -49,9 +49,9 @@ fn slider(app: &mut LightcraftApp, ui: &mut egui::Ui, id: &str, key: &str, value
         Unit::Degrees => v,
     };
     if r.changed()
-        && let Ok(next) = app.session.slide_layout.merged(&json!({ key: value }))
+        && let Ok(next) = app.session.prefs.slide_layout.merged(&json!({ key: value }))
     {
-        app.session.slide_layout = next;
+        app.session.prefs.slide_layout = next;
     }
     if r.drag_stopped() || (r.changed() && !r.dragged()) {
         set(app, json!({ key: value }));
@@ -79,7 +79,7 @@ fn toggle(app: &mut LightcraftApp, ui: &mut egui::Ui, id: &str, key: &str, value
 
 /// The Layout, Options and Backdrop sections.
 pub fn sections(app: &mut LightcraftApp, ui: &mut egui::Ui, t: &Tokens) {
-    let s = app.session.slide_layout.clone();
+    let s = app.session.prefs.slide_layout.clone();
 
     heading(ui, t, "Layout");
     let linked = toggle(app, ui, "slideshowLinkMargins", "linkMargins", s.link_margins, "Link all margins");

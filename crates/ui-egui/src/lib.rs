@@ -1140,7 +1140,7 @@ impl LightcraftApp {
         // auto import: list the watched folder every few seconds (on a worker thread: it may be on
         // a network share), then import what's new like any import (also on a worker thread)
         #[cfg(not(target_arch = "wasm32"))]
-        if let Some(folder) = self.session.import_defaults.auto_folder.clone() {
+        if let Some(folder) = self.session.prefs.import_defaults.auto_folder.clone() {
             const LABEL: &str = "Auto Import";
             let now = ctx.input(|i| i.time);
             if now - self.ui.auto_import_at >= 3.0
@@ -1203,7 +1203,7 @@ impl LightcraftApp {
         }
         // Settings → Import: open the import review when a camera or card is connected
         #[cfg(not(target_arch = "wasm32"))]
-        if self.session.import_defaults.show_on_card {
+        if self.session.prefs.import_defaults.show_on_card {
             if let Some(now) = lightcraft_engine::devices::devices_scanned() {
                 import::cards_seen(self, now);
             }

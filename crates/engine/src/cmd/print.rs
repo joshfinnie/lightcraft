@@ -347,7 +347,7 @@ fn export_pdf(s: &mut Session, p: ExportPdf) -> Result<Value> {
 // ---- templates ------------------------------------------------------------------------------
 
 fn template_list(s: &Session) -> Value {
-    json!({"templates": s.print_templates.iter().map(|t| json!({"name": t.name, "style": t.settings.pointer("/layout/style"), "settings": t.settings})).collect::<Vec<_>>()})
+    json!({"templates": s.prefs.print_templates.iter().map(|t| json!({"name": t.name, "style": t.settings.pointer("/layout/style"), "settings": t.settings})).collect::<Vec<_>>()})
 }
 
 fn template_name(p: &TemplateName, id: &str) -> Result<String> {
@@ -358,13 +358,13 @@ fn template_save(s: &mut Session, p: TemplateName) -> Result<Value> {
     const ID: &str = "print.template.save";
     let name = template_name(&p, ID)?;
     let t = PrintTemplate::new(&name, &s.print).map_err(|e| bad(ID, e))?;
-    match s.print_templates.iter_mut().find(|x| x.name.eq_ignore_ascii_case(&name)) {
+    match s.prefs.print_templates.iter_mut().find(|x| x.name.eq_ignore_ascii_case(&name)) {
         Some(x) => *x = t,
         None => {
-            if s.print_templates.len() >= MAX_TEMPLATES {
+            if s.prefs.print_templates.len() >= MAX_TEMPLATES {
                 return Err(bad(ID, format!("at most {MAX_TEMPLATES} templates; delete one first")));
             }
-            s.print_templates.push(t);
+            s.prefs.print_templates.push(t);
         }
     }
     s.save_prefs()?;
@@ -375,6 +375,7 @@ fn template_apply(s: &mut Session, p: TemplateName) -> Result<Value> {
     const ID: &str = "print.template.apply";
     let name = template_name(&p, ID)?;
     let t = s
+        .prefs
         .print_templates
         .iter()
         .find(|x| x.name.eq_ignore_ascii_case(&name))
@@ -386,9 +387,9 @@ fn template_apply(s: &mut Session, p: TemplateName) -> Result<Value> {
 fn template_delete(s: &mut Session, p: TemplateName) -> Result<Value> {
     const ID: &str = "print.template.delete";
     let name = template_name(&p, ID)?;
-    let before = s.print_templates.len();
-    s.print_templates.retain(|x| !x.name.eq_ignore_ascii_case(&name));
-    if s.print_templates.len() == before {
+    let before = s.prefs.print_templates.len();
+    s.prefs.print_templates.retain(|x| !x.name.eq_ignore_ascii_case(&name));
+    if s.prefs.print_templates.len() == before {
         return Err(bad(ID, format!("no print template `{name}`")));
     }
     s.save_prefs()?;

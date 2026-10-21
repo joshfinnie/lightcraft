@@ -808,7 +808,7 @@ pub(crate) fn app_discord(app: &mut LightcraftApp, c: &Call, _: NoParams) -> Res
 }
 
 pub(crate) fn app_export_previous(app: &mut LightcraftApp, _: &Call, _: NoParams) -> Result<Value, String> {
-    match app.session.last_export.clone() {
+    match app.session.prefs.last_export.clone() {
         Some(prev) => crate::control::export_active(app, &lightcraft_engine::export::ExportOptions::known_keys_only(&prev)),
         None => Err("nothing exported yet — use Export…".into()),
     }

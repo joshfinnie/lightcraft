@@ -63,11 +63,12 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui, id: PhotoId) {
         ));
     }
     // imported LUT profile groups
-    let mut lut_groups: Vec<String> = app.session.lut_profiles.iter().map(|p| p.group.clone()).collect();
+    let mut lut_groups: Vec<String> = app.session.prefs.lut_profiles.iter().map(|p| p.group.clone()).collect();
     lut_groups.sort_unstable();
     lut_groups.dedup();
     for g in &lut_groups {
-        let profiles = app.session.lut_profiles.iter().filter(|p| &p.group == g).map(|p| (p.id.clone(), p.name.clone(), p.group.clone())).collect();
+        let profiles =
+            app.session.prefs.lut_profiles.iter().filter(|p| &p.group == g).map(|p| (p.id.clone(), p.name.clone(), p.group.clone())).collect();
         sections.push((g.as_str(), "", true, profiles));
     }
     for (title, tag, imported, list) in sections {
