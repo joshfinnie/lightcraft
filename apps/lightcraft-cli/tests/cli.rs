@@ -114,6 +114,33 @@ fn calibrate_reads_raf_inputs_and_reports_bad_files() {
     assert!(!out.join("X-T4.json").exists(), "bad input must not produce a profile");
 }
 
+/// Two links from a folder back to itself made the walk branch twice per level, to its depth
+/// limit: 2^32 listings. A linked folder is walked once, so this ends at once.
+#[cfg(unix)]
+#[test]
+fn calibrate_walks_a_folder_linked_to_itself_once() {
+    let dir = tmp("loop");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("a.RAF"), b"FUJIFILMCCD-RAW").unwrap();
+    for name in ["x", "y"] {
+        let _ = std::fs::remove_file(dir.join(name));
+        std::os::unix::fs::symlink(&dir, dir.join(name)).unwrap();
+    }
+    let out = tmp("loop-profiles");
+    let mut child = Command::new(BIN).args(["calibrate", "--out"]).arg(&out).arg(&dir).stderr(Stdio::piped()).spawn().unwrap();
+    let start = std::time::Instant::now();
+    while child.try_wait().unwrap().is_none() {
+        if start.elapsed() > std::time::Duration::from_secs(30) {
+            child.kill().unwrap();
+            panic!("calibrate kept walking a folder linked to itself");
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    let mut stderr = String::new();
+    std::io::Read::read_to_string(&mut child.stderr.take().unwrap(), &mut stderr).unwrap();
+    assert!(stderr.contains("1 of 1 raw files"), "{stderr}");
+}
+
 fn mean(path: &std::path::Path) -> f64 {
     let d = lightcraft_codecs::decode(&std::fs::read(path).unwrap(), Default::default()).unwrap();
     let img = d.to_srgb8();

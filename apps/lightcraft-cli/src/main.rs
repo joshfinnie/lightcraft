@@ -22,7 +22,7 @@ use std::io::Write;
 use std::path::Path;
 use std::process::ExitCode;
 
-use lightcraft_engine::Session;
+use lightcraft_engine::{Session, walk};
 use lightcraft_mcp::{Backend, DEFAULT_ADDR, Headless, Remote, Server, expand_paths};
 use serde_json::{Value, json};
 
@@ -187,27 +187,22 @@ fn main() -> ExitCode {
     }
 }
 
-/// Raw files below `path` (or `path` itself), skipping hidden and NAS metadata folders.
-fn raw_files(path: &Path, out: &mut Vec<std::path::PathBuf>, depth: usize) {
+/// Raw files below `path` (or `path` itself), skipping hidden and NAS metadata (`@…`) folders.
+/// The walk is the bounded one ([`walk::files_in`]): a folder reached through links is listed
+/// once. Returns whether it stopped at a bound.
+fn raw_files(path: &Path, out: &mut Vec<std::path::PathBuf>) -> bool {
     let is_raw =
         |p: &Path| p.extension().and_then(|e| e.to_str()).is_some_and(|e| ["arw", "nef", "nrw", "raf"].iter().any(|x| e.eq_ignore_ascii_case(x)));
     if path.is_file() {
         if is_raw(path) {
             out.push(path.to_path_buf());
         }
-        return;
+        return false;
     }
-    let Ok(entries) = std::fs::read_dir(path) else { return };
-    if depth > 32 {
-        return;
-    }
-    for entry in entries.flatten() {
-        let name = entry.file_name();
-        if name.to_string_lossy().starts_with(['.', '@']) {
-            continue;
-        }
-        raw_files(&entry.path(), out, depth + 1);
-    }
+    let nas_metadata = |p: &Path| p.strip_prefix(path).is_ok_and(|rel| rel.iter().any(|c| c.to_string_lossy().starts_with('@')));
+    let walked = walk::files_in(path, None, walk::Limits::default(), |p| is_raw(p) && !nas_metadata(p));
+    out.extend(walked.files);
+    walked.truncated
 }
 
 fn calibrate(args: &[String]) -> Result<(), String> {
@@ -229,7 +224,9 @@ fn calibrate(args: &[String]) -> Result<(), String> {
     }
     let mut files = Vec::new();
     for input in &inputs {
-        raw_files(Path::new(input), &mut files, 0);
+        if raw_files(Path::new(input), &mut files) {
+            eprintln!("calibrate: {input}: stopped at the walk's depth or size limit; some raw files may be left out");
+        }
     }
     files.sort();
     files.dedup();
