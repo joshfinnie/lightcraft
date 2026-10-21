@@ -1,5 +1,5 @@
-# Quick static checks for the release pipeline (seconds, no Rust build): workflow syntax,
-# packaging shell/PowerShell scripts, and the Linux desktop/AppStream/Flatpak metadata.
+# Quick static checks of the packaging (seconds, no Rust build): the Linux desktop/AppStream/Flatpak
+# metadata, and the Windows installer's install-folder search.
 name: Packaging lint
 
 on:
@@ -18,11 +18,13 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  lint:
-    # Intentionally tracked at @main (not SHA-pinned) so org-wide CI improvements, security fixes, and build optimizations propagate without PR churn across all craftapp repos.
-    uses: storytold/craft-common-actions/.github/workflows/packaging-lint.yml@main
-    with:
-      extra-checks-script: packaging/check-app-specific.sh
+  app-specific:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: App-specific packaging checks
+        run: bash packaging/check-app-specific.sh
 
   windows-install-folder:
     runs-on: windows-latest
