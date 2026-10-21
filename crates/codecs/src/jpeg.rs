@@ -17,6 +17,8 @@ pub(crate) struct Markers {
     pub sof: u8,
     /// Number of components in the first scan (< `components` for non-interleaved sequential files).
     pub first_scan_components: u8,
+    /// Offset of the first SOS marker (0: none): the entropy-coded data follows it.
+    pub scan_offset: usize,
     pub exif: Option<Vec<u8>>,
     /// Offset of the EXIF TIFF header within the file.
     pub exif_offset: usize,
@@ -65,6 +67,7 @@ pub(crate) fn parse_markers(b: &[u8]) -> Option<Markers> {
         }
         if marker == 0xDA {
             m.first_scan_components = b.get(p + 4).copied().unwrap_or(0);
+            m.scan_offset = p;
             break;
         }
         let len = u16::from_be_bytes([b[p + 2], b[p + 3]]) as usize;
@@ -178,6 +181,7 @@ pub(crate) fn decode_with_fallback(bytes: &[u8], opts: &DecodeOptions, fallback:
         return Err(Error::Malformed(F, "no frame header".into()));
     }
     check_size(F, m.width as u64, m.height as u64, opts)?;
+    check_scan_holds_frame(bytes, &m)?;
     let scale_to = opts.max_size.filter(|&(mw, mh)| mw > 0 && mh > 0 && (m.width >= mw.saturating_mul(2) || m.height >= mh.saturating_mul(2)));
     // zune-jpeg handles the common cases fastest; jpeg-decoder covers DCT scaling, CMYK/YCCK,
     // 12-bit, non-interleaved sequential scans (which zune-jpeg 0.5 mis-decodes with subsampling)
@@ -194,6 +198,24 @@ pub(crate) fn decode_with_fallback(bytes: &[u8], opts: &DecodeOptions, fallback:
     let hint = fallback.filter(|_| m.icc.is_none() && m.exif.is_none()).map(|space| crate::SourceSpace::named(space, crate::SpaceOrigin::Container));
     let meta = Meta { icc: m.icc, exif: m.exif, xmp: m.xmp, hint, ..Default::default() };
     finish(F, raw, meta, (m.width, m.height), opts)
+}
+
+/// A sequential Huffman-coded frame (baseline, extended, lossless) spends at least 2 bits on every
+/// 8×8 block of its full-resolution component (the shortest DC code and end-of-block). The decoders
+/// fill what a cut-short scan lacks, so a header claiming a large frame over a few hundred bytes of
+/// data cost a full-size buffer and its colour conversion (an 842-byte file: 67 MP, over a gigabyte).
+/// A file holding under 1/64 of that least amount is refused; a photo cut short still opens.
+/// Progressive frames are not judged: an end-of-band run covers thousands of blocks in one code.
+fn check_scan_holds_frame(bytes: &[u8], m: &Markers) -> Result<()> {
+    if !matches!(m.sof, 0xC0 | 0xC1 | 0xC3) || m.scan_offset == 0 {
+        return Ok(());
+    }
+    let blocks = u64::from(m.width).div_ceil(8).saturating_mul(u64::from(m.height).div_ceil(8));
+    let have = bytes.len().saturating_sub(m.scan_offset) as u64;
+    if have.saturating_mul(256) < blocks {
+        return Err(Error::Malformed(F, format!("{have} bytes of image data cannot hold a {} × {} picture", m.width, m.height)));
+    }
+    Ok(())
 }
 
 fn decode_zune(bytes: &[u8], m: &Markers) -> Result<Raw> {
@@ -384,6 +406,27 @@ pub(crate) fn decode_codes8(bytes: &[u8]) -> Result<(usize, usize, usize, Vec<u8
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A baseline header claiming 64000 × 1000 over the scan of a 16 × 16 image decoded to a 64 MP
+    /// grey frame (an 842-byte fuzzed file took 14 s); a real photo cut short still opens.
+    #[test]
+    fn a_scan_far_too_short_for_its_frame_is_refused() {
+        use crate::{ChromaSubsampling, EncodeImage, Samples, encode_jpeg};
+        let jpeg = |w: u32, h: u32| {
+            let px: Vec<u8> = (0..w * h * 3).map(|i| (i * 37 % 251) as u8).collect();
+            encode_jpeg(&EncodeImage::new(w, h, 3, Samples::U8(&px)), 90, ChromaSubsampling::S420, &Default::default()).unwrap()
+        };
+        let mut claim = jpeg(16, 16);
+        let sof = claim.windows(2).position(|m| m == [0xFF, 0xC0]).unwrap();
+        claim[sof + 5..sof + 9].copy_from_slice(&[0x03, 0xE8, 0xFA, 0x00]);
+        let t0 = std::time::Instant::now();
+        let err = crate::decode(&claim, DecodeOptions::default()).map(|_| ()).unwrap_err().to_string();
+        assert!(err.contains("cannot hold a 64000 × 1000 picture"), "{err}");
+        assert!(t0.elapsed() < std::time::Duration::from_secs(1));
+        let photo = jpeg(512, 384);
+        let cut = &photo[..photo.len() / 3];
+        assert_eq!(crate::decode(cut, DecodeOptions::default()).unwrap().source_width, 512);
+    }
 
     #[test]
     fn container_fallback_matches_tagged_jpeg_before_resizing_and_keeps_own_metadata() {
