@@ -1339,23 +1339,23 @@ pub(crate) fn view_overlay(app: &LightcraftApp, d: &DevelopSettings) -> lightcra
     }
     // Show every visible mask's region at once (Ctrl+Shift+O / Cmd+Shift+O), ahead of the selected-mask overlay
     // so the shortcut is not shadowed by the always-on single-mask overlay.
-    if app.ui.right == RightPanel::Masking && app.ui.mask_overlay_all && d.masks.iter().any(|m| m.visible && !m.components.is_empty()) {
+    if app.ui.right == RightPanel::Masking && app.ui.overlay.all && d.masks.iter().any(|m| m.visible && !m.components.is_empty()) {
         return Overlay::AllMasks {
-            view: MaskView::parse(&app.ui.mask_overlay_mode).unwrap_or_default(),
-            color: app.ui.mask_overlay_color,
-            opacity: app.ui.mask_overlay_opacity.clamp(0.0, 100.0).round() as u8,
+            view: MaskView::parse(&app.ui.overlay.mode).unwrap_or_default(),
+            color: app.ui.overlay.color,
+            opacity: app.ui.overlay.opacity.clamp(0.0, 100.0).round() as u8,
         };
     }
     if app.ui.right == RightPanel::Masking
-        && app.ui.mask_overlay
+        && app.ui.overlay.on
         && let Some(m) = app.session.active_mask.and_then(|id| d.masks.iter().find(|m| m.id == id))
         && !m.components.is_empty()
     {
         return Overlay::Mask {
             id: m.id.min(u16::MAX as u32) as u16,
-            view: MaskView::parse(&app.ui.mask_overlay_mode).unwrap_or_default(),
-            color: app.ui.mask_overlay_color,
-            opacity: app.ui.mask_overlay_opacity.clamp(0.0, 100.0).round() as u8,
+            view: MaskView::parse(&app.ui.overlay.mode).unwrap_or_default(),
+            color: app.ui.overlay.color,
+            opacity: app.ui.overlay.opacity.clamp(0.0, 100.0).round() as u8,
         };
     }
     if app.ui.right == RightPanel::Remove && app.ui.visualize_spots {
@@ -2050,7 +2050,7 @@ fn mask_overlay(app: &mut LightcraftApp, ui: &mut egui::Ui, resp: &egui::Respons
                 }
                 _ => {}
             }
-            if app.ui.mask_pins
+            if app.ui.overlay.pins
                 && mode.shows(sel, live)
                 && let Some(at) = component_pin(&c.shape)
             {
@@ -2114,17 +2114,17 @@ fn mask_overlay(app: &mut LightcraftApp, ui: &mut egui::Ui, resp: &egui::Respons
     }
     // brush tool
     if app.ui.tool == "brush" {
-        let r = (app.ui.brush_size as f64 * long) as f32;
+        let r = (app.ui.brush.size as f64 * long) as f32;
         if let Some(h) = resp.hover_pos() {
             ui.ctx().set_cursor_icon(egui::CursorIcon::None);
             p.circle_stroke(h, r, Stroke::new(1.0, Color32::WHITE));
-            p.circle_stroke(h, r * (1.0 - app.ui.brush_feather / 100.0).max(0.05), Stroke::new(1.0, Color32::from_white_alpha(120)));
+            p.circle_stroke(h, r * (1.0 - app.ui.brush.feather / 100.0).max(0.05), Stroke::new(1.0, Color32::from_white_alpha(120)));
         }
         if let Some(q) = resp.interact_pointer_pos()
             && (resp.drag_started() || resp.dragged() || resp.clicked())
         {
             let n = map.norm(q);
-            let force = if app.ui.brush_pressure { ui.input(pen_force) } else { None };
+            let force = if app.ui.brush.pressure { ui.input(pen_force) } else { None };
             match &mut app.gesture {
                 // a held, unmoving pointer records nothing: coverage builds by passes, not time (#518)
                 Some(Gesture::Brush { points, .. }) if points.last() == Some(&n) => {}
@@ -2143,15 +2143,15 @@ fn mask_overlay(app: &mut LightcraftApp, ui: &mut egui::Ui, resp: &egui::Respons
         // stroke's dab spacing, feather and flow (issue #517)
         if let Some(Gesture::Brush { points, pressure }) = &app.gesture {
             let screen: Vec<Pos2> = points.iter().map(|q| map.screen(*q)).collect();
-            let opacity = if app.ui.mask_overlay && app.ui.mask_overlay_opacity > 0.0 { app.ui.mask_overlay_opacity / 100.0 } else { 110.0 / 255.0 };
+            let opacity = if app.ui.overlay.on && app.ui.overlay.opacity > 0.0 { app.ui.overlay.opacity / 100.0 } else { 110.0 / 255.0 };
             let params = crate::brush_live::LiveParams {
                 clip,
                 scale: ui.ctx().pixels_per_point(),
                 r,
-                hard: r * (1.0 - (app.ui.brush_feather / 100.0).clamp(0.0, 1.0)),
-                flow: (app.ui.brush_flow / 100.0).clamp(0.0, 1.0),
+                hard: r * (1.0 - (app.ui.brush.feather / 100.0).clamp(0.0, 1.0)),
+                flow: (app.ui.brush.flow / 100.0).clamp(0.0, 1.0),
                 density: 1.0,
-                color: app.ui.mask_overlay_color,
+                color: app.ui.overlay.color,
                 opacity: opacity.clamp(0.0, 1.0),
             };
             crate::brush_live::paint(&mut app.brush_live, ui.ctx(), p, params, &screen, pressure);
@@ -2165,13 +2165,13 @@ fn mask_overlay(app: &mut LightcraftApp, ui: &mut egui::Ui, resp: &egui::Respons
             let pts: Vec<[f64; 2]> = points.iter().map(|q| [q.x, q.y]).collect();
             // holding ⌥ (Alt) paints with the other mode: Erase while adding, Add while erasing
             let (alt, shift) = resp.ctx.input(|i| (i.modifiers.alt, i.modifiers.shift));
-            let erase = app.ui.brush_erase != alt;
+            let erase = app.ui.brush.erase != alt;
             // a ⇧-click draws a straight line from where the last stroke ended, as in Lightroom
             let connect = shift && resp.clicked() && pts.len() == 1;
             let _ = app.run(
                 "mask.brushStroke",
-                json!({"points": pts, "size": app.ui.brush_size, "feather": app.ui.brush_feather, "flow": app.ui.brush_flow,
-                       "erase": erase, "autoMask": app.ui.brush_auto_mask, "pressure": pressure, "connect": connect}),
+                json!({"points": pts, "size": app.ui.brush.size, "feather": app.ui.brush.feather, "flow": app.ui.brush.flow,
+                       "erase": erase, "autoMask": app.ui.brush.auto_mask, "pressure": pressure, "connect": connect}),
             );
         }
         return;
@@ -2349,7 +2349,7 @@ fn remove_overlay(app: &mut LightcraftApp, ui: &mut egui::Ui, resp: &egui::Respo
     if spot_keys(app, ui, map, d, &grips) {
         return;
     }
-    let r = (app.ui.remove_size as f64 * long) as f32;
+    let r = (app.ui.remove_brush.size as f64 * long) as f32;
     // a target or source under `q`: the selected spot's first, then the nearest pin
     let hit = |q: Pos2| {
         grips
@@ -2367,7 +2367,7 @@ fn remove_overlay(app: &mut LightcraftApp, ui: &mut egui::Ui, resp: &egui::Respo
         } else {
             ui.ctx().set_cursor_icon(egui::CursorIcon::None);
             p.circle_stroke(h, r, Stroke::new(1.0, Color32::WHITE));
-            p.circle_stroke(h, r * (1.0 - app.ui.remove_feather / 100.0).max(0.05), Stroke::new(1.0, Color32::from_white_alpha(110)));
+            p.circle_stroke(h, r * (1.0 - app.ui.remove_brush.feather / 100.0).max(0.05), Stroke::new(1.0, Color32::from_white_alpha(110)));
         }
     }
     let press = ui.input(|i| i.pointer.press_origin()).or(resp.interact_pointer_pos());
@@ -2428,7 +2428,7 @@ fn remove_overlay(app: &mut LightcraftApp, ui: &mut egui::Ui, resp: &egui::Respo
         let pts: Vec<[f64; 2]> = points.iter().map(|q| [q.x, q.y]).collect();
         let _ = app.run(
             "spot.add",
-            json!({"mode": mode, "points": pts, "size": app.ui.remove_size, "feather": app.ui.remove_feather, "opacity": app.ui.remove_opacity}),
+            json!({"mode": mode, "points": pts, "size": app.ui.remove_brush.size, "feather": app.ui.remove_brush.feather, "opacity": app.ui.remove_brush.opacity}),
         );
     }
 }
@@ -2469,7 +2469,7 @@ fn spot_keys(app: &mut LightcraftApp, ui: &mut egui::Ui, map: &CanvasMap, d: &De
         ui.data_mut(|m| m.insert_temp(key, moved));
     }
     if crate::canvas_keys::has_focus(ui.ctx()) && ui.memory(|m| m.has_focus(crate::canvas_keys::id("spot:new"))) {
-        let r = (app.ui.remove_size as f64 * (map.rect.width().max(map.rect.height())) as f64) as f32;
+        let r = (app.ui.remove_brush.size as f64 * (map.rect.width().max(map.rect.height())) as f64) as f32;
         ui.painter().circle_stroke(q, r, Stroke::new(1.0, Color32::WHITE));
     }
     if keys.activated {
@@ -2481,7 +2481,7 @@ fn spot_keys(app: &mut LightcraftApp, ui: &mut egui::Ui, map: &CanvasMap, d: &De
         };
         let _ = app.run(
             "spot.add",
-            json!({"mode": mode, "points": [[place.0, place.1]], "size": app.ui.remove_size, "feather": app.ui.remove_feather, "opacity": app.ui.remove_opacity}),
+            json!({"mode": mode, "points": [[place.0, place.1]], "size": app.ui.remove_brush.size, "feather": app.ui.remove_brush.feather, "opacity": app.ui.remove_brush.opacity}),
         );
         return true;
     }

@@ -588,19 +588,19 @@ pub(crate) fn view_histogram(app: &mut LightcraftApp, _: &Call, _: NoParams) -> 
 }
 
 pub(crate) fn view_mask_overlay(app: &mut LightcraftApp, _: &Call, p: Show) -> Result<Value, String> {
-    app.ui.mask_overlay = p.show.unwrap_or(!app.ui.mask_overlay);
-    Ok(json!({"maskOverlay": app.ui.mask_overlay}))
+    app.ui.overlay.on = p.show.unwrap_or(!app.ui.overlay.on);
+    Ok(json!({"maskOverlay": app.ui.overlay.on}))
 }
 
 pub(crate) fn view_mask_overlay_all(app: &mut LightcraftApp, _: &Call, _: NoParams) -> Result<Value, String> {
-    app.ui.mask_overlay_all = !app.ui.mask_overlay_all;
-    Ok(json!({"maskOverlayAll": app.ui.mask_overlay_all}))
+    app.ui.overlay.all = !app.ui.overlay.all;
+    Ok(json!({"maskOverlayAll": app.ui.overlay.all}))
 }
 
 pub(crate) fn view_mask_overlay_mode(app: &mut LightcraftApp, _: &Call, p: Mode) -> Result<Value, String> {
     let ctx = app.tasks.repaint.clone().unwrap_or_default();
     use lightcraft_engine::pipeline::MaskView;
-    let cur = MaskView::parse(&app.ui.mask_overlay_mode).unwrap_or_default();
+    let cur = MaskView::parse(&app.ui.overlay.mode).unwrap_or_default();
     let next = match p.mode.as_deref() {
         Some(m) => MaskView::parse(m).ok_or_else(|| {
             let names: Vec<&str> = MaskView::ALL.iter().map(|v| v.name()).collect();
@@ -608,8 +608,8 @@ pub(crate) fn view_mask_overlay_mode(app: &mut LightcraftApp, _: &Call, p: Mode)
         })?,
         None => cur.next(),
     };
-    app.ui.mask_overlay_mode = next.name().into();
-    app.ui.mask_overlay = true;
+    app.ui.overlay.mode = next.name().into();
+    app.ui.overlay.on = true;
     app.toast(&ctx, next.label());
     Ok(json!({"mode": next.name()}))
 }
@@ -618,17 +618,17 @@ pub(crate) fn view_mask_overlay_color(app: &mut LightcraftApp, _: &Call, p: Mask
     // no params: the next of the panel's swatch colours
     if p.color.is_none() && p.opacity.is_none() {
         let all = crate::panels::masking::OVERLAY_COLORS;
-        let i = all.iter().position(|c| *c == app.ui.mask_overlay_color).map_or(0, |i| (i + 1) % all.len());
-        app.ui.mask_overlay_color = all[i];
+        let i = all.iter().position(|c| *c == app.ui.overlay.color).map_or(0, |i| (i + 1) % all.len());
+        app.ui.overlay.color = all[i];
     }
     if let Some(c) = &p.color {
-        app.ui.mask_overlay_color = parse_rgb(c).ok_or("view.maskOverlayColor: `color` is \"#rrggbb\" or [r, g, b]")?;
+        app.ui.overlay.color = parse_rgb(c).ok_or("view.maskOverlayColor: `color` is \"#rrggbb\" or [r, g, b]")?;
     }
     if let Some(o) = p.opacity {
-        app.ui.mask_overlay_opacity = o.clamp(0.0, 100.0) as f32;
+        app.ui.overlay.opacity = o.clamp(0.0, 100.0) as f32;
     }
-    let [r, g, b] = app.ui.mask_overlay_color;
-    Ok(json!({"color": format!("#{r:02x}{g:02x}{b:02x}"), "opacity": app.ui.mask_overlay_opacity}))
+    let [r, g, b] = app.ui.overlay.color;
+    Ok(json!({"color": format!("#{r:02x}{g:02x}{b:02x}"), "opacity": app.ui.overlay.opacity}))
 }
 
 pub(crate) fn brush_smaller(app: &mut LightcraftApp, c: &Call, _: NoParams) -> Result<Value, String> {
@@ -643,8 +643,8 @@ pub(crate) fn brush_smaller(app: &mut LightcraftApp, c: &Call, _: NoParams) -> R
 }
 
 pub(crate) fn view_mask_pins(app: &mut LightcraftApp, _: &Call, p: Show) -> Result<Value, String> {
-    app.ui.mask_pins = p.show.unwrap_or(!app.ui.mask_pins);
-    Ok(json!({"maskPins": app.ui.mask_pins}))
+    app.ui.overlay.pins = p.show.unwrap_or(!app.ui.overlay.pins);
+    Ok(json!({"maskPins": app.ui.overlay.pins}))
 }
 
 pub(crate) fn view_tool_overlay(app: &mut LightcraftApp, _: &Call, p: Mode) -> Result<Value, String> {
@@ -880,8 +880,8 @@ pub(crate) fn tool(app: &mut LightcraftApp, c: &Call, p: Tool) -> Result<Value, 
             };
             if let Some(result) = create {
                 result?;
-                app.ui.brush_erase = false;
-                app.ui.mask_overlay = true;
+                app.ui.brush.erase = false;
+                app.ui.overlay.on = true;
             }
             app.ui.right = RightPanel::Masking;
             app.ui.view = ViewMode::Detail;

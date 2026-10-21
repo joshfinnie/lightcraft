@@ -699,6 +699,78 @@ pub struct MaskEdit {
     pub renaming_component: Option<(u32, usize, String)>,
 }
 
+/// The masking brush: its size, feather and flow, and how it paints.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(default)]
+pub struct BrushSettings {
+    #[serde(rename = "brushSize")]
+    pub size: f32,
+    #[serde(rename = "brushFeather")]
+    pub feather: f32,
+    #[serde(rename = "brushFlow")]
+    pub flow: f32,
+    #[serde(rename = "brushErase")]
+    pub erase: bool,
+    /// Brush Auto Mask: dabs stick to areas like the one under the brush centre.
+    #[serde(rename = "brushAutoMask")]
+    pub auto_mask: bool,
+    /// Brush Pen Pressure: a pen's pressure scales each dab's size and flow (a mouse paints at full pressure).
+    #[serde(rename = "brushPressure")]
+    pub pressure: bool,
+}
+
+impl Default for BrushSettings {
+    fn default() -> Self {
+        BrushSettings { size: 0.04, feather: 50.0, flow: 60.0, erase: false, auto_mask: false, pressure: true }
+    }
+}
+
+/// The Remove tool's brush: size (fraction of the long edge), feather and opacity (0..100).
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(default)]
+pub struct RemoveBrush {
+    #[serde(rename = "removeSize")]
+    pub size: f32,
+    #[serde(rename = "removeFeather")]
+    pub feather: f32,
+    #[serde(rename = "removeOpacity")]
+    pub opacity: f32,
+}
+
+impl Default for RemoveBrush {
+    fn default() -> Self {
+        RemoveBrush { size: 0.02, feather: 50.0, opacity: 100.0 }
+    }
+}
+
+/// How masks show on the photo: the selected mask's overlay, every mask's at once, and the pins.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(default)]
+pub struct MaskOverlay {
+    /// Masking: show the selected mask as a rendered overlay (O), how (`MaskView` name, ⇧O cycles),
+    /// in which colour and opacity (0..100, colour views), and whether pins are drawn.
+    #[serde(rename = "maskOverlay")]
+    pub on: bool,
+    #[serde(rename = "maskOverlayMode")]
+    pub mode: String,
+    #[serde(rename = "maskOverlayColor")]
+    pub color: [u8; 3],
+    #[serde(rename = "maskOverlayOpacity")]
+    pub opacity: f32,
+    #[serde(rename = "maskPins")]
+    pub pins: bool,
+    /// Masking: show every visible mask's region as one overlay at once (Ctrl+Shift+O / Cmd+Shift+O),
+    /// instead of just the selected mask's ([`on`](Self::on)).
+    #[serde(rename = "maskOverlayAll")]
+    pub all: bool,
+}
+
+impl Default for MaskOverlay {
+    fn default() -> Self {
+        MaskOverlay { on: true, mode: "color".into(), color: [230, 30, 40], opacity: 50.0, pins: true, all: false }
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct UiState {
@@ -755,19 +827,12 @@ pub struct UiState {
     #[serde(skip)]
     pub proof_intent: lightcraft_engine::proof::ProofIntent,
     pub proof_paper_ink: bool,
-    /// Masking: show the selected mask as a rendered overlay (O), how (`MaskView` name, ⇧O cycles),
-    /// in which colour and opacity (0..100, colour views), and whether pins are drawn.
-    pub mask_overlay: bool,
-    pub mask_overlay_mode: String,
-    pub mask_overlay_color: [u8; 3],
-    pub mask_overlay_opacity: f32,
-    pub mask_pins: bool,
+    /// How masks show on the photo: the selected mask's overlay, every mask's at once, and the pins.
+    #[serde(flatten)]
+    pub overlay: MaskOverlay,
     /// When the Remove tool's spot pins and the mask pins show (Shift+H cycles). Mask pins also
-    /// need [`mask_pins`](Self::mask_pins).
+    /// need [`MaskOverlay::pins`].
     pub tool_overlay: ToolOverlay,
-    /// Masking: show every visible mask's region as one overlay at once (Ctrl+Shift+O / Cmd+Shift+O),
-    /// instead of just the selected mask's ([`mask_overlay`]).
-    pub mask_overlay_all: bool,
     /// The overlay (on, mode) to go back to when Show Luminance Map is turned off.
     #[serde(skip)]
     pub luminance_map_restore: Option<(bool, String)>,
@@ -826,18 +891,12 @@ pub struct UiState {
     pub grading_hidden: Option<(lightcraft_catalog::PhotoId, [bool; 3])>,
     /// Active on-canvas tool: "", "brush", "linear", "radial", "wbPicker", "straighten", "remove".
     pub tool: String,
-    pub brush_size: f32,
-    pub brush_feather: f32,
-    pub brush_flow: f32,
-    pub brush_erase: bool,
-    /// Brush Auto Mask: dabs stick to areas like the one under the brush centre.
-    pub brush_auto_mask: bool,
-    /// Brush Pen Pressure: a pen's pressure scales each dab's size and flow (a mouse paints at full pressure).
-    pub brush_pressure: bool,
-    /// Remove tool brush: size (fraction of the long edge), feather and opacity (0..100).
-    pub remove_size: f32,
-    pub remove_feather: f32,
-    pub remove_opacity: f32,
+    /// The masking brush: its size, feather and flow, and how it paints.
+    #[serde(flatten)]
+    pub brush: BrushSettings,
+    /// The Remove tool's brush: size (fraction of the long edge), feather and opacity (0..100).
+    #[serde(flatten)]
+    pub remove_brush: RemoveBrush,
     /// Selected Point Color sample.
     pub point_color: usize,
     /// Point Color "Visualize range": the selected sample's range in colour, the rest grey.
@@ -1297,13 +1356,8 @@ impl Default for UiState {
             proof_profile: None,
             proof_intent: lightcraft_engine::proof::ProofIntent::Perceptual,
             proof_paper_ink: false,
-            mask_overlay: true,
-            mask_overlay_mode: "color".into(),
-            mask_overlay_color: [230, 30, 40],
-            mask_overlay_opacity: 50.0,
-            mask_pins: true,
+            overlay: MaskOverlay::default(),
             tool_overlay: ToolOverlay::Auto,
-            mask_overlay_all: false,
             crop_overlay: CropOverlay::Thirds,
             crop_default_aspect: None,
             crop_overlay_orient: 0,
@@ -1327,15 +1381,8 @@ impl Default for UiState {
             grading_mode: "3way".into(),
             grading_hidden: None,
             tool: String::new(),
-            brush_size: 0.04,
-            brush_feather: 50.0,
-            brush_flow: 60.0,
-            brush_erase: false,
-            brush_auto_mask: false,
-            brush_pressure: true,
-            remove_size: 0.02,
-            remove_feather: 50.0,
-            remove_opacity: 100.0,
+            brush: BrushSettings::default(),
+            remove_brush: RemoveBrush::default(),
             point_color: 0,
             point_color_visualize: false,
             hdr_visualize: false,
@@ -1474,13 +1521,8 @@ impl UiState {
             soft_proof: _,
             proof: _,
             proof_paper_ink: _,
-            mask_overlay: _,
-            mask_overlay_mode: _,
-            mask_overlay_color: _,
-            mask_overlay_opacity: _,
-            mask_pins: _,
+            overlay: _,
             tool_overlay: _,
-            mask_overlay_all: _,
             crop_overlay_orient: _,
             crop_overlay: _,
             crop_default_aspect: _,
@@ -1496,15 +1538,8 @@ impl UiState {
             mixer_mode: _,
             grading_mode: _,
             tool: _,
-            brush_size: _,
-            brush_feather: _,
-            brush_flow: _,
-            brush_erase: _,
-            brush_auto_mask: _,
-            brush_pressure: _,
-            remove_size: _,
-            remove_feather: _,
-            remove_opacity: _,
+            brush: _,
+            remove_brush: _,
             point_color: _,
             point_color_visualize: _,
             hdr_visualize: _,
@@ -1593,7 +1628,7 @@ impl UiState {
         self.thumb_size = self.thumb_size.clamp(THUMB_SIZE_MIN, THUMB_SIZE_MAX);
         self.left_width = LEFT_WIDTH.clamp(self.left_width);
         self.right_width = RIGHT_WIDTH.clamp(self.right_width);
-        self.brush_size = self.brush_size.clamp(0.002, 0.5);
+        self.brush.size = self.brush.size.clamp(0.002, 0.5);
         self.sidebar.adopt_collapsed(&std::mem::take(&mut self.collapsed_sidebar));
         self.dialog = None;
         self.fullscreen = false;

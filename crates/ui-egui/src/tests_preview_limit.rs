@@ -202,13 +202,13 @@ mod in_the_loupe {
         }
         h.request("engine.execute", json!({"command": "view.zoom100"}), T);
         h.app.ui.pan = (0.3, 0.4);
-        h.app.ui.mask_overlay = false;
+        h.app.ui.overlay.on = false;
         h.settle(SETTLE);
         let (zoom, pan) = (h.app.ui.zoom, h.app.ui.pan);
         assert_eq!(zoom, crate::state::Zoom::Percent(100.0));
         let plain = h.app.region_view.expect("a window render without the overlay");
 
-        h.app.ui.mask_overlay = true;
+        h.app.ui.overlay.on = true;
         h.settle(SETTLE);
         let id = h.app.session.active().expect("a photo");
         let d = h.app.session.develop_of(id).expect("settings");
@@ -221,7 +221,7 @@ mod in_the_loupe {
         assert_eq!(shown.window, plain.window, "the same part of the photo");
         assert_ne!(shown.settings, plain.settings, "the overlay is part of the window's look");
 
-        h.app.ui.mask_overlay = false;
+        h.app.ui.overlay.on = false;
         h.settle(SETTLE);
         assert_eq!((h.app.ui.zoom, h.app.ui.pan), (zoom, pan), "hiding it keeps them too");
         assert_eq!(h.app.region_view.map(|r| r.settings), Some(plain.settings), "back to the plain window");
@@ -244,7 +244,7 @@ mod in_the_loupe {
         }
         let r = h.request("engine.execute", json!({"command": "view.maskOverlayAll", "params": {}}), T);
         assert_eq!(r["ok"], true, "{r}");
-        assert!(h.app.ui.mask_overlay_all, "the all-masks overlay is on");
+        assert!(h.app.ui.overlay.all, "the all-masks overlay is on");
         h.request("engine.execute", json!({"command": "view.zoom100"}), T);
         h.settle(SETTLE);
         let id = h.app.session.active().expect("a photo");

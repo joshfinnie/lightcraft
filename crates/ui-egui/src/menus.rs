@@ -578,23 +578,23 @@ pub(crate) fn panel(app: &mut LightcraftApp, ctx: &egui::Context, p: RightPanel,
 /// (and its selected spot's) or the Masking brush's.
 pub(crate) fn adjust_brush(app: &mut LightcraftApp, k: f32, df: f32) -> Value {
     if app.ui.right == RightPanel::Remove {
-        app.ui.remove_size = (app.ui.remove_size * k).clamp(0.001, 0.25);
-        app.ui.remove_feather = (app.ui.remove_feather + df).clamp(0.0, 100.0);
+        app.ui.remove_brush.size = (app.ui.remove_brush.size * k).clamp(0.001, 0.25);
+        app.ui.remove_brush.feather = (app.ui.remove_brush.feather + df).clamp(0.0, 100.0);
         if app.session.active_spot.is_some() {
             let mut p = json!({});
             if k != 1.0 {
-                p["size"] = json!(app.ui.remove_size);
+                p["size"] = json!(app.ui.remove_brush.size);
             }
             if df != 0.0 {
-                p["feather"] = json!(app.ui.remove_feather);
+                p["feather"] = json!(app.ui.remove_brush.feather);
             }
             let _ = app.run("spot.update", p);
         }
-        json!({"size": app.ui.remove_size, "feather": app.ui.remove_feather})
+        json!({"size": app.ui.remove_brush.size, "feather": app.ui.remove_brush.feather})
     } else {
-        app.ui.brush_size = (app.ui.brush_size * k).clamp(0.002, 0.5);
-        app.ui.brush_feather = (app.ui.brush_feather + df).clamp(0.0, 100.0);
-        json!({"size": app.ui.brush_size, "feather": app.ui.brush_feather})
+        app.ui.brush.size = (app.ui.brush.size * k).clamp(0.002, 0.5);
+        app.ui.brush.feather = (app.ui.brush.feather + df).clamp(0.0, 100.0);
+        json!({"size": app.ui.brush.size, "feather": app.ui.brush.feather})
     }
 }
 

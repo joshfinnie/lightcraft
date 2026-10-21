@@ -78,22 +78,22 @@ fn take_brush(app: &mut LightcraftApp, b: &Value) {
     let Some(b) = b.as_object() else { return };
     let f = |k: &str| b.get(k).and_then(Value::as_f64).filter(|v| v.is_finite());
     if let Some(v) = f("size") {
-        app.ui.brush_size = (v as f32).clamp(0.002, 0.5);
+        app.ui.brush.size = (v as f32).clamp(0.002, 0.5);
     }
     if let Some(v) = f("feather") {
-        app.ui.brush_feather = (v as f32).clamp(0.0, 100.0);
+        app.ui.brush.feather = (v as f32).clamp(0.0, 100.0);
     }
     if let Some(v) = f("flow") {
-        app.ui.brush_flow = (v as f32).clamp(1.0, 100.0);
+        app.ui.brush.flow = (v as f32).clamp(1.0, 100.0);
     }
     if let Some(v) = b.get("auto_mask").and_then(Value::as_bool) {
-        app.ui.brush_auto_mask = v;
+        app.ui.brush.auto_mask = v;
     }
 }
 
 /// The brush settings in use, as an effect carries them.
 fn brush_now(app: &LightcraftApp) -> Value {
-    json!({"size": app.ui.brush_size, "feather": app.ui.brush_feather, "flow": app.ui.brush_flow, "auto_mask": app.ui.brush_auto_mask})
+    json!({"size": app.ui.brush.size, "feather": app.ui.brush.feather, "flow": app.ui.brush.flow, "auto_mask": app.ui.brush.auto_mask})
 }
 
 /// Open the New Effect Preset dialog for the selected mask.

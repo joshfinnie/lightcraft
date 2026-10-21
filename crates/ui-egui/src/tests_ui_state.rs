@@ -52,3 +52,16 @@ fn ui_set_keeps_what_is_not_saved() {
     assert_eq!(h.app.ui.compare, Some((1, 2)));
     assert_eq!(h.app.ui.proof_profile, Some(("paper.icc".into(), "Paper".into())));
 }
+
+/// The brush, Remove brush and mask overlay groups read back from the keys they save under.
+#[test]
+fn grouped_settings_read_back() {
+    let ui: UiState =
+        serde_json::from_str(r#"{"brushSize": 0.1, "brushPressure": false, "removeOpacity": 40.0, "maskOverlayMode": "white", "maskPins": false}"#)
+            .unwrap();
+    assert_eq!((ui.brush.size, ui.brush.pressure, ui.brush.flow), (0.1, false, 60.0));
+    assert_eq!((ui.remove_brush.opacity, ui.remove_brush.size), (40.0, 0.02));
+    assert_eq!((ui.overlay.mode.as_str(), ui.overlay.pins, ui.overlay.on), ("white", false, true));
+    let back: UiState = serde_json::from_value(serde_json::to_value(&ui).unwrap()).unwrap();
+    assert_eq!((back.brush.size, back.remove_brush.opacity, back.overlay.mode.as_str()), (0.1, 40.0, "white"));
+}

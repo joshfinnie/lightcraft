@@ -640,7 +640,7 @@ impl LightcraftApp {
         if r.is_ok() && id == "mask.adjust" {
             // Judge local adjustments on the photo, without the selection overlay obscuring them.
             // Keep it hidden after release; O / the overlay eye can show it again.
-            self.ui.mask_overlay = false;
+            self.ui.overlay.on = false;
         }
         if r.is_ok() {
             // These commands finish synchronously, so their completion would otherwise

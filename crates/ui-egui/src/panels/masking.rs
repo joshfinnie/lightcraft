@@ -194,11 +194,11 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui, id: PhotoId) {
         ui.horizontal(|ui| {
             ui.label(egui::RichText::new(crate::i18n::tr("Masks")).font(t.semibold(13.0)).color(t.text_label));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                let on = app.ui.mask_overlay;
+                let on = app.ui.overlay.on;
                 if icon_button(ui, "maskOverlay", Icon::Eye, vec2(24.0, 24.0), on, true, "Show overlay (O)").clicked() {
-                    app.ui.mask_overlay = !on;
+                    app.ui.overlay.on = !on;
                 }
-                let all = app.ui.mask_overlay_all;
+                let all = app.ui.overlay.all;
                 let all_mac = ui.ctx().os() == egui::os::OperatingSystem::Mac;
                 let all_base = crate::i18n::tr("Show all overlays");
                 let all_tip = match crate::shortcuts::shortcut_of(&app.ui.settings.keymap, "view.maskOverlayAll") {
@@ -206,7 +206,7 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui, id: PhotoId) {
                     None => all_base.to_string(),
                 };
                 if icon_button(ui, "maskOverlayAll", Icon::Stack, vec2(24.0, 24.0), all, true, &all_tip).clicked() {
-                    app.ui.mask_overlay_all = !all;
+                    app.ui.overlay.all = !all;
                 }
             });
         });
@@ -455,7 +455,7 @@ pub const OVERLAY_COLORS: [[u8; 3]; 5] = [[230, 30, 40], [40, 200, 70], [40, 110
 fn overlay_options(app: &mut LightcraftApp, ui: &mut egui::Ui) {
     use lightcraft_pipeline::MaskView;
     let t = Tokens::get(ui.ctx());
-    let view = MaskView::parse(&app.ui.mask_overlay_mode).unwrap_or_default();
+    let view = MaskView::parse(&app.ui.overlay.mode).unwrap_or_default();
     ui.horizontal(|ui| {
         ui.label(egui::RichText::new(crate::i18n::tr("Overlay")).color(t.text_dim));
         let r = crate::widgets::dropdown(ui, "maskOverlayMode", menu_label(view.label()), t.font(12.5), t.text_label);
@@ -475,7 +475,7 @@ fn overlay_options(app: &mut LightcraftApp, ui: &mut egui::Ui) {
                 crate::widgets::announce(&resp, format!("{} #{:02x}{:02x}{:02x}", crate::i18n::tr("Overlay color"), c[0], c[1], c[2]));
                 register(ui.ctx(), format!("maskOverlayColor:{:02x}{:02x}{:02x}", c[0], c[1], c[2]), r);
                 ui.painter().rect_filled(r.shrink(2.0), 3.0, egui::Color32::from_rgb(c[0], c[1], c[2]));
-                if app.ui.mask_overlay_color == c {
+                if app.ui.overlay.color == c {
                     ui.painter().rect_stroke(r, 3.0, Stroke::new(1.5, t.text), egui::StrokeKind::Inside);
                 }
                 if resp.clicked() {
@@ -495,15 +495,15 @@ fn overlay_options(app: &mut LightcraftApp, ui: &mut egui::Ui) {
         decimals: 0,
         track: Track::Plain,
     };
-    let out = slider(ui, &spec, app.ui.mask_overlay_opacity as f64, colored && app.ui.mask_overlay, None);
+    let out = slider(ui, &spec, app.ui.overlay.opacity as f64, colored && app.ui.overlay.on, None);
     if let Some(v) = out.value {
-        app.ui.mask_overlay_opacity = v as f32;
+        app.ui.overlay.opacity = v as f32;
     }
-    let mut pins = app.ui.mask_pins;
+    let mut pins = app.ui.overlay.pins;
     if ui.checkbox(&mut pins, crate::i18n::tr("Show Pins")).changed() {
         let _ = app.run("view.maskPins", json!({"show": pins}));
     }
-    if app.ui.mask_pins {
+    if app.ui.overlay.pins {
         super::right::tool_overlay_options(app, ui);
     }
 }
@@ -587,19 +587,19 @@ fn range_controls(app: &mut LightcraftApp, ui: &mut egui::Ui, comp: usize, shape
                 let f = v / 100.0 * 0.5;
                 app.run("mask.update", json!({"component": comp, "shape": MaskShape::LuminanceRange { lo, hi, lo_feather: f, hi_feather: f }}))
             });
-            let mut map = app.ui.mask_overlay && app.ui.mask_overlay_mode == "colorOnBw";
+            let mut map = app.ui.overlay.on && app.ui.overlay.mode == "colorOnBw";
             let r = ui.checkbox(&mut map, crate::i18n::tr("Show Luminance Map"));
             register(ui.ctx(), format!("check:lumMap{comp}"), r.rect);
             if r.changed() {
                 // the luminance map: the photo in black & white with the selected range tinted
                 if map {
-                    app.ui.luminance_map_restore = Some((app.ui.mask_overlay, app.ui.mask_overlay_mode.clone()));
-                    app.ui.mask_overlay = true;
-                    app.ui.mask_overlay_mode = "colorOnBw".into();
+                    app.ui.luminance_map_restore = Some((app.ui.overlay.on, app.ui.overlay.mode.clone()));
+                    app.ui.overlay.on = true;
+                    app.ui.overlay.mode = "colorOnBw".into();
                 } else {
                     let (on, mode) = app.ui.luminance_map_restore.take().unwrap_or((false, "color".into()));
-                    app.ui.mask_overlay = on;
-                    app.ui.mask_overlay_mode = if mode == "colorOnBw" { "color".into() } else { mode };
+                    app.ui.overlay.on = on;
+                    app.ui.overlay.mode = if mode == "colorOnBw" { "color".into() } else { mode };
                 }
             }
         }
@@ -852,42 +852,42 @@ fn brush_settings(app: &mut LightcraftApp, ui: &mut egui::Ui) {
     egui::Frame::NONE.inner_margin(egui::Margin { left: 24, right: 22, top: 6, bottom: 0 }).show(ui, |ui| {
         ui.horizontal(|ui| {
             ui.label(egui::RichText::new(crate::i18n::tr("Brush")).font(t.semibold(13.0)));
-            if text_button(ui, "brushAdd", crate::i18n::tr("Add"), !app.ui.brush_erase).clicked() {
-                app.ui.brush_erase = false;
+            if text_button(ui, "brushAdd", crate::i18n::tr("Add"), !app.ui.brush.erase).clicked() {
+                app.ui.brush.erase = false;
             }
-            if text_button(ui, "brushErase", crate::i18n::tr("Erase"), app.ui.brush_erase).clicked() {
-                app.ui.brush_erase = true;
+            if text_button(ui, "brushErase", crate::i18n::tr("Erase"), app.ui.brush.erase).clicked() {
+                app.ui.brush.erase = true;
             }
         });
-        let mut auto = app.ui.brush_auto_mask;
+        let mut auto = app.ui.brush.auto_mask;
         if ui
             .checkbox(&mut auto, crate::i18n::tr("Auto Mask"))
             .on_hover_text(crate::i18n::tr("Paint only areas like the one under the brush"))
             .changed()
         {
-            app.ui.brush_auto_mask = auto;
+            app.ui.brush.auto_mask = auto;
         }
-        let mut pressure = app.ui.brush_pressure;
+        let mut pressure = app.ui.brush.pressure;
         if ui
             .checkbox(&mut pressure, crate::i18n::tr("Pen Pressure"))
             .on_hover_text(crate::i18n::tr("A pen's pressure sets the size and flow of the brush"))
             .changed()
         {
-            app.ui.brush_pressure = pressure;
+            app.ui.brush.pressure = pressure;
         }
     });
     for (id, label, min, max, get) in [
-        ("ui.brushSize", "Size", 1.0, 100.0, (app.ui.brush_size * 400.0) as f64),
-        ("ui.brushFeather", "Feather", 0.0, 100.0, app.ui.brush_feather as f64),
-        ("ui.brushFlow", "Flow", 1.0, 100.0, app.ui.brush_flow as f64),
+        ("ui.brushSize", "Size", 1.0, 100.0, (app.ui.brush.size * 400.0) as f64),
+        ("ui.brushFeather", "Feather", 0.0, 100.0, app.ui.brush.feather as f64),
+        ("ui.brushFlow", "Flow", 1.0, 100.0, app.ui.brush.flow as f64),
     ] {
         let s = ControlSpec { id, label, section: Section::Light, min, max, default: min, step: 1.0, decimals: 0, track: Track::Plain };
         let out = slider(ui, &s, get, true, None);
         if let Some(v) = out.value {
             match id {
-                "ui.brushSize" => app.ui.brush_size = (v / 400.0) as f32,
-                "ui.brushFeather" => app.ui.brush_feather = v as f32,
-                _ => app.ui.brush_flow = v as f32,
+                "ui.brushSize" => app.ui.brush.size = (v / 400.0) as f32,
+                "ui.brushFeather" => app.ui.brush.feather = v as f32,
+                _ => app.ui.brush.flow = v as f32,
             }
         }
     }

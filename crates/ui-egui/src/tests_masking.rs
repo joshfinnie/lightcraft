@@ -98,7 +98,7 @@ fn subtract_brush_removes_sky_coverage_and_add_restores_it() {
     assert_eq!(develop(&h).masks[0].components.len(), 2);
 
     // Erase removes paint from the subtract component, restoring the underlying sky.
-    h.app.ui.brush_erase = true;
+    h.app.ui.brush.erase = true;
     brush_at(&mut h, 0.5, 0.5);
     assert!(mask_coverage(&h, 0, 50, 50) > 0.99);
     click(&mut h, "button:maskPlus:1");
@@ -114,17 +114,17 @@ fn new_brush_starts_a_separate_mask_in_paint_mode() {
     let mut h = detail("panel.masking");
     exec(&mut h, "mask.add", json!({"kind": "sky"}));
     let original = develop(&h).masks[0].clone();
-    h.app.ui.brush_erase = true;
-    h.app.ui.mask_overlay = false;
+    h.app.ui.brush.erase = true;
+    h.app.ui.overlay.on = false;
     click(&mut h, "maskNew:brush");
     assert_eq!(h.app.session.active_mask, Some(2));
-    assert!(!h.app.ui.brush_erase);
-    assert!(h.app.ui.mask_overlay);
+    assert!(!h.app.ui.brush.erase);
+    assert!(h.app.ui.overlay.on);
     let r = h.request("ui.set", json!({"brushSize": 0.15, "brushFeather": 0.0, "brushFlow": 100.0}), T);
     assert_eq!(r["ok"], true, "{r}");
     brush_at(&mut h, 0.5, 0.5);
     assert!(mask_coverage(&h, 1, 50, 50) > 0.99);
-    h.app.ui.brush_erase = true;
+    h.app.ui.brush.erase = true;
     brush_at(&mut h, 0.5, 0.5);
     assert!(mask_coverage(&h, 1, 50, 50) < 0.01);
     exec(&mut h, "edit.undo", json!({}));
@@ -138,11 +138,11 @@ fn mask_adjustments_hide_overlay_without_disabling_the_mask() {
     use lightcraft_pipeline::Overlay;
     let mut h = detail("panel.masking");
     exec(&mut h, "mask.add", json!({"kind": "linear", "start": [0.5, 0.2], "end": [0.5, 0.7]}));
-    assert!(h.app.ui.mask_overlay);
+    assert!(h.app.ui.overlay.on);
 
     // Changing the shape needs the overlay; changing the image needs an unobscured preview.
     exec(&mut h, "mask.refine", json!({"value": 10.0}));
-    assert!(h.app.ui.mask_overlay);
+    assert!(h.app.ui.overlay.on);
     // The dock header pushes this adjustment below the initial viewport. Exercise the
     // actual visible slider rather than sending a synthetic click outside its clipped body.
     let panel = h.app.widgets.iter().find(|(id, _)| id == "panel:right_panel").unwrap().1;
@@ -155,7 +155,7 @@ fn mask_adjustments_hide_overlay_without_disabling_the_mask() {
     assert!(panel.contains_rect(slider), "exposure is visible before clicking: {slider:?} in {panel:?}");
     let r = h.request("ui.clickWidget", json!({"id": "slider:exposure", "fx": 0.7}), T);
     assert_eq!(r["ok"], true, "{r}");
-    assert!(!h.app.ui.mask_overlay, "the exposure slider hides the overlay after release");
+    assert!(!h.app.ui.overlay.on, "the exposure slider hides the overlay after release");
     let d = develop(&h);
     assert!(d.masks[0].adjust.exposure > 0.0);
     assert!(d.masks[0].visible, "hiding the overlay must not disable the mask");
@@ -164,30 +164,30 @@ fn mask_adjustments_hide_overlay_without_disabling_the_mask() {
 
     let r = h.request("ui.key", json!({"key": "o"}), T);
     assert_eq!(r["ok"], true, "{r}");
-    assert!(h.app.ui.mask_overlay, "O can restore the overlay");
+    assert!(h.app.ui.overlay.on, "O can restore the overlay");
     assert_eq!(develop(&h).masks[0], mask, "toggling the overlay leaves the mask and its effect unchanged");
     assert!(matches!(crate::panels::detail::view_overlay(&h.app, &develop(&h)), Overlay::Mask { .. }));
 
     // Ctrl+Shift+O / Cmd+Shift+O shows every visible mask's region at once (the new command), ahead of the selected
     // mask overlay so it is not shadowed by the always-on single-mask overlay.
     exec(&mut h, "view.maskOverlayAll", json!({}));
-    assert!(h.app.ui.mask_overlay_all, "the all-masks overlay command turns it on");
+    assert!(h.app.ui.overlay.all, "the all-masks overlay command turns it on");
     assert!(matches!(crate::panels::detail::view_overlay(&h.app, &develop(&h)), Overlay::AllMasks { .. }));
     exec(&mut h, "view.maskOverlayAll", json!({}));
-    assert!(!h.app.ui.mask_overlay_all, "the all-masks overlay command toggles it off");
+    assert!(!h.app.ui.overlay.all, "the all-masks overlay command toggles it off");
     assert!(!matches!(crate::panels::detail::view_overlay(&h.app, &develop(&h)), Overlay::AllMasks { .. }));
 
     // Failed edits and global adjustments must not hide the mask overlay.
     assert!(h.app.run("mask.adjust", json!({"id": 999, "values": {"exposure": 1.0}})).is_err());
-    assert!(h.app.ui.mask_overlay);
+    assert!(h.app.ui.overlay.on);
     exec(&mut h, "develop.set", json!({"control": "light.exposure", "value": 0.5}));
-    assert!(h.app.ui.mask_overlay);
+    assert!(h.app.ui.overlay.on);
 
     // Numeric edits/resets and Amount use the same command path as the sliders.
     for values in [json!({"exposure": 0.0}), json!({"saturation": 20.0}), json!({"amount": 50.0})] {
         exec(&mut h, "view.maskOverlay", json!({"show": true}));
         exec(&mut h, "mask.adjust", json!({"values": values}));
-        assert!(!h.app.ui.mask_overlay);
+        assert!(!h.app.ui.overlay.on);
     }
     h.settle(SETTLE);
 }
@@ -278,18 +278,18 @@ fn mask_overlay_keys_and_pins() {
     assert_eq!(o, Overlay::Mask { id: 2, view: MaskView::Color, color: [230, 30, 40], opacity: 50 });
     // O toggles it, Shift+O cycles the colour (and leaves the crop overlay alone)
     h.request("ui.key", json!({"key": "o"}), T);
-    assert!(!h.app.ui.mask_overlay);
+    assert!(!h.app.ui.overlay.on);
     assert_eq!(crate::panels::detail::view_overlay(&h.app, &d), Overlay::None);
     h.request("ui.key", json!({"key": "o"}), T);
     let crop = h.app.ui.crop_overlay;
-    let colour = h.app.ui.mask_overlay_color;
+    let colour = h.app.ui.overlay.color;
     h.request("ui.key", json!({"key": "o", "shift": true}), T);
-    assert_ne!(h.app.ui.mask_overlay_color, colour, "the next overlay colour");
-    assert_eq!(h.app.ui.mask_overlay_mode, "color", "the mode stays");
+    assert_ne!(h.app.ui.overlay.color, colour, "the next overlay colour");
+    assert_eq!(h.app.ui.overlay.mode, "color", "the mode stays");
     assert_eq!(h.app.ui.crop_overlay, crop);
     exec(&mut h, "view.maskOverlayMode", json!({"mode": "whiteOnBlack"}));
     exec(&mut h, "view.maskOverlayColor", json!({"color": "#2870f0", "opacity": 80}));
-    assert_eq!((h.app.ui.mask_overlay_color, h.app.ui.mask_overlay_opacity), ([0x28, 0x70, 0xf0], 80.0));
+    assert_eq!((h.app.ui.overlay.color, h.app.ui.overlay.opacity), ([0x28, 0x70, 0xf0], 80.0));
     let r = h.request("engine.execute", json!({"command": "view.maskOverlayMode", "params": {"mode": "nope"}}), T);
     assert_eq!(r["ok"], false, "{r}");
     // clicking another mask's pin selects that mask
@@ -395,7 +395,7 @@ fn brush_strokes_carry_auto_mask() {
     let MaskShape::Brush { strokes } = &d.masks[0].components[0].shape else { panic!("brush") };
     assert_eq!(strokes.len(), 2, "{strokes:?}");
     assert!(strokes[1].erase, "⌥ erases");
-    assert!(!h.app.ui.brush_erase, "the brush mode is unchanged");
+    assert!(!h.app.ui.brush.erase, "the brush mode is unchanged");
     h.settle(SETTLE);
 }
 
@@ -488,11 +488,11 @@ fn mask_list_rename_hide_and_overlay_colour() {
     assert_eq!(r["ok"], true, "{r}");
     assert!(!develop(&h).masks[0].visible);
     // overlay colour: no params = next swatch
-    let before = h.app.ui.mask_overlay_color;
+    let before = h.app.ui.overlay.color;
     exec(&mut h, "view.maskOverlayColor", json!({}));
     let all = crate::panels::masking::OVERLAY_COLORS;
     let i = all.iter().position(|c| *c == before).unwrap();
-    assert_eq!(h.app.ui.mask_overlay_color, all[(i + 1) % all.len()]);
+    assert_eq!(h.app.ui.overlay.color, all[(i + 1) % all.len()]);
 }
 
 #[test]
@@ -903,10 +903,10 @@ fn luminance_range_controls_and_map() {
     // Show Luminance Map: black-and-white overlay, and back
     let r = h.request("ui.clickWidget", json!({"id": "check:lumMap0"}), T);
     assert_eq!(r["ok"], true, "{r}");
-    assert!(h.app.ui.mask_overlay && h.app.ui.mask_overlay_mode == "colorOnBw");
+    assert!(h.app.ui.overlay.on && h.app.ui.overlay.mode == "colorOnBw");
     let r = h.request("ui.clickWidget", json!({"id": "check:lumMap0"}), T);
     assert_eq!(r["ok"], true, "{r}");
-    assert_ne!(h.app.ui.mask_overlay_mode, "colorOnBw");
+    assert_ne!(h.app.ui.overlay.mode, "colorOnBw");
     h.settle(SETTLE);
 }
 
@@ -1644,8 +1644,8 @@ fn a_fast_brush_stroke_shows_without_gaps_before_the_button_is_released() {
     );
     assert!(matches!(h.app.gesture, Some(crate::panels::detail::Gesture::Brush { .. })), "still painting");
     let held = h.paint();
-    let [r0, g0, b0] = h.app.ui.mask_overlay_color.map(|v| v as f32);
-    let op = h.app.ui.mask_overlay_opacity / 100.0;
+    let [r0, g0, b0] = h.app.ui.overlay.color.map(|v| v as f32);
+    let op = h.app.ui.overlay.opacity / 100.0;
     // along the centreline between the samples (away from the cursor ring at the last one), the
     // overlay colour at full coverage over the photo
     let mut gaps = vec![];

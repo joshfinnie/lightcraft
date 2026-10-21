@@ -58,8 +58,8 @@ fn grid_brackets_rate_mixed_selection_without_resizing_brushes() {
         let mut app = app().unwrap();
         app.ui.view = view;
         let ctx = egui::Context::default();
-        let brush = app.ui.brush_size;
-        let remove = app.ui.remove_size;
+        let brush = app.ui.brush.size;
+        let remove = app.ui.remove_brush.size;
         frame(&mut app, &ctx, Some(Key::CloseBracket), None);
         assert_eq!(ratings(&app).unwrap(), [1, 3, 5]);
         assert_eq!(app.session.history.undo.len(), 1);
@@ -68,8 +68,8 @@ fn grid_brackets_rate_mixed_selection_without_resizing_brushes() {
         app.session.execute("edit.redo", &json!({})).unwrap();
         frame(&mut app, &ctx, Some(Key::OpenBracket), None);
         assert_eq!(ratings(&app).unwrap(), [0, 2, 4]);
-        assert_eq!(app.ui.brush_size, brush);
-        assert_eq!(app.ui.remove_size, remove);
+        assert_eq!(app.ui.brush.size, brush);
+        assert_eq!(app.ui.remove_brush.size, remove);
         assert_eq!(app.session.active(), Some(PhotoId(2)));
     }
 }
@@ -81,13 +81,13 @@ fn detail_masking_and_remove_keep_bracket_brush_sizing() {
         app.ui.view = ViewMode::Detail;
         app.ui.right = panel;
         let ctx = egui::Context::default();
-        app.ui.brush_size = 0.05;
-        app.ui.remove_size = 0.05;
+        app.ui.brush.size = 0.05;
+        app.ui.remove_brush.size = 0.05;
         frame(&mut app, &ctx, Some(Key::CloseBracket), None);
-        let size = if panel == RightPanel::Remove { app.ui.remove_size } else { app.ui.brush_size };
+        let size = if panel == RightPanel::Remove { app.ui.remove_brush.size } else { app.ui.brush.size };
         assert!((size - 0.06).abs() < 1e-6);
         frame(&mut app, &ctx, Some(Key::OpenBracket), None);
-        let size = if panel == RightPanel::Remove { app.ui.remove_size } else { app.ui.brush_size };
+        let size = if panel == RightPanel::Remove { app.ui.remove_brush.size } else { app.ui.brush.size };
         assert!((size - 0.05).abs() < 1e-6);
         assert_eq!(ratings(&app).unwrap(), [0, 2, 5]);
         assert!(app.session.history.undo.is_empty());
@@ -101,13 +101,13 @@ fn saved_keymap_remapping_unbinding_and_reassignment_win() {
     let ctx = egui::Context::default();
     super::assign(&mut app.ui.settings.keymap, "brush.larger", Some("F2")).unwrap();
     super::assign(&mut app.ui.settings.keymap, "brush.smaller", None).unwrap();
-    let brush = app.ui.brush_size;
+    let brush = app.ui.brush.size;
     frame(&mut app, &ctx, Some(Key::CloseBracket), None);
     frame(&mut app, &ctx, Some(Key::OpenBracket), None);
     assert_eq!(ratings(&app).unwrap(), [0, 2, 5]);
-    assert_eq!(app.ui.brush_size, brush);
+    assert_eq!(app.ui.brush.size, brush);
     frame(&mut app, &ctx, Some(Key::F2), None);
-    assert!(app.ui.brush_size > brush, "remapped brush command keeps its meaning");
+    assert!(app.ui.brush.size > brush, "remapped brush command keeps its meaning");
     super::reset(&mut app.ui.settings.keymap, "brush.smaller").unwrap();
     super::assign(&mut app.ui.settings.keymap, "photo.pick", Some("[")).unwrap();
     frame(&mut app, &ctx, Some(Key::OpenBracket), None);
@@ -128,18 +128,18 @@ fn unknown_saved_bracket_assignment_does_not_shadow_grid_ratings() {
     let ctx = egui::Context::default();
     app.ui.settings.keymap.insert("retired.command".into(), "]".into());
     assert!(super::find_bindable("retired.command").is_none());
-    let brush = app.ui.brush_size;
+    let brush = app.ui.brush.size;
     frame(&mut app, &ctx, Some(Key::CloseBracket), None);
     assert_eq!(ratings(&app).unwrap(), [1, 3, 5]);
     assert_eq!(app.session.history.undo.len(), 1);
-    assert_eq!(app.ui.brush_size, brush);
+    assert_eq!(app.ui.brush.size, brush);
     app.session.execute("edit.undo", &json!({})).unwrap();
     app.ui.settings.keymap.remove("retired.command");
     app.ui.settings.keymap.insert("photo.pick".into(), "]".into());
     frame(&mut app, &ctx, Some(Key::CloseBracket), None);
     assert_eq!(app.session.catalog.photo(PhotoId(2)).unwrap().flag, Flag::Pick);
     assert_eq!(ratings(&app).unwrap(), [0, 2, 5], "a known saved override still wins");
-    assert_eq!(app.ui.brush_size, brush);
+    assert_eq!(app.ui.brush.size, brush);
 }
 
 #[test]

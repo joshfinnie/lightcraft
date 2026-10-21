@@ -2640,12 +2640,12 @@ mod tests {
         h.request("ui.set", json!({"view": "detail"}), t);
         h.request("engine.execute", json!({"command": "panel.crop"}), t);
         assert_eq!(h.app.ui.crop_overlay, crate::state::CropOverlay::Thirds);
-        let mask_overlay = h.app.ui.mask_overlay;
+        let mask_overlay = h.app.ui.overlay.on;
         h.request("ui.key", json!({"key": "O"}), t);
         assert_eq!(h.app.ui.crop_overlay, crate::state::CropOverlay::Grid);
         h.request("ui.key", json!({"key": "O", "shift": true}), t);
         assert_eq!(h.app.ui.crop_overlay_orient, 1);
-        assert_eq!(h.app.ui.mask_overlay, mask_overlay, "O doesn't toggle the mask overlay while cropping");
+        assert_eq!(h.app.ui.overlay.on, mask_overlay, "O doesn't toggle the mask overlay while cropping");
         let locked = |h: &Headless| h.app.session.develop_of(h.app.session.active().unwrap()).unwrap().crop.aspect.is_some();
         assert!(!locked(&h));
         h.request("ui.key", json!({"key": "A"}), t);

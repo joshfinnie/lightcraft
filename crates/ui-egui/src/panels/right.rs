@@ -449,7 +449,7 @@ fn remove(app: &mut LightcraftApp, ui: &mut egui::Ui, id: PhotoId) {
     // brush settings; with a spot selected they edit that spot too
     let sel = app.session.active_spot.and_then(|i| d.spots.get(i).map(|sp| (i, sp.clone())));
     if let Some((i, sp)) = &sel {
-        (app.ui.remove_size, app.ui.remove_feather, app.ui.remove_opacity) = (sp.size as f32, sp.feather as f32, sp.opacity as f32);
+        (app.ui.remove_brush.size, app.ui.remove_brush.feather, app.ui.remove_brush.opacity) = (sp.size as f32, sp.feather as f32, sp.opacity as f32);
         divider(ui);
         let mode = match sp.mode {
             lightcraft_develop::SpotMode::Heal => "Heal",
@@ -471,18 +471,18 @@ fn remove(app: &mut LightcraftApp, ui: &mut egui::Ui, id: PhotoId) {
         track: lightcraft_develop::Track::Plain,
     };
     let sliders = [
-        (plain("ui.removeSize", "Size", 1.0, 250.0, 20.0), "size", (app.ui.remove_size * 1000.0) as f64),
-        (plain("ui.removeFeather", "Feather", 0.0, 100.0, 50.0), "feather", app.ui.remove_feather as f64),
-        (plain("ui.removeOpacity", "Opacity", 0.0, 100.0, 100.0), "opacity", app.ui.remove_opacity as f64),
+        (plain("ui.removeSize", "Size", 1.0, 250.0, 20.0), "size", (app.ui.remove_brush.size * 1000.0) as f64),
+        (plain("ui.removeFeather", "Feather", 0.0, 100.0, 50.0), "feather", app.ui.remove_brush.feather as f64),
+        (plain("ui.removeOpacity", "Opacity", 0.0, 100.0, 100.0), "opacity", app.ui.remove_brush.opacity as f64),
     ];
     for (spec, key, v) in sliders {
         let out = slider(ui, &spec, v, true, None);
         let scale = if key == "size" { 1000.0 } else { 1.0 };
         if let Some(v) = out.value {
             match key {
-                "size" => app.ui.remove_size = (v / scale) as f32,
-                "feather" => app.ui.remove_feather = v as f32,
-                _ => app.ui.remove_opacity = v as f32,
+                "size" => app.ui.remove_brush.size = (v / scale) as f32,
+                "feather" => app.ui.remove_brush.feather = v as f32,
+                _ => app.ui.remove_brush.opacity = v as f32,
             }
         }
         if sel.is_some() {
