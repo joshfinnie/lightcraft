@@ -128,7 +128,6 @@ During development you can also point the client at `cargo run --release -p ligh
 
 ## Shared core tools
 
-These follow the same conventions as [filmcraft #28](https://github.com/storytold/filmcraft/pull/28).
 They are listed in both full and compact mode; existing documented helpers remain listed too.
 There are no hidden compatibility aliases.
 

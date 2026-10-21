@@ -284,7 +284,7 @@ pub struct Services {
     pub pick_folder: Option<PickFolder>,
     /// Open a Lightroom Classic `.lrcat` catalog for read-only import.
     pub pick_lightroom_catalog: Option<PickFolder>,
-    /// Open a web link in the browser (Help menu, About, Discord button).
+    /// Open a web link in the browser (Help menu, About).
     pub open_url: Option<OpenUrlFn>,
     /// Open a file in an external editor (Edit in External Editor; desktop only).
     pub open_with: Option<OpenWithFn>,
@@ -389,11 +389,6 @@ pub struct LightcraftApp {
     /// Clear `synthetic_mods` on the next frame.
     synthetic_mods_release: bool,
     styled: bool,
-    /// The language the installed fonts were built for: the CJK fallback order follows the UI
-    /// language's script, so switching language reinstalls them.
-    font_language: i18n::Locale,
-    /// Browser font loaded separately from WASM so the module stays below its host's size limit.
-    chinese_font: Option<std::sync::Arc<egui::FontData>>,
     fonts_ready: bool,
     last_time: f64,
     /// Rect of the photo canvas and the displayed image (screen points) from the last frame.
@@ -516,8 +511,6 @@ impl LightcraftApp {
             synthetic_mods: egui::Modifiers::NONE,
             synthetic_mods_release: false,
             styled: false,
-            font_language: i18n::Locale::En,
-            chinese_font: None,
             fonts_ready: false,
             last_time: 0.0,
             canvas_rect: None,
@@ -564,14 +557,6 @@ impl LightcraftApp {
             activity_expanded: false,
             model_setup: Default::default(),
         }
-    }
-
-    /// Supply the browser's separately downloaded Simplified Chinese font before the first frame.
-    pub fn with_chinese_font(mut self, bytes: Vec<u8>) -> Self {
-        if !bytes.is_empty() {
-            self.chinese_font = Some(std::sync::Arc::new(egui::FontData::from_owned(bytes)));
-        }
-        self
     }
 
     pub fn with_control(mut self, rx: Receiver<ControlRequest>) -> Self {
@@ -1066,7 +1051,6 @@ impl LightcraftApp {
 
     /// Per-frame logic before layout (control channel, renders, shortcuts, drops).
     pub fn logic(&mut self, ctx: &egui::Context) {
-        i18n::set_language(self.ui.language);
         let t0 = now_ms();
         panels::library_problem::logic(self);
         self.logic_inner(ctx);
@@ -1075,7 +1059,7 @@ impl LightcraftApp {
 
     fn logic_inner(&mut self, ctx: &egui::Context) {
         if !self.styled {
-            theme::install_fonts_with_chinese(ctx, self.chinese_font.as_ref());
+            theme::install_fonts(ctx);
             theme::apply(ctx);
             // File → Add from Device lists cards scanned in the background: show hot-plugs
             let repaint = ctx.clone();
@@ -1085,12 +1069,6 @@ impl LightcraftApp {
             let repaint = ctx.clone();
             self.session.media.availability.run_in_background(std::sync::Arc::new(move || repaint.request_repaint()));
             self.styled = true;
-            self.font_language = self.ui.language;
-        } else if self.font_language != self.ui.language {
-            // Shared Han characters take the active language's forms (Japanese faces for 日本語,
-            // the Simplified Chinese face for 简体中文): rebuild the fallback order.
-            theme::install_fonts_with_chinese(ctx, self.chinese_font.as_ref());
-            self.font_language = self.ui.language;
         } else {
             self.fonts_ready = true;
         }
@@ -1430,7 +1408,6 @@ impl LightcraftApp {
 
     /// Lay out the whole window.
     pub fn ui(&mut self, ui: &mut egui::Ui) {
-        i18n::set_language(self.ui.language);
         let ctx = ui.ctx().clone();
         if !self.fonts_ready {
             ctx.request_repaint();
@@ -1963,7 +1940,7 @@ impl Caches {
     /// within a minute without rescanning every frame.
     /// [`RulesView`] for `rules` edited in smart album `editing` (`None`: a new album), within
     /// `folder` when it was made from a folder view: worked out again only when the catalog, the
-    /// rules, the language or (for "in the last…" rules) the minute changes, not every frame.
+    /// rules or (for "in the last…" rules) the minute changes, not every frame.
     pub fn rules_view(
         &mut self,
         cat: &lightcraft_catalog::Catalog,
@@ -1974,7 +1951,7 @@ impl Caches {
     ) -> std::sync::Arc<RulesView> {
         let relative = rules.depends_on_now();
         let minute = if relative { now.get(..16).unwrap_or(now) } else { "" };
-        let k = key_of((cat.revision, serde_json::to_string(rules).unwrap_or_default(), editing, &folder, minute, i18n::language().code()));
+        let k = key_of((cat.revision, serde_json::to_string(rules).unwrap_or_default(), editing, &folder, minute));
         if let Some((key, v)) = &self.rules_view
             && *key == k
         {

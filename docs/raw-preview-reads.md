@@ -52,7 +52,7 @@ those:
 - the buffer is the file's length with only the planned ranges filled in; every other byte stays zero
   and its pages are never written. Its cost is the bytes read — on macOS a freed buffer of that size
   may stay in the allocator's cache instead of going back to the OS (measured on a 38k-photo import,
-  [#832](https://github.com/storytold/lightcraft/issues/832)) — and the loader's memory gate counts
+  [#832](https://github.com/joshfinnie/lightcraft/issues/832)) — and the loader's memory gate counts
   the whole file either way;
 - the module's own guarantee is what this path needs, and its corpus test asserts it: with the
   skipped bytes `0` and again `0xFF`, what a partly loaded buffer yields is what the whole file

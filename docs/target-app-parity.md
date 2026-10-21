@@ -1,12 +1,11 @@
 # Target-app parity: LightCraft vs Adobe Lightroom
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-15 · **Change:** minor (RAW: 83% of Adobe's models decode, 38% verified after the camera-coverage sweep #1327) · **Target:** Adobe Lightroom Classic 15.5 (August 2026) and Lightroom 9.6 (desktop)
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-21 · **Change:** minor (Localization dropped: this fork is English only) · **Target:** Adobe Lightroom Classic 15.5 (August 2026) and Lightroom 9.6 (desktop)
 
 The authoritative assessment of how close LightCraft is to Lightroom. The row-by-row checklist is
 [parity-checklist.md](parity-checklist.md); the ranked work list is [gaps.md](gaps.md); deep areas
 have their own documents: [raw-parity.md](raw-parity.md), [file-format-parity.md](file-format-parity.md),
-[ui-parity.md](ui-parity.md), [hardware-parity.md](hardware-parity.md),
-[localization-parity.md](localization-parity.md).
+[ui-parity.md](ui-parity.md), [hardware-parity.md](hardware-parity.md).
 
 ## Headline
 
@@ -51,7 +50,7 @@ phase #85, duplicate Local entries #22, black GPU exports on an Intel iGPU #78).
 | UI/UX fidelity | ~85% | ~70% | 32–54 h | [ui-parity.md](ui-parity.md) |
 | File formats (non-raw: images, sidecars, presets, catalogs) | ~85% | ~70% | 30–55 h | [file-format-parity.md](file-format-parity.md) |
 | Hardware | ~50% | ~40% | 40–80 h (+ tethering and printing, counted under Classic modules) | [hardware-parity.md](hardware-parity.md) |
-| Localization (12 key languages) | 7 of 12 present | ~55% (mean of the 12, measured) | 130–210 h for the target's set; +145–255 h for Hindi, Arabic, Indonesian, Vietnamese, Korean | [localization-parity.md](localization-parity.md) |
+| Localization | n/a: this fork is English only | n/a | 0 h | removed 2026-10-21 |
 | Performance | ~80% | ~70% | 30–50 h | 24 MP GPU slider 3.9 ms, export 0.3 s (measured, [gpu-pipeline.md](gpu-pipeline.md)); 85k library opens in 1.7–4.7 s; 100k test pending |
 | Stability | — | ~60% | 30–60 h | never-crash lints and guards workspace-wide, crash-tested journal, 2,561 tests; but CI runs tests only on FreeBSD, user reports keep finding bugs in ✅ areas |
 | Platforms | macOS, Windows (x64 / x86 / ARM64), Linux (AppImage, deb, rpm, Flatpak), web | ~60% | 25–45 h | macOS is where it is tested; Windows installer UI unverified on Windows (#79); web experimental (CPU only) |
@@ -315,3 +314,4 @@ P2 items 12–25 h; look tuning, performance, packaging, hardening 25–45 h.
 | 2026-10-10 | minor | Stage re-checked against the core-workflow alpha gate: passes, stays alpha |
 | 2026-10-10 | major | Created per the progress-docs standard: full re-measure (checklist recount, installed Lightroom 9.6 bundle listing, code counts, catalogs, CI), feature areas with weights, dimensions, AI, stage, calibration; merged ROADMAP's *Where we stand* and *Parity estimate* |
 | 2026-10-14 | minor | RAW: 82% of Adobe's models decode, 36% verified (integration batch 36) |
+| 2026-10-21 | minor | Localization dropped: this fork is English only |

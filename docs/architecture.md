@@ -1,6 +1,6 @@
 # Architecture
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-11 · **Change:** minor (`cargo xtask ci` reports the machine and skipped tests; `testkit`) · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-21 · **Change:** minor (Inter is the only font; the CI probe no longer reports a font input) · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6
 
 How LightCraft is built today. The longer design document (`plan/architecture.md`) is local-only
 (`plan/` is gitignored); this page is the committed, current summary. Sizes are Rust lines counted
@@ -65,7 +65,7 @@ test FreeBSD and Windows ARM64, lint packaging, and build releases.
 
 `ci` also probes the machine: OS, CPUs, RAM, the GPU adapters of each backend (from the ignored
 `gpu_probe` test of `lightcraft-gpu`, run after the workspace tests so it reuses their build; xtask
-has no wgpu), the corpus and `CRAFT_FONTS_DIR`. Tests
+has no wgpu) and the corpus. Tests
 that need what is missing call `lightcraft_testkit::skip!(need, reason)`, which appends a JSON line to
 the file `LIGHTCRAFT_SKIP_LOG` names. The run ends with the machine and the skips by need and reason,
 and writes `target/ci/report.json` (commit, dirty flag, machine, capabilities, each step's result and
@@ -77,5 +77,6 @@ the `lightcraft-gpu` tests once per backend with a hardware adapter (`LIGHTCRAFT
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-21 | minor | Inter is the only font: no optional font input, so the CI machine probe no longer reports one |
 | 2026-10-11 | minor | Quality gates: the CI machine probe, visible skips (`testkit`) and `target/ci/report.json` |
 | 2026-10-10 | major | Created from the code (crate sizes, layers, data model, rendering, control, gates) |

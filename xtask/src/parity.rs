@@ -140,11 +140,10 @@ pub fn parse(md: &str) -> Doc {
     doc
 }
 
-/// Ids in the menu tables (`ui!("view.detail", "Detail", Some("D"), "View"…),` lines): the language
-/// commands live in their own table, which the Language menu builds from the i18n language list.
+/// Ids in the menu table (`ui!("view.detail", "Detail", Some("D"), "View"…),` lines).
 pub fn ui_command_ids(menus_rs: &str) -> Vec<String> {
     let mut ids = Vec::new();
-    for table in ["pub const UI_COMMANDS", "pub const LANGUAGE_COMMANDS"] {
+    for table in ["pub const UI_COMMANDS"] {
         let Some(start) = menus_rs.find(table) else { continue };
         let body = &menus_rs[start..];
         let body = &body[..body.find("];").unwrap_or(body.len())];
@@ -505,19 +504,15 @@ old
         assert_eq!(ui_command_ids(src), ["view.detail", "app.about"]);
         let split = "pub const UI_COMMANDS: &[UiCommand] = &[\n    ui!(\n        \"view.detail\",\n        \"Detail\",\n    ),\n];";
         assert_eq!(ui_command_ids(split), ["view.detail"]);
-        let languages =
-            "pub const LANGUAGE_COMMANDS: &[UiCommand] = &[\n    ui!(\"app.language.english\", Locale::En.name(), None, \"Edit>Language\"),\n];\n";
-        assert_eq!(ui_command_ids(&format!("{languages}{src}")), ["view.detail", "app.about", "app.language.english"]);
     }
 
-    /// The real menu tables: both are found, so every language command is a known id.
+    /// The real menu table is found, so its commands are known ids.
     #[test]
-    fn reads_the_language_commands_from_menus_rs() {
+    fn reads_the_commands_from_menus_rs() {
         let menus = include_str!("../../crates/ui-egui/src/menus.rs");
         let ids = ui_command_ids(menus);
-        for id in ["view.detail", "app.language.english", "app.language.japanese", "app.language.simplifiedChinese", "app.language.portuguese"] {
+        for id in ["view.detail", "app.about", "app.github"] {
             assert!(ids.iter().any(|known| known == id), "{id} not found");
         }
-        assert_eq!(ids.iter().filter(|id| id.as_str() == "app.language.english").count(), 1, "one Language menu entry per language");
     }
 }

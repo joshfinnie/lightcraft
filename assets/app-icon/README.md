@@ -35,11 +35,11 @@ craftrules `assets/logo-options/_tools/vectorize_tile.py`. The source drawing st
 | `lightcraft-macos-512.png` | runtime window/Dock icon on macOS (embedded by `apps/lightcraft/src/main.rs`) |
 | `lightcraft.icns` | macOS bundle icon (`CFBundleIconFile`) |
 | `lightcraft.ico` | Windows icon, 16-256 px, embedded in `lightcraft.exe` by `apps/lightcraft/build.rs` |
-| `hicolor/<n>x<n>/apps/ai.storyteller.lightcraft.png` | Linux icon theme, 16-512 px; the 256 px one is also the runtime window icon on Windows and Linux |
-| `hicolor/scalable/apps/ai.storyteller.lightcraft.svg` | Linux scalable icon (the small SVG) |
+| `hicolor/<n>x<n>/apps/com.joshfinnie.lightcraft.png` | Linux icon theme, 16-512 px; the 256 px one is also the runtime window icon on Windows and Linux |
+| `hicolor/scalable/apps/com.joshfinnie.lightcraft.svg` | Linux scalable icon (the small SVG) |
 
-The app id is `ai.storyteller.lightcraft`: the Wayland app id, the `.desktop` file
-(`packaging/linux/ai.storyteller.lightcraft.desktop`, `Icon=ai.storyteller.lightcraft`) and the hicolor icon
+The app id is `com.joshfinnie.lightcraft`: the Wayland app id, the `.desktop` file
+(`packaging/linux/com.joshfinnie.lightcraft.desktop`, `Icon=com.joshfinnie.lightcraft`) and the hicolor icon
 name. To install on Linux, copy `hicolor/` into `/usr/share/icons/hicolor/` (or `~/.local/share/icons/hicolor/`)
 and the `.desktop` file into `applications/`.
 

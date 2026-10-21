@@ -938,7 +938,7 @@ pub fn show(app: &mut LightcraftApp, ctx: &egui::Context) {
                                 wm.image_width = (width / 100.0) as f32;
                             }
                         } else {
-                            choices(ui, app.ui.language.tr("Text direction"), "exportWmOrientation", &[(false, app.ui.language.tr("Horizontal text")), (true, app.ui.language.tr("Vertical text"))], &mut wm.vertical);
+                            choices(ui, crate::i18n::tr("Text direction"), "exportWmOrientation", &[(false, crate::i18n::tr("Horizontal text")), (true, crate::i18n::tr("Vertical text"))], &mut wm.vertical);
                             field(ui, "Text", |ui| {
                                 crate::widgets::named(ui.add(egui::TextEdit::multiline(&mut wm.text).desired_rows(2).hint_text(crate::i18n::tr("© Your Name")).desired_width(f32::INFINITY)), crate::i18n::tr("Text"))
                             });
@@ -1285,31 +1285,11 @@ pub fn show(app: &mut LightcraftApp, ctx: &egui::Context) {
                         _ => {
                             ui.label(egui::RichText::new("LightCraft").font(t.semibold(20.0)).color(t.text));
                             ui.label(crate::i18n::tr_format!("Version {} — a clean-room, pure-Rust photo library and raw developer.", env!("CARGO_PKG_VERSION")));
-                            ui.label(crate::i18n::tr_format!(
-                                "MIT OR Apache-2.0. Fonts: {} (OFL). Icons: original.",
-                                crate::theme::font_credits(app.chinese_font.is_some())
-                            ));
+                            ui.label(crate::i18n::tr("MIT OR Apache-2.0. Font: Inter (OFL). Icons: original."));
                             ui.add_space(10.0);
-                            let r = crate::button::Button::new("Join the ArtCraft Discord")
-                                .primary()
-                                .large()
-                                .min_width(260.0)
-                                .widget("button:aboutDiscord")
-                                .tooltip(crate::links::DISCORD)
-                                .show(ui);
+                            let r = ui.link(crate::i18n::tr("Source code on GitHub")).on_hover_text(crate::links::GITHUB);
                             if r.clicked() {
-                                let _ = crate::links::open(app, crate::links::DISCORD);
-                            }
-                            ui.add_space(6.0);
-                            for (label, url) in [
-                                ("LightCraft website", crate::links::APP_PAGE),
-                                ("Source code on GitHub", crate::links::GITHUB),
-                                ("ArtCraft — more creative apps", crate::links::WEBSITE),
-                            ] {
-                                let r = ui.link(crate::i18n::tr(label)).on_hover_text(url);
-                                if r.clicked() {
-                                    let _ = crate::links::open(app, url);
-                                }
+                                let _ = crate::links::open(app, crate::links::GITHUB);
                             }
                         }
                     }
@@ -1599,7 +1579,7 @@ fn sam_by_hand(sam: &lightcraft_engine::segment::Segmenter) -> bool {
 }
 
 /// The model installation guide.
-const SAM_HELP: &str = "https://github.com/storytold/lightcraft/blob/main/docs/ai-masks.md#getting-the-model";
+const SAM_HELP: &str = "https://github.com/joshfinnie/lightcraft/blob/main/docs/ai-masks.md#getting-the-model";
 
 /// Open the configured SAM 3 folder itself; revealing a file opens its parent instead.
 pub(crate) fn show_model_folder(app: &mut LightcraftApp) -> Result<serde_json::Value, String> {

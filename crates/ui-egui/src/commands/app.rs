@@ -801,9 +801,8 @@ pub(crate) fn app_open_log_folder(app: &mut LightcraftApp, _: &Call, _: NoParams
     open_log_folder(app)
 }
 
-pub(crate) fn app_discord(app: &mut LightcraftApp, c: &Call, _: NoParams) -> Result<Value, String> {
-    let id = c.id;
-    let url = crate::links::url_of(id).unwrap_or(crate::links::WEBSITE);
+pub(crate) fn app_link(app: &mut LightcraftApp, c: &Call, _: NoParams) -> Result<Value, String> {
+    let url = crate::links::url_of(c.id).ok_or_else(|| format!("{}: no link", c.id))?;
     crate::links::open(app, url)
 }
 
@@ -812,16 +811,6 @@ pub(crate) fn app_export_previous(app: &mut LightcraftApp, _: &Call, _: NoParams
         Some(prev) => crate::control::export_active(app, &lightcraft_engine::export::ExportOptions::known_keys_only(&prev)),
         None => Err("nothing exported yet — use Export…".into()),
     }
-}
-
-/// `app.language.*`: the language of the menu command.
-pub(crate) fn language(app: &mut LightcraftApp, c: &Call, _: NoParams) -> Result<Value, String> {
-    let language = language_from_command(c.id).ok_or_else(|| format!("{}: no such language", c.id))?;
-    app.ui.language = language;
-    // Immediately, not on the next frame: the reply and anything else run this frame
-    // (menus rebuilt from it, toasts) are already in the new language.
-    crate::i18n::set_language(app.ui.language);
-    Ok(json!(app.ui.language))
 }
 
 /// `library.inspectLightroom` / `library.importLightroom`, run by the app (in the background, with its dialogs).

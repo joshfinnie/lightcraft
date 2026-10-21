@@ -1131,8 +1131,7 @@ fn filter_pill(app: &mut LightcraftApp, ui: &mut egui::Ui, canvas: Rect) {
     }
     let t = Tokens::get(ui.ctx());
     let p = ui.painter_at(canvas);
-    let label =
-        chips.iter().map(|c| crate::panels::chips::display_label(c, &app.session.filter, &app.session.catalog)).collect::<Vec<_>>().join("  ·  ");
+    let label = chips.iter().map(|c| c.label.clone()).collect::<Vec<_>>().join("  ·  ");
     let g = p.layout_no_wrap(crate::i18n::tr_format!("Filtered: {label}", label = label), t.font(12.0), Color32::from_gray(225));
     // the same inset from the left as from the top, so the pill sits in the corner (#1645)
     let inset = 3.0;

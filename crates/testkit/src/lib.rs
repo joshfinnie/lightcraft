@@ -2,9 +2,8 @@
 //! refuses it as a normal dependency. Std only, so every crate can use it at no build cost.
 //!
 //! **Skips.** libtest has no "skipped" status and hides the output of passing tests, so a test that
-//! needs a GPU, a corpus file, the craft-fonts faces or a model, and returns early without them,
-//! passes silently: "all steps passed" could mean the GPU tests never ran. Such a test calls
-//! [`skip!`] before it returns:
+//! needs a GPU, a corpus file or a model, and returns early without them, passes silently: "all
+//! steps passed" could mean the GPU tests never ran. Such a test calls [`skip!`] before it returns:
 //!
 //! ```no_run
 //! # let gpu_available = false;
@@ -38,8 +37,6 @@ pub enum Need {
     Gpu,
     /// A file from the gitignored `corpus/` (`cargo xtask corpus --download`) or a private corpus.
     Corpus,
-    /// Faces from craft-fonts, embedded only in builds with `CRAFT_FONTS_DIR`.
-    Fonts,
     /// A model file named by an environment variable (SAM 3, YuNet, …).
     Model,
     /// An input file named by an environment variable (opt-in tests).
@@ -57,7 +54,6 @@ impl Need {
         match self {
             Need::Gpu => "gpu",
             Need::Corpus => "corpus",
-            Need::Fonts => "fonts",
             Need::Model => "model",
             Need::Input => "input",
             Need::System => "system",

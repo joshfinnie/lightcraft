@@ -781,8 +781,6 @@ pub struct UiState {
     pub window: Option<crate::window_place::WindowPlace>,
     /// Shared panel arrangement; absent in legacy settings until their first layout.
     pub docking: Option<crate::docking::Workspace>,
-    #[serde(default = "crate::i18n::default_language")]
-    pub language: crate::i18n::Locale,
     /// The app's own background chores: what it last announced, rescanned and retried.
     #[serde(skip)]
     pub upkeep: Upkeep,
@@ -1329,7 +1327,6 @@ impl Default for UiState {
         UiState {
             window: None,
             docking: None,
-            language: crate::i18n::default_language(),
             upkeep: Default::default(),
             luminance_map_restore: None,
             view: ViewMode::Detail,
@@ -1499,7 +1496,6 @@ impl UiState {
         let UiState {
             window: _,
             docking: _,
-            language: _,
             view: _,
             left_panel: _,
             right: _,

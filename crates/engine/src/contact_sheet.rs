@@ -168,7 +168,7 @@ fn caption_text(name: &str, width: usize) -> String {
     use unicode_segmentation::UnicodeSegmentation;
     let clean: String = name.chars().map(|c| if c.is_control() { ' ' } else { c }).collect();
     let cells: Vec<_> = clean.graphemes(true).collect();
-    // A conservative one-em budget at 14 px also accommodates the optional CJK faces.
+    // A conservative one-em budget at 14 px.
     let limit = (width / 14).max(3);
     if cells.len() <= limit {
         return clean;

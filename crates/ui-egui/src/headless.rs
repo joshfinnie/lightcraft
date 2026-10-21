@@ -2288,19 +2288,16 @@ mod tests {
         let _ = std::fs::remove_dir_all(&out);
     }
 
-    /// Codex review of #643: the progress line while Photos imports was translated on the export's
-    /// worker thread, whose language is always English.
+    /// Codex review of #643: while Photos imports, the export's row says so and can't be cancelled.
     #[test]
-    fn the_photos_progress_line_is_in_the_users_language() {
+    fn the_photos_progress_line_shows_while_photos_imports() {
         if !cfg!(target_os = "macos") {
             return;
         }
         let mut h = demo([1200.0, 900.0]);
         let t = Duration::from_secs(10);
-        let out = std::env::temp_dir().join(format!("lc-photos-language-{}", std::process::id()));
+        let out = std::env::temp_dir().join(format!("lc-photos-progress-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&out);
-        h.app.ui.language = crate::i18n::Locale::De;
-        crate::i18n::set_language(crate::i18n::Locale::De);
         h.app.services.write_shared = Some(Arc::new(|p: &str, bytes: &[u8]| lightcraft_engine::export::write_file(p, bytes)));
         let (release, held) = std::sync::mpsc::channel::<()>();
         let held = std::sync::Mutex::new(held);
@@ -2322,11 +2319,11 @@ mod tests {
         assert!(!row.cancellable, "{row:?}");
         assert!(h.app.session.activity.cancel(row.id).is_err(), "Photos can't be stopped once asked");
         let current = h.app.export.as_ref().map(|e| e.progress.lock().unwrap().1.clone()).unwrap_or_default();
-        assert_eq!(current, "Wird zu Apple Fotos hinzugefügt…");
+        assert_eq!(current, "Adding to Apple Photos…");
         // the row says so on the next frame (issue #345)
         h.step();
         let row = h.app.session.activity.list().into_iter().find(|r| r.kind == "export").expect("the export's row");
-        assert_eq!((row.detail.as_str(), row.cancellable), ("Wird zu Apple Fotos hinzugefügt…", false), "{row:?}");
+        assert_eq!((row.detail.as_str(), row.cancellable), ("Adding to Apple Photos…", false), "{row:?}");
         release.send(()).unwrap();
         let t0 = Instant::now();
         while h.app.export.is_some() && t0.elapsed() < Duration::from_secs(90) {
@@ -2334,7 +2331,6 @@ mod tests {
         }
         let last = h.app.last_export_result.clone().expect("the export reports");
         assert_eq!((last["cancelled"].as_bool(), last["applePhotos"]["imported"].as_u64()), (Some(false), Some(1)), "{last}");
-        crate::i18n::set_language(crate::i18n::Locale::En);
         let _ = std::fs::remove_dir_all(&out);
     }
 
@@ -3114,26 +3110,6 @@ mod tests {
         let r = h.request("ui.widgets", json!({}), t);
         assert!(r.to_string().contains("label:importSource"), "source shown");
         assert!(h.app.ui.local_roots.is_empty(), "no Local shortcut saved");
-        // The source facts were cached by a worker with the source-language default. They must
-        // still be rendered in German after switching, with the folder name kept verbatim.
-        assert_eq!(h.request("engine.execute", json!({"command": "app.language.german"}), t)["ok"], true);
-        h.settle(SETTLE);
-        fn texts(shape: &egui::epaint::Shape, out: &mut Vec<String>) {
-            match shape {
-                egui::epaint::Shape::Text(shape) => out.push(shape.galley.job.text.clone()),
-                egui::epaint::Shape::Vec(shapes) => shapes.iter().for_each(|shape| texts(shape, out)),
-                _ => {}
-            }
-        }
-        let mut painted = Vec::new();
-        for shape in &h.view.shapes {
-            texts(&shape.shape, &mut painted);
-        }
-        assert!(painted.iter().any(|text| text == &format!("Ordner „{name}“ (und seine Unterordner)")), "{painted:?}");
-        for label in ["Quelle", "Übertragen", "Stichwörter", "Vorgabe"] {
-            assert!(painted.iter().any(|text| text == label), "{label}: {painted:?}");
-        }
-        assert_eq!(h.request("engine.execute", json!({"command": "app.language.english"}), t)["ok"], true);
         // a camera / card folder: copied into the library by default
         h.app.ui.dialog = None;
         let r = h.request("engine.execute", json!({"command": "file.addFromDevice", "params": {"path": sub.to_string_lossy()}}), t);
@@ -4314,37 +4290,19 @@ mod tests {
         h.settle(SETTLE);
     }
 
-    /// #911 (toast labels only): cycling the overlay announces each mode in the UI language.
+    /// #911 (toast labels only): cycling the overlay announces each mode.
     #[test]
-    fn info_overlay_toasts_are_painted_in_the_users_language() {
-        use crate::i18n::Locale;
-
-        struct RestoreLanguage(Locale);
-        impl Drop for RestoreLanguage {
-            fn drop(&mut self) {
-                crate::i18n::set_language(self.0);
-            }
-        }
-        let _restore = RestoreLanguage(crate::i18n::language());
+    fn info_overlay_toasts_are_painted() {
         let mut h = demo([1000.0, 700.0]);
         let t = Duration::from_secs(10);
         assert_eq!(h.request("ui.set", json!({"view": "detail", "infoOverlay": "off"}), t)["ok"], true);
-        for (command, locale) in [("app.language.german", Locale::De), ("app.language.french", Locale::Fr), ("app.language.english", Locale::En)] {
-            assert_eq!(h.request("engine.execute", json!({"command": command}), t)["ok"], true);
-            assert_eq!(h.app.ui.language, locale);
-            assert_eq!(crate::i18n::language(), locale);
-            for (mode, key) in [("basic", "Info Overlay: File"), ("exposure", "Info Overlay: Exposure"), ("off", "Info Overlay Off")] {
-                let expected = locale.tr(key);
-                if locale != Locale::En {
-                    assert_ne!(expected, key, "this locale must translate the tested message");
-                }
-                assert_eq!(h.request("ui.key", json!({"key": "i", "cmd": true}), t)["ok"], true);
-                assert_eq!(serde_json::to_value(h.app.ui.info_overlay).unwrap(), json!(mode));
-                assert_eq!(h.app.ui.toast.as_ref().expect("overlay toast").0, expected);
-                h.step();
-                let painted = h.painted_text();
-                assert!(painted.iter().any(|text| text == expected), "{painted:?}");
-            }
+        for (mode, expected) in [("basic", "Info Overlay: File"), ("exposure", "Info Overlay: Exposure"), ("off", "Info Overlay Off")] {
+            assert_eq!(h.request("ui.key", json!({"key": "i", "cmd": true}), t)["ok"], true);
+            assert_eq!(serde_json::to_value(h.app.ui.info_overlay).unwrap(), json!(mode));
+            assert_eq!(h.app.ui.toast.as_ref().expect("overlay toast").0, expected);
+            h.step();
+            let painted = h.painted_text();
+            assert!(painted.iter().any(|text| text == expected), "{painted:?}");
         }
     }
 

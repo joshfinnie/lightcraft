@@ -44,7 +44,6 @@ mod faces_worker;
 pub mod files;
 #[cfg(not(target_arch = "wasm32"))]
 mod focus_scan;
-pub mod fonts;
 pub mod guard;
 mod history;
 pub mod import;
@@ -91,7 +90,6 @@ use std::sync::Arc;
 
 pub use cmd::{CommandInfo, CommandSpec, command_specs, find_command};
 pub use errors::{AiModel, ErrorKind};
-pub use fonts::{CRAFT_FONTS, CraftFont};
 pub use history::{FolderMove, Interaction, UndoEntry};
 use lightcraft_catalog::{Catalog, Filter, Op, PhotoId, Sort};
 use lightcraft_develop::DevelopSettings;

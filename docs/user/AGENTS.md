@@ -52,7 +52,7 @@ drafts and are not published.
 
     node <path to your artcraft-services checkout>/frontend/apps/artcraft-website-next/scripts/docs/core.mjs docs/user
 
-The checker lives in storytold/artcraft-services. A CI check will be added once it is on that repo's main branch.
+The checker is not part of this repository.
 
 ## Support PRs
 

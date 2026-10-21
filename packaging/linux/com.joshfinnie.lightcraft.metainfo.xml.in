@@ -2,26 +2,25 @@
 <!-- AppStream metadata (software centres, Flathub). Template: package.sh and the Flatpak
      manifest substitute @VERSION@ and @DATE@ from Cargo.toml and the build date. -->
 <component type="desktop-application">
-  <id>ai.storyteller.lightcraft</id>
+  <id>com.joshfinnie.lightcraft</id>
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>MIT OR Apache-2.0</project_license>
   <name>LightCraft</name>
   <summary>Organise photos and develop raw files, non-destructively</summary>
-  <developer id="ai.storyteller">
-    <name>Learning Machines LLC</name>
+  <developer id="com.joshfinnie">
+    <name>Josh Finnie</name>
   </developer>
   <description>
     <p>
       LightCraft is a photo library and raw developer. Organise photos and develop raw files, non-destructively
     </p>
   </description>
-  <launchable type="desktop-id">ai.storyteller.lightcraft.desktop</launchable>
-  <icon type="stock">ai.storyteller.lightcraft</icon>
+  <launchable type="desktop-id">com.joshfinnie.lightcraft.desktop</launchable>
+  <icon type="stock">com.joshfinnie.lightcraft</icon>
   <!-- Only url types known to appstream 0.15 (Ubuntu 22.04, where CI validates): no vcs-browser. -->
-  <url type="homepage">https://getartcraft.com/apps/lightcraft</url>
-  <url type="bugtracker">https://github.com/storytold/lightcraft/issues</url>
-  <url type="help">https://github.com/storytold/lightcraft</url>
-  <url type="contact">https://discord.gg/artcraft</url>
+  <url type="homepage">https://github.com/joshfinnie/lightcraft</url>
+  <url type="bugtracker">https://github.com/joshfinnie/lightcraft/issues</url>
+  <url type="help">https://github.com/joshfinnie/lightcraft</url>
   <categories>
     <category>Graphics</category>
     <category>RasterGraphics</category>
@@ -36,7 +35,7 @@
   <screenshots>
     <screenshot type="default">
       <caption>Photo editing with The Tetons and the Snake River by Ansel Adams</caption>
-      <image type="source">https://raw.githubusercontent.com/storytold/lightcraft/3b4279fc2485bb51847c0071a1b3c514aa0f98f4/docs/images/hero-tetons.jpg</image>
+      <image type="source">https://raw.githubusercontent.com/joshfinnie/lightcraft/3b4279fc2485bb51847c0071a1b3c514aa0f98f4/docs/images/hero-tetons.jpg</image>
     </screenshot>
   </screenshots>
   <branding>

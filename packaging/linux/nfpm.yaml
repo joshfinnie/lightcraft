@@ -13,8 +13,8 @@ release: 1
 section: graphics
 priority: optional
 maintainer: ${LIGHTCRAFT_MAINTAINER}
-vendor: Learning Machines LLC
-homepage: https://getartcraft.com/apps/lightcraft
+vendor: Josh Finnie
+homepage: https://github.com/joshfinnie/lightcraft
 license: MIT OR Apache-2.0
 description: |-
   Open-source, native photo library and raw developer that works the way

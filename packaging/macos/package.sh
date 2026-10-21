@@ -5,7 +5,6 @@
 #   $DIST/lightcraft-cli-<version>-macos-<arch>.zip      the headless CLI
 #
 # Usage: packaging/macos/package.sh [--arch universal|aarch64|x86_64] [--skip-build]
-# Fonts: use CRAFT_FONTS_DIR or ../craft-fonts; download the pinned checkout if absent.
 #
 # Signing (env):
 #   MACOS_SIGN_IDENTITY   codesign identity (name or SHA-1). Default "-" = ad-hoc (local testing;
@@ -57,9 +56,6 @@ echo "==> LightCraft $VERSION for macOS ($ARCH), identity: $IDENTITY, notarize: 
 
 # ---- build -------------------------------------------------------------------------------------
 if [ "$SKIP_BUILD" = 0 ]; then
-  # shellcheck source=../fonts.sh
-  . "$ROOT/packaging/fonts.sh"
-  prepare_fonts
   args=()
   for t in "${TARGETS[@]}"; do args+=(--target "$t"); done
   (cd "$ROOT" && cargo build --release --locked -p lightcraft -p lightcraft-cli --features lightcraft/heif,lightcraft-cli/heif "${args[@]}")
@@ -112,7 +108,7 @@ sed -e "s/@VERSION@/$VERSION/g" -e "s/@SHORT_VERSION@/$SHORT_VERSION/g" \
   "$HERE/Info.plist.in" >"$APP/Contents/Info.plist"
 plutil -lint "$APP/Contents/Info.plist"
 printf 'APPL????' >"$APP/Contents/PkgInfo"
-# Licences (and the craft-fonts font licences when built with CRAFT_FONTS_DIR) inside the bundle.
+# Licences inside the bundle.
 mkdir -p "$APP/Contents/Resources/Licenses"
 copy_docs "$APP/Contents/Resources/Licenses"
 

@@ -2,7 +2,7 @@
 
 **Stage: alpha** · next: beta, ~14 points and ~340–600 h away
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-15 · **Change:** minor (RAW: 83% of Adobe's models decode, 38% verified after the camera-coverage sweep #1327) · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-21 · **Change:** minor (Localization dropped: this fork is English only) · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6
 
 One-page summary of how close LightCraft is to Adobe Lightroom. Agents: read this, then pick work
 from [docs/gaps.md](docs/gaps.md). The full assessment, method and evidence are in
@@ -49,7 +49,7 @@ Hours are calibrated on this repo's PR history; see
 | UI/UX fidelity | ~70% | ~85% | 32–54 h | [ui-parity](docs/ui-parity.md) |
 | File formats (non-raw) | ~70% | ~85% | 30–55 h | [file-format-parity](docs/file-format-parity.md) |
 | Hardware | ~40% | ~50% | 40–80 h | [hardware-parity](docs/hardware-parity.md) |
-| Localization | ~55% of the 12 key languages | 7 of 12 present | 130–210 h (+145–255 h new scripts) | [localization-parity](docs/localization-parity.md) |
+| Localization | n/a: this fork is English only | n/a | 0 h | removed 2026-10-21 |
 | Performance | ~70% | ~80% | 30–50 h | [target-app-parity](docs/target-app-parity.md#by-dimension) |
 | Stability | ~60% | — | 30–60 h | [target-app-parity](docs/target-app-parity.md#by-dimension) |
 | Platforms | ~60% | macOS, Windows, Linux, FreeBSD, web | 25–45 h | [target-app-parity](docs/target-app-parity.md#by-dimension) |
@@ -78,25 +78,8 @@ Weights and evidence: [target-app-parity.md](docs/target-app-parity.md#features)
 
 ## Languages
 
-Measured from `crates/ui-egui/locales` (share of 2,304 catalog messages translated); none is `full`
-while lower-layer errors stay English. Detail: [localization-parity.md](docs/localization-parity.md).
-
-| Language | Code | Translated | Status |
-|---|---|---:|---|
-| English | en | 100% | full (source) |
-| Simplified Chinese | zh-hans | 87% | partial |
-| Spanish | es | 86% | partial |
-| Hindi | hi | 0% | none (no Devanagari shaping) |
-| Arabic | ar | 0% | none (no RTL / shaping) |
-| French | fr | 88% | partial |
-| Portuguese (Brazil) | pt-br | 85% | partial |
-| Indonesian | id | 0% | none |
-| Japanese | ja | 87% | partial |
-| German | de | 91% | partial |
-| Korean | ko | 0% | none (no Hangul face) |
-| Vietnamese | vi | 0% | none |
-
-Also shipped: Traditional Chinese (87%), Russian (74%), Ukrainian (99%), Italian (92%), Georgian (100%).
+This fork is English only: the translations, the Language menu and the extra script fonts were
+removed on 2026-10-21. Labels still pass through `crates/ui-egui/src/i18n.rs`.
 
 ## Upcoming
 
@@ -208,3 +191,4 @@ Ranked toward beta; detail in [docs/roadmap.md](docs/roadmap.md), gaps in [docs/
 | 2026-09-30 | major | Created |
 | 2026-10-14 | minor | 97 Canon CR2, Pentax and Ricoh models verified (334 models, 23%); headline numbers unchanged |
 | 2026-10-14 | minor | RAW: 82% of Adobe's models decode, 36% verified (integration batch 36's CC0 per-model checks) |
+| 2026-10-21 | minor | Localization dropped: this fork is English only |

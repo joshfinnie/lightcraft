@@ -1344,10 +1344,6 @@ fn versions(app: &mut LightcraftApp, ui: &mut egui::Ui, id: PhotoId) {
 
 /// "Sep 30, 2026, 12:00 PM" from an ISO time.
 fn short_time(iso: &str) -> String {
-    // Other languages use their own date patterns (`i18n::display_time`).
-    if crate::i18n::language() != crate::i18n::Locale::En {
-        return crate::i18n::display_time(iso);
-    }
     let long = lightcraft_catalog::dates::display_time(iso);
     // "September 30, 2026 at 12:00:00 PM" → month abbreviated, seconds dropped
     let (date, time) = long.split_once(" at ").map_or((long.as_str(), None), |(d, t)| (d, Some(t)));

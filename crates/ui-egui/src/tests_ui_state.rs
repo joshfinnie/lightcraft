@@ -13,7 +13,7 @@ fn ui_state_json_keeps_its_keys() {
     let want = "autoAdvance beforeAfter brushAutoMask brushErase brushFeather brushFlow brushPressure brushSize clickZoom \
         cropDefaultAspect cropOverlay cropOverlayOrient curveChannel docking eye eyePet faceBoxes filmstrip filterBar \
         foldedSections fullscreen gradingMode gridInfo hdrVisualize hiddenLocations histogram infoOverlay keywordListOpen \
-        keywordingView language layoutImage leftPanel leftWidth localRoots maskOverlay maskOverlayAll maskOverlayColor \
+        keywordingView layoutImage leftPanel leftWidth localRoots maskOverlay maskOverlayAll maskOverlayColor \
         maskOverlayMode maskOverlayOpacity maskPins mixerMode navigator openFlyouts openSections pan pointColor \
         pointColorVisualize presetThumbs presets proof proofPaperInk removeFeather removeOpacity removeSize right \
         rightWidth search secondWindow settings showClipping showCounts showFilenames sidebar singlePanel softProof \

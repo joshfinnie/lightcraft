@@ -51,51 +51,10 @@ macro_rules! ui {
     };
 }
 
-/// The "Edit → Language" entries, one per language in [`crate::i18n::Locale::ALL`], so a language
-/// has a matching menu command (also listed through the control channel). Tests check coverage.
-pub const LANGUAGE_COMMANDS: &[UiCommand] = &[
-    ui!("app.language.english", crate::i18n::Locale::En.name(), None, "Edit>Language", NoParams, crate::commands::app::language),
-    ui!("app.language.simplifiedChinese", crate::i18n::Locale::ZhHans.name(), None, "Edit>Language", NoParams, crate::commands::app::language),
-    ui!("app.language.traditionalChinese", crate::i18n::Locale::ZhHant.name(), None, "Edit>Language", NoParams, crate::commands::app::language),
-    ui!("app.language.japanese", crate::i18n::Locale::Ja.name(), None, "Edit>Language", NoParams, crate::commands::app::language),
-    ui!("app.language.portuguese", crate::i18n::Locale::PtBr.name(), None, "Edit>Language", NoParams, crate::commands::app::language),
-    ui!("app.language.french", crate::i18n::Locale::Fr.name(), None, "Edit>Language", NoParams, crate::commands::app::language),
-    ui!("app.language.spanish", crate::i18n::Locale::Es.name(), None, "Edit>Language", NoParams, crate::commands::app::language),
-    ui!("app.language.german", crate::i18n::Locale::De.name(), None, "Edit>Language", NoParams, crate::commands::app::language),
-    ui!("app.language.russian", crate::i18n::Locale::Ru.name(), None, "Edit>Language", NoParams, crate::commands::app::language),
-    ui!("app.language.ukrainian", crate::i18n::Locale::Uk.name(), None, "Edit>Language", NoParams, crate::commands::app::language),
-    ui!("app.language.polish", crate::i18n::Locale::Pl.name(), None, "Edit>Language", NoParams, crate::commands::app::language),
-    ui!("app.language.czech", crate::i18n::Locale::Cs.name(), None, "Edit>Language", NoParams, crate::commands::app::language),
-    ui!("app.language.italian", crate::i18n::Locale::It.name(), None, "Edit>Language", NoParams, crate::commands::app::language),
-    ui!("app.language.georgian", crate::i18n::Locale::Ka.name(), None, "Edit>Language", NoParams, crate::commands::app::language),
-];
-
-/// Every UI command: the languages, then everything else. `xtask parity` reads both tables from
-/// this file, so an id listed in `docs/parity-checklist.md` is checked wherever it is declared.
+/// Every UI command. `xtask parity` reads the table from this file, so an id listed in
+/// `docs/parity-checklist.md` is checked wherever it is declared.
 pub fn ui_commands() -> impl Iterator<Item = &'static UiCommand> {
-    LANGUAGE_COMMANDS.iter().chain(UI_COMMANDS)
-}
-
-/// The language a Language-menu command selects, if the id is one. The engine and the UI both go
-/// through here, so the menu, the settings row and the control channel agree on the mapping.
-pub fn language_from_command(id: &str) -> Option<crate::i18n::Locale> {
-    match id {
-        "app.language.english" => Some(crate::i18n::Locale::En),
-        "app.language.simplifiedChinese" => Some(crate::i18n::Locale::ZhHans),
-        "app.language.traditionalChinese" => Some(crate::i18n::Locale::ZhHant),
-        "app.language.japanese" => Some(crate::i18n::Locale::Ja),
-        "app.language.portuguese" => Some(crate::i18n::Locale::PtBr),
-        "app.language.french" => Some(crate::i18n::Locale::Fr),
-        "app.language.spanish" => Some(crate::i18n::Locale::Es),
-        "app.language.german" => Some(crate::i18n::Locale::De),
-        "app.language.russian" => Some(crate::i18n::Locale::Ru),
-        "app.language.ukrainian" => Some(crate::i18n::Locale::Uk),
-        "app.language.polish" => Some(crate::i18n::Locale::Pl),
-        "app.language.czech" => Some(crate::i18n::Locale::Cs),
-        "app.language.italian" => Some(crate::i18n::Locale::It),
-        "app.language.georgian" => Some(crate::i18n::Locale::Ka),
-        _ => None,
-    }
+    UI_COMMANDS.iter()
 }
 
 pub const UI_COMMANDS: &[UiCommand] = &[
@@ -517,12 +476,9 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     ui!("app.openLogFolder", "Open Log Folder", None, "Help", NoParams, crate::commands::app::app_open_log_folder),
     ui!("app.whatsNew", "What's New", None, "Help", NoParams, crate::commands::app::app_whats_new),
     ui!("dialog.cull", "Assisted Culling…", None, "Photo", NoParams, crate::commands::dialogs::dialog_cull),
-    ui!("app.help", "LightCraft Help", Some("F1"), "Help", NoParams, crate::commands::app::app_discord),
-    ui!("app.discord", "Join the ArtCraft Discord…", None, "Help", NoParams, crate::commands::app::app_discord),
-    ui!("app.feedback", "Send Feedback…", None, "Help", NoParams, crate::commands::app::app_discord),
-    ui!("app.website", "LightCraft Website", None, "Help", NoParams, crate::commands::app::app_discord),
-    ui!("app.github", "LightCraft on GitHub", None, "Help", NoParams, crate::commands::app::app_discord),
-    ui!("app.artcraft", "ArtCraft Website", None, "Help", NoParams, crate::commands::app::app_discord),
+    ui!("app.help", "LightCraft Help", Some("F1"), "Help", NoParams, crate::commands::app::app_link),
+    ui!("app.feedback", "Send Feedback…", None, "Help", NoParams, crate::commands::app::app_link),
+    ui!("app.github", "LightCraft on GitHub", None, "Help", NoParams, crate::commands::app::app_link),
     ui!("app.shortcuts", "Keyboard Shortcuts", Some("Cmd+/"), "Help", NoParams, crate::commands::app::app_shortcuts),
     ui!(
         "app.setShortcut",

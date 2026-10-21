@@ -14,8 +14,7 @@ LightCraft is a clean-room, open-source, pure-Rust photo library + non-destructi
 4. **Pick work** from [`docs/gaps.md`](docs/gaps.md) (ranked by user impact; `B` marks beta blockers). The row-by-row
    tracker is [`docs/parity-checklist.md`](docs/parity-checklist.md) (one row per feature, menu item and shortcut).
    When you land a feature, update its row(s) and the gap entry in the same commit, and the numbers in `ROADMAP.md` /
-   `docs/target-app-parity.md` when a listed gap closes (bump each doc's *Last updated* line and revision history, per
-   craftrules `standards/progress-docs.md`); `cargo xtask parity` (part of `ci`) checks that every `cmd:`/`ctl:` id and
+   `docs/target-app-parity.md` when a listed gap closes (bump each doc's *Last updated* line and revision history); `cargo xtask parity` (part of `ci`) checks that every `cmd:`/`ctl:` id and
    path the tracker cites still exists, and `cargo xtask parity --write` refreshes its summary.
 5. Follow the autonomous operation protocol (`plan/execution-plan.md` §7). Don't stop to ask unless §7 lists the decision as the user's.
 
@@ -32,8 +31,7 @@ and often so a crash loses minutes, not hours.
 People trust LightCraft with their photo libraries and edits; a crash loses their work. A malformed raw/JPEG/XMP, a bad
 command, control or MCP argument, a corrupt catalog or settings file, or a full disk must produce an error the user (or
 agent) can act on, never a panic. Don't ship a feature by adding a panic path, and fix a crash before building on top
-of it. Full standard: `../craftrules/standards/never-crash.md`
-([storytold/craftrules](https://github.com/storytold/craftrules/blob/main/standards/never-crash.md)).
+of it.
 - **Non-test code never panics:** no `unwrap()`, `expect()`, `panic!`, `unreachable!`, `todo!`, `unimplemented!`, and
   no `unsafe`. Return the crate's error type through `Result` and `?`; use `ok_or(..)?`, `let … else`, `if let`, or a
   fallback (`unwrap_or…`) only where it can't silently corrupt a document. An unfinished feature returns an
@@ -72,24 +70,12 @@ of it. Full standard: `../craftrules/standards/never-crash.md`
 ## Assets: icons, images, fonts (ABSOLUTE RULE — never violate)
 - **Never use any iconography, image, artwork, font, sound or other asset from Adobe products** (no Lightroom/Creative Cloud icons, no screenshots, no presets/profiles/LUTs, no UI bitmaps — not even as a temporary placeholder or "reference copy"). Observing Adobe's UI to imitate *layout and behaviour* is allowed; copying or tracing its assets is not.
 - **This includes Adobe's open-licensed assets**: no Source Sans/Serif/Code or Source Han fonts, no Adobe Fonts, no
-  Adobe-published icon sets, sample photos, colour profiles or LUTs — even when OFL/MIT. The UI font is Inter (OFL);
-  Japanese and Chinese fonts come from craft-fonts (below). **One exception (maintainer decision, 2026-10-07): Noto
-  Sans/Serif CJK** (Google-branded, OFL, co-developed with Adobe as Source Han) is allowed via craft-fonts for Chinese
-  text, because nearly every OFL Chinese face derives from it. Use it unmodified under its OFL; this does not open the
-  door to Source Han under Adobe's name or to any other Adobe asset.
+  Adobe-published icon sets, sample photos, colour profiles or LUTs — even when OFL/MIT.
 - Every asset in the repository must be one of: **our own original work** (e.g. icons drawn in code as vectors, procedurally generated demo photos), **public domain / CC0**, **Creative Commons** (CC-BY / CC-BY-SA with attribution honoured), **OFL** (fonts), or **permissive open-source** (MIT/Apache-2.0/BSD/ISC) — or contributed by a person who created the asset and licenses it openly.
 - **Every asset must have an entry in `assets/ATTRIBUTION.md`** (path, title, author/creator, source URL or "original work", licence, date added, modifications) and its licence text when required (e.g. `assets/fonts/OFL-*.txt`). Add the entry in the same commit as the asset. Assets without an attribution entry must not be committed.
-- **Fonts live in [storytold/craft-fonts](https://github.com/storytold/craft-fonts), never in this repo.** Don't commit
-  font files here (Inter, already in `assets/fonts/`, is the one exception); add new fonts to craft-fonts. LightCraft
-  uses it as the optional build input `CRAFT_FONTS_DIR`: `git clone https://github.com/storytold/craft-fonts ../craft-fonts`
-  then `CRAFT_FONTS_DIR=../craft-fonts cargo run -p lightcraft` (or any cargo/xtask command). `crates/engine/build.rs`
-  embeds the manifest's fonts as `lightcraft_engine::CRAFT_FONTS` (wasm32: BIZ UDPGothic Regular only); `cargo xtask web`
-  ships Noto Sans CJK SC Regular as a separate asset loaded by the UI before startup. The UI
-  (`theme::font_definitions`) and the export watermark renderer use CJK faces (picked by script) as fallbacks after Inter. Unset,
-  `CRAFT_FONTS` is empty: everything builds, tests and runs, but Chinese and Japanese text lack glyphs. Releases always build
-  with it (`release.yml`, `CRAFT_FONTS_REQUIRED=1`) and ship the fonts' OFL licences. Tests that need these fonts skip
-  without it. Rules: craftrules
-  [`standards/fonts.md`](https://github.com/storytold/craftrules/blob/main/standards/fonts.md).
+- **Inter (OFL, `assets/fonts/`) is LightCraft's only font**, in the UI (`theme::font_definitions`, with egui's
+  default faces after it) and in drawn text (export watermarks, slideshow overlays, print pages: `crates/engine/src/text.rs`).
+  Don't add other font files or optional font inputs; characters Inter lacks draw as its missing-glyph box.
 - Icons drawn in code (e.g. `crates/ui-egui/src/icons.rs`) are original work and are recorded in `assets/ATTRIBUTION.md` as such; do not trace them from Adobe icons.
 - Demo/test images: generated procedurally by `lightcraft-scenes`, or CC0 downloads kept in the gitignored `corpus/` with their source recorded. Screenshots of Adobe apps live only in the gitignored `plan/` and are never committed or published.
 - **Enforced:** `cargo xtask assets` (in `ci`) fails when an image/icon/font/sound/video/raw/ICC/XMP file is not matched
@@ -116,7 +102,6 @@ of it. Full standard: `../craftrules/standards/never-crash.md`
 - Shell gotcha: `mv`/`cp` are aliased interactive here — use `/bin/mv -f` / `/bin/cp -f`.
 - Parallel agents: separate git worktrees and `CARGO_TARGET_DIR=target/agent-<name>`; each agent uses its **own control port** (pick one in 18000–19999, never the default 7980) and its own scratch subfolder (`<scratch>/<agent-name>/`) — never `rm -rf` shared paths; delete your target dir when done (disk is shared); keep every `Cargo.toml` valid at all times (the `crates/*` glob means one broken manifest breaks everyone).
 - Test corpora: `cargo xtask corpus --download` into `corpus/` (gitignored, CC0 only). Never commit media.
-- Shared real-file test corpora (Photoshop-authored PSDs, etc.) live in [`storytold/photocraft-corpus`](https://github.com/storytold/photocraft-corpus), explained in [craftrules `standards/test-corpora.md`](https://github.com/storytold/craftrules/blob/main/standards/test-corpora.md). Never commit large binary fixtures to this repo; fetch them pinned by commit and sha256-verified, as PhotoCraft does with `cargo xtask corpus`.
 
 ## Testing & performance (do this often)
 - Unit/property tests next to the code; end-to-end tests drive real binaries (`crates/mcp/tests/e2e.rs`,
@@ -129,7 +114,7 @@ of it. Full standard: `../craftrules/standards/never-crash.md`
   with `/usr/bin/time`. Record numbers in `plan/STATUS.md` → Metrics. Budgets: slider update ≤ 16 ms (draft) / loupe
   ≤ 60 ms on ~2.5 MP; export ≤ 1 s per 24 MP JPEG.
 - Never commit media: test images are procedural (`lightcraft-scenes`) or CC0 downloads in the gitignored `corpus/`.
-- A test that can't run here (no GPU, corpus file, craft-fonts face, model) calls `lightcraft_testkit::skip!(Gpu, "why")`
+- A test that can't run here (no GPU, corpus file, model) calls `lightcraft_testkit::skip!(Gpu, "why")`
   before it returns, not a bare `eprintln!`. `cargo xtask ci` then lists the skips and the machine's GPU adapters and
   data, and writes `target/ci/report.json` and `target/ci/summary.md` (Markdown for a PR).
 
@@ -148,11 +133,9 @@ photos. `xtask` = tooling (`ci`, `layers`, `assets`, `parity`, `wasm`, `corpus`,
   username has a `[people.<username>]` entry in `contributors/people.toml`. If not, ask them once
   whether they want to be credited by more than their username: a real name, a display name, and/or
   their public GitHub profile name (`sync_github_name = true`). If yes, add **only their own** entry
-  (copy the template at the top of the file, or run
-  `python3 ../../craftrules/scripts/contributors.py --add-me . --real-name "…" --sync-github-name`)
-  and include it in their PR, committed as them. If no, change nothing: they are credited as
+  (copy the template at the top of the file) and include it in their PR, committed as them. If no, change nothing: they are credited as
   `@username` anyway.
 - Never add, edit, guess or copy anyone else's entry or name (not from git config, commit authors or
   GitHub profiles). Never hand-edit `contributors.json`.
-- Maintainers refresh the stats with `python3 ../../craftrules/scripts/contributors.py .` (it also
-  re-verifies who wrote each `people.toml` entry; `--check` only verifies).
+- `contributors.json` is a snapshot of the upstream project's contributor statistics; this fork
+  does not regenerate it.

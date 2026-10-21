@@ -278,7 +278,7 @@ pub enum Anchor {
 #[serde(default, rename_all = "camelCase")]
 pub struct Watermark {
     pub text: String,
-    /// Basic Japanese vertical lettering: upright glyphs in columns from right to left.
+    /// Vertical lettering: upright glyphs in columns from right to left.
     pub vertical: bool,
     /// Text height as a fraction of the image's short edge.
     pub size: f32,
@@ -351,7 +351,7 @@ fn turn(turns: u8, x: f32, y: f32, w: f32, h: f32) -> (f32, f32) {
 }
 
 #[cfg(test)]
-use crate::text::{TEXT_FONT as WATERMARK_FONT, cell_glyphs as watermark_cell_glyphs, faces as watermark_fonts};
+use crate::text::{TEXT_FONT as WATERMARK_FONT, cell_glyphs as watermark_cell_glyphs};
 
 /// Draw `wm` onto `img` (straight alpha blending of the encoded values).
 pub fn draw_watermark(img: &mut Rgba8, wm: &Watermark) {
@@ -368,7 +368,7 @@ pub fn draw_watermark_preview(img: &mut Rgba8, wm: &Watermark, export_short_edge
 
 fn blend_watermark(img: &mut Rgba8, wm: &Watermark, floor_scale: f32) {
     let width = img.width;
-    watermark_coverage(img.width, img.height, wm, crate::fonts::CRAFT_FONTS, floor_scale, |x, y, k, col| {
+    watermark_coverage(img.width, img.height, wm, floor_scale, |x, y, k, col| {
         let p = &mut img.data[y * width + x];
         for c in 0..3 {
             p[c] = (p[c] as f32 + (col[c] as f32 - p[c] as f32) * k).round() as u8;
@@ -380,7 +380,7 @@ fn blend_watermark(img: &mut Rgba8, wm: &Watermark, floor_scale: f32) {
 /// anchored as on an image of that size (a slideshow slide's photo). The area is clipped to `img`.
 pub fn draw_watermark_in(img: &mut Rgba8, wm: &Watermark, x0: usize, y0: usize, w: usize, h: usize) {
     let (width, height) = (img.width, img.height);
-    watermark_coverage(w, h, wm, crate::fonts::CRAFT_FONTS, 1.0, |x, y, k, col| {
+    watermark_coverage(w, h, wm, 1.0, |x, y, k, col| {
         let (px, py) = (x0.saturating_add(x), y0.saturating_add(y));
         if px >= width || py >= height {
             return;
@@ -398,14 +398,14 @@ pub fn draw_watermark_in(img: &mut Rgba8, wm: &Watermark, x0: usize, y0: usize, 
 pub fn draw_watermark_deep(img: &mut DeepImage, wm: &Watermark) {
     let (width, trc) = (img.width, img.space.trc());
     match &mut img.samples {
-        DeepSamples::U16(v) => watermark_coverage(img.width, img.height, wm, crate::fonts::CRAFT_FONTS, 1.0, |x, y, k, col| {
+        DeepSamples::U16(v) => watermark_coverage(img.width, img.height, wm, 1.0, |x, y, k, col| {
             let i = (y * width + x) * 3;
             for c in 0..3 {
                 let p = v[i + c] as f32;
                 v[i + c] = (p + (col[c] as f32 * 257.0 - p) * k).round().clamp(0.0, 65535.0) as u16;
             }
         }),
-        DeepSamples::F32(v) => watermark_coverage(img.width, img.height, wm, crate::fonts::CRAFT_FONTS, 1.0, |x, y, k, col| {
+        DeepSamples::F32(v) => watermark_coverage(img.width, img.height, wm, 1.0, |x, y, k, col| {
             let i = (y * width + x) * 3;
             for c in 0..3 {
                 let target = trc.decode(col[c] as f32 / 255.0);
@@ -416,17 +416,9 @@ pub fn draw_watermark_deep(img: &mut DeepImage, wm: &Watermark) {
 }
 
 /// Lay out `wm` on a `width × height` image and call `blend(x, y, coverage × opacity, colour)` for
-/// every covered pixel (shadow pass first). `craft` is [`crate::fonts::CRAFT_FONTS`] (a parameter
-/// so tests can render without it). `floor_scale` is this image's size over the exported file's
+/// every covered pixel (shadow pass first). `floor_scale` is this image's size over the exported file's
 /// (1 when drawing the file itself): the 6 px minimum text size is a minimum in the file.
-fn watermark_coverage(
-    width: usize,
-    height: usize,
-    wm: &Watermark,
-    craft: &'static [crate::fonts::CraftFont],
-    floor_scale: f32,
-    mut blend_px: impl FnMut(usize, usize, f32, [u8; 3]),
-) {
+fn watermark_coverage(width: usize, height: usize, wm: &Watermark, floor_scale: f32, mut blend_px: impl FnMut(usize, usize, f32, [u8; 3])) {
     if !wm.image.trim().is_empty() {
         logo_coverage(width, height, wm, blend_px);
         return;
@@ -437,7 +429,7 @@ fn watermark_coverage(
     }
     let short = width.min(height) as f32;
     let px = (wm.size.clamp(0.005, 0.5) * short).max(6.0 * floor_scale);
-    let Some(layout) = crate::text::TextLayout::new(text, px, wm.vertical, craft) else { return };
+    let Some(layout) = crate::text::TextLayout::new(text, px, wm.vertical) else { return };
     let (tw, th) = (layout.width, layout.height);
     // laid out unturned in a tw × th box, placed by the box it becomes
     let turns = wm.quarter_turns();
@@ -2530,81 +2522,37 @@ mod tests {
         assert_eq!(same.data, export.data);
     }
 
-    fn vertical_japanese() -> Watermark {
+    fn vertical_text() -> Watermark {
         let options =
-            ExportOptions::from_json(&json!({"watermark": {"text": "日本語", "vertical": true, "size": 0.1, "shadow": false, "opacity": 1.0}}));
+            ExportOptions::from_json(&json!({"watermark": {"text": "LightCraft", "vertical": true, "size": 0.1, "shadow": false, "opacity": 1.0}}));
         options.watermark.unwrap()
     }
 
     #[test]
-    fn japanese_watermark_options_and_legacy_defaults() {
-        let old = ExportOptions::from_json(&json!({"watermark": {"text": "日本語"}}));
+    fn vertical_watermark_options_and_legacy_defaults() {
+        let old = ExportOptions::from_json(&json!({"watermark": {"text": "LightCraft"}}));
         assert!(!old.watermark.unwrap().vertical);
-        let wm = vertical_japanese();
+        let wm = vertical_text();
         assert!(wm.vertical);
         let round: Watermark = serde_json::from_value(serde_json::to_value(&wm).unwrap()).unwrap();
         assert!(round.vertical);
     }
 
-    /// Built without craft-fonts, a Japanese watermark still lays out and draws (Inter's
-    /// missing-glyph boxes), and Latin text is unaffected.
+    /// Characters Inter has no glyph for still lay out and draw (its missing-glyph boxes), and
+    /// the Latin text beside them is unaffected.
     #[test]
-    fn watermarks_work_without_craft_fonts() {
-        assert_eq!(watermark_fonts(&[]).len(), 1, "Inter only");
-        for wm in [vertical_japanese(), Watermark { text: "LightCraft 日本語".into(), ..Watermark::default() }] {
+    fn watermarks_draw_characters_inter_lacks() {
+        let vertical = Watermark { text: "日本語".into(), ..vertical_text() };
+        for wm in [vertical, Watermark { text: "LightCraft 日本語".into(), ..Watermark::default() }] {
             let mut covered = 0usize;
-            watermark_coverage(400, 300, &wm, &[], 1.0, |_, _, k, _| covered += usize::from(k > 0.0));
+            watermark_coverage(400, 300, &wm, 1.0, |_, _, k, _| covered += usize::from(k > 0.0));
             assert!(covered > 0, "{:?} draws something", wm.text);
         }
     }
 
     #[test]
-    fn biz_ud_vertical_watermarks_place_punctuation_at_the_top_right() {
-        use ab_glyph::Font;
-        let Some(entry) = crate::fonts::CRAFT_FONTS.iter().find(|f| f.family == "BIZ UDMincho") else {
-            lightcraft_testkit::skip!(Fonts, "built without BIZ UDMincho from craft-fonts");
-            return;
-        };
-        let font = ab_glyph::FontRef::try_from_slice(entry.bytes).unwrap();
-        // BIZ UDMincho has no Unicode presentation-form characters: the old fallback drew 、。.
-        assert_eq!(font.glyph_id('︑').0, 0);
-        assert_eq!(font.glyph_id('︒').0, 0);
-        let data = harfrust::ShaperData::new(&harfrust::FontRef::new(entry.bytes).unwrap());
-        for ch in ['、', '。'] {
-            let glyph = watermark_cell_glyphs(&font, &data, &ch.to_string(), true, 100.0, 0.0, 0.0).unwrap().remove(0);
-            assert_ne!(glyph.id, font.glyph_id(ch), "the font's vertical alternate for {ch}");
-            let rect = font.outline_glyph(glyph).unwrap().px_bounds();
-            assert!(rect.min.x > 50.0 && rect.max.y < 50.0, "{ch} in the upper right: {rect:?}");
-        }
-        let craft = Box::leak(
-            vec![crate::fonts::CraftFont { family: entry.family, style: entry.style, scripts: entry.scripts, bytes: entry.bytes }].into_boxed_slice(),
-        );
-        let wm = Watermark {
-            text: "、。".into(),
-            vertical: true,
-            size: 0.1,
-            anchor: Anchor::TopLeft,
-            inset_x: 0.0,
-            inset_y: 0.0,
-            shadow: false,
-            opacity: 1.0,
-            ..Default::default()
-        };
-        let mut pixels = Vec::new();
-        watermark_coverage(400, 300, &wm, craft, 1.0, |x, y, k, _| {
-            if k > 0.5 {
-                pixels.push((x, y));
-            }
-        });
-        assert!(!pixels.is_empty());
-        for (x, y) in pixels {
-            assert!(x > 15 && y % 30 < 15, "actual export coverage at the upper right of the 30 px cell: {x}, {y}");
-        }
-    }
-
-    #[test]
     fn vertical_watermarks_keep_combining_marks_in_one_cell() {
-        let coverage = |text: &str, craft| {
+        let coverage = |text: &str| {
             let wm = Watermark {
                 text: text.into(),
                 vertical: true,
@@ -2617,24 +2565,14 @@ mod tests {
                 ..Default::default()
             };
             let mut pixels = vec![0.0f32; 400 * 300];
-            watermark_coverage(400, 300, &wm, craft, 1.0, |x, y, k, _| pixels[y * 400 + x] = k);
+            watermark_coverage(400, 300, &wm, 1.0, |x, y, k, _| pixels[y * 400 + x] = k);
             assert!(pixels.iter().any(|&k| k > 0.0));
             pixels
         };
-        let compare = |a: &str, b: &str, craft| {
-            let (a_pixels, b_pixels) = (coverage(a, craft), coverage(b, craft));
-            let difference = a_pixels.iter().zip(&b_pixels).position(|(a, b)| a != b);
-            assert!(difference.is_none(), "{a:?} vs {b:?}: first differing pixel {difference:?}");
-        };
         for (composed, decomposed) in [("éA", "e\u{301}A"), ("Å\nA", "A\u{30a}\nA"), ("A\nB", "A\r\nB"), ("日A", "日\u{e0100}A")] {
-            compare(composed, decomposed, &[]);
-        }
-        if crate::fonts::CRAFT_FONTS.iter().any(|f| f.family == "BIZ UDMincho") {
-            for (composed, decomposed) in [("が日", "か\u{3099}日"), ("ぱ\n日", "は\u{309a}\n日")] {
-                compare(composed, decomposed, crate::fonts::CRAFT_FONTS);
-            }
-        } else {
-            lightcraft_testkit::skip!(Fonts, "Japanese comparisons: built without BIZ UDMincho from craft-fonts");
+            let (a_pixels, b_pixels) = (coverage(composed), coverage(decomposed));
+            let difference = a_pixels.iter().zip(&b_pixels).position(|(a, b)| a != b);
+            assert!(difference.is_none(), "{composed:?} vs {decomposed:?}: first differing pixel {difference:?}");
         }
     }
 
@@ -2644,7 +2582,7 @@ mod tests {
         let font = ab_glyph::FontRef::try_from_slice(WATERMARK_FONT).unwrap();
         let data = harfrust::ShaperData::new(&harfrust::FontRef::new(WATERMARK_FONT).unwrap());
         // There is no precomposed A with a combining long solidus overlay.
-        let glyphs = watermark_cell_glyphs(&font, &data, "A\u{338}", false, 30.0, 0.0, 0.0).unwrap();
+        let glyphs = watermark_cell_glyphs(&font, &data, "A\u{338}", 30.0, 0.0, 0.0).unwrap();
         assert_eq!(glyphs.len(), 2, "retain the base and the separately positioned combining glyph");
         let baseline = font.as_scaled(30.0).ascent();
         for glyph in glyphs {
@@ -2654,17 +2592,8 @@ mod tests {
     }
 
     #[test]
-    fn japanese_watermarks_support_vertical_columns() {
-        use ab_glyph::Font;
-        let fonts = watermark_fonts(crate::fonts::CRAFT_FONTS);
-        if fonts.len() < 2 {
-            lightcraft_testkit::skip!(Fonts, "built without CRAFT_FONTS_DIR, so there is no Japanese watermark face");
-            return;
-        }
-        for c in "日本語の文字".chars() {
-            assert!(fonts[1..].iter().any(|f| f.glyph_id(c).0 != 0), "a craft-fonts face has {c}");
-        }
-        let wm = vertical_japanese();
+    fn vertical_watermarks_run_down_columns_from_right_to_left() {
+        let wm = vertical_text();
         let mut img = Rgba8::new(400, 300);
         img.data.fill([0, 0, 0, 255]);
         draw_watermark(&mut img, &wm);
@@ -2672,11 +2601,11 @@ mod tests {
         assert!(lit.len() > 100);
         let w = lit.iter().map(|p| p.0).max().unwrap() - lit.iter().map(|p| p.0).min().unwrap();
         let h = lit.iter().map(|p| p.1).max().unwrap() - lit.iter().map(|p| p.1).min().unwrap();
-        assert!(h > w * 2, "vertical Japanese must extend down the column");
-        let two = Watermark { text: "日\n本".into(), anchor: Anchor::TopLeft, inset_x: 0.0, inset_y: 0.0, ..wm };
+        assert!(h > w * 2, "vertical text must extend down the column");
+        let two = Watermark { text: "L\nC".into(), anchor: Anchor::TopLeft, inset_x: 0.0, inset_y: 0.0, ..wm };
         img.data.fill([0, 0, 0, 255]);
         draw_watermark(&mut img, &two);
-        for (text, dx) in [("本", 0), ("日", 30)] {
+        for (text, dx) in [("C", 0), ("L", 30)] {
             let mut single = Rgba8::new(400, 300);
             single.data.fill([0, 0, 0, 255]);
             draw_watermark(&mut single, &Watermark { text: text.into(), ..two.clone() });

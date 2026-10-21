@@ -392,7 +392,6 @@ pub fn handle(app: &mut LightcraftApp, ctx: &egui::Context, req: &ControlRequest
                     crate::docking::cancel_replaced_gesture(app, u.docking.as_ref());
                     let old = std::mem::replace(&mut app.ui, u);
                     app.ui.keep_unsaved(old);
-                    crate::i18n::set_language(app.ui.language);
                     ctx.request_repaint();
                     ok(serde_json::to_value(&app.ui).unwrap_or_default())
                 }

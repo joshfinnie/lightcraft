@@ -61,9 +61,9 @@ Presets-panel binding. `Shift+Z` remains an alternative pick-and-advance key in 
 
 The macOS native menu displays plain-key bindings but leaves execution to egui; only shortcuts
 AppKit delivers to the menu (Command, Control or function keys) are skipped by egui. The native
-menu correction is adapted from [PR #261](https://github.com/storytold/lightcraft/pull/261),
+menu correction is adapted from [PR #261](https://github.com/joshfinnie/lightcraft/pull/261),
 commit `4e012a59a6d2442ba749f109ea27aadb5c0b11a5` by Gardy, and addresses the cause reported in
-[issue #283](https://github.com/storytold/lightcraft/issues/283). That PR was open when checked
+[issue #283](https://github.com/joshfinnie/lightcraft/issues/283). That PR was open when checked
 on 2026-10-08; this work extends its fix with library culling bindings and tests.
 
 ## Grid thumbnail size

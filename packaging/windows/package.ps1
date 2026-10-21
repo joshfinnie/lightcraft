@@ -11,8 +11,6 @@
   zip needs the Visual C++ redistributable. Signing is delegated to sign.ps1 (skipped with a
   warning when no signing secrets are set).
 
-  Fonts: uses CRAFT_FONTS_DIR or ../craft-fonts; downloads the pinned checkout if absent.
-
   Needs: Rust (MSVC toolchain + the target), the Windows SDK (rc.exe, signtool.exe),
   and WiX v5: dotnet tool install --global wix --version 5.0.2
   The WiX UI and Util extensions (installer dialogs, "Launch LightCraft" on Finish) are added to
@@ -83,8 +81,6 @@ if (-not $env:LIGHTCRAFT_BUILD_DATE) { $env:LIGHTCRAFT_BUILD_DATE = (Get-Date).T
 Write-Output "LightCraft $Version for Windows $Arch ($Target)"
 
 if (-not $SkipBuild) {
-  . (Join-Path $PSScriptRoot 'fonts.ps1')
-  Initialize-CraftFonts $Root
   # Static CRT: no VC++ redistributable needed. Scoped to the target so host build scripts and
   # proc-macros are unaffected.
   $flagVar = 'CARGO_TARGET_' + ($Target.ToUpper() -replace '-', '_') + '_RUSTFLAGS'
@@ -116,14 +112,13 @@ $Stage = Join-Path $TargetDir "windows-package\$Arch"
 Remove-Item -Recurse -Force $Stage -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force -Path $Stage | Out-Null
 Copy-Item (Join-Path $Bin 'lightcraft.exe'), (Join-Path $Bin 'lightcraft-cli.exe') $Stage
-# Include the embedded fonts' unmodified OFL texts in both installer and portable releases.
-. (Join-Path $PSScriptRoot 'font-licences.ps1')
-Write-FontLicences (Join-Path $Stage 'FONT-LICENCES.txt') (Join-Path $Root 'assets\fonts\OFL-Inter.txt') $env:CRAFT_FONTS_DIR
+# The embedded Inter font's OFL goes with both the installer and the portable zip.
+Copy-Item (Join-Path $Root 'assets\fonts\OFL-Inter.txt') $Stage
 
 & (Join-Path $PSScriptRoot 'sign.ps1') (Join-Path $Stage 'lightcraft.exe') (Join-Path $Stage 'lightcraft-cli.exe')
 
 # ---- MSI ---------------------------------------------------------------------------------------
-# Extensions must match the WiX tool version (5.0.2, see release.yml). Re-adding is harmless.
+# Extensions must match the WiX tool version (5.0.2, as packaging-lint.yml installs). Re-adding is harmless.
 $WixVersion = '5.0.2'
 $WixExtensions = 'WixToolset.UI.wixext', 'WixToolset.Util.wixext'
 foreach ($ext in $WixExtensions) {
@@ -154,16 +149,10 @@ $Portable = Join-Path $TargetDir "windows-package\lightcraft-$Version-windows-$A
 Remove-Item -Recurse -Force $Portable -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force -Path $Portable | Out-Null
 Copy-Item (Join-Path $Stage '*.exe') $Portable
-Copy-Item (Join-Path $Stage 'FONT-LICENCES.txt') $Portable
+Copy-Item (Join-Path $Stage 'OFL-Inter.txt') $Portable
 foreach ($f in 'README.md', 'LICENSE', 'LICENSE-MIT', 'LICENSE-APACHE', 'NOTICE') {
   $p = Join-Path $Root $f
   if (Test-Path $p) { Copy-Item $p $Portable }
-}
-# Builds made with CRAFT_FONTS_DIR (storytold/craft-fonts) embed its fonts: ship their OFL licences.
-if ($env:CRAFT_FONTS_DIR) {
-  Get-ChildItem -Path (Join-Path $env:CRAFT_FONTS_DIR 'fonts\*\OFL.txt') -ErrorAction SilentlyContinue | ForEach-Object {
-    Copy-Item $_.FullName (Join-Path $Portable "OFL-$($_.Directory.Name).txt")
-  }
 }
 $Zip = Join-Path $Dist "lightcraft-$Version-windows-$Arch-portable.zip"
 Remove-Item -Force $Zip -ErrorAction SilentlyContinue

@@ -55,9 +55,6 @@ cargo run --release -p lightcraft-cli -- render photo.jpg -o out.jpg --set light
 The web build needs the `wasm32-unknown-unknown` target and the matching `wasm-bindgen` CLI;
 `cargo xtask web` prints the install command. See [docs/web.md](docs/web.md).
 
-Chinese and Japanese text need the optional [craft-fonts](https://github.com/storytold/craft-fonts)
-build input (`CRAFT_FONTS_DIR=../craft-fonts`); without it everything works except those glyphs.
-
 Logs go to `~/Library/Application Support/LightCraft/logs/` on macOS and
 `%APPDATA%\LightCraft\logs\` on Windows (**Help ▸ Open Log Folder**).
 
