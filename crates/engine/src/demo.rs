@@ -137,7 +137,9 @@ pub(crate) fn scene_pixels(scene: &lightcraft_scenes::Scene, max_edge: usize) ->
             }
         }
     };
-    let pixels = slot.get_or_generate(|how| match how {
+    let (w, h) = scene.fit(max_edge);
+    let how = if w.saturating_mul(h) <= ALONE_PIXELS { Render::Serial } else { Render::Parallel };
+    let pixels = slot.get_or_generate(how, |how| match how {
         Render::Parallel => scene.render_fit(max_edge),
         Render::Serial => scene.render_fit_serial(max_edge),
     });
@@ -154,6 +156,11 @@ enum Render {
     Serial,
 }
 
+/// Scenes this small (a thumbnail's 512 px) render on the calling thread: a second or two, where
+/// on [`render_pool`] they would wait behind the full-size originals rendering there, minutes each
+/// on a small machine, and so would every export and thumbnail waiting for them.
+const ALONE_PIXELS: usize = 512 * 1024;
+
 const FAILED: &str = "the demo scene could not be generated";
 
 /// Render a scene for [`SceneSlot::get_or_generate`], so that it never needs a thread that waits
@@ -161,11 +168,12 @@ const FAILED: &str = "the demo scene could not be generated";
 /// would run queued jobs while it waits for rows other workers took, and one of them could ask for
 /// this very scene and wait for the generation further down its own stack (the faces scan's pool
 /// threads hung that way). That also keeps the work within the caller's pool and its limits (the
-/// scan's pace, `LIGHTCRAFT_FACE_THREADS`). Any other caller (the render workers, which are plain
+/// scan's pace, `LIGHTCRAFT_FACE_THREADS`). So does a small scene (`how` is [`Render::Serial`],
+/// [`ALONE_PIXELS`]). Any other caller (the render workers, which are plain
 /// threads) renders in parallel on [`render_pool`], whose threads only ever render, and blocks
 /// without running other work meanwhile; where that pool can't be started it renders alone too.
-fn generate(render: impl FnOnce(Render) -> lightcraft_raster::Rgb32f + Send) -> lightcraft_raster::Rgb32f {
-    if rayon::current_thread_index().is_some() {
+fn generate(how: Render, render: impl FnOnce(Render) -> lightcraft_raster::Rgb32f + Send) -> lightcraft_raster::Rgb32f {
+    if how == Render::Serial || rayon::current_thread_index().is_some() {
         return render(Render::Serial);
     }
     match render_pool() {
@@ -245,7 +253,11 @@ impl SceneSlot {
     /// The pixels `render` makes ([`generate`]), generated once: the first caller renders, with no
     /// lock held, and later ones wait for its outcome. A render that panics is an error for the
     /// callers of its generation, and the next request tries again.
-    fn get_or_generate(&self, render: impl FnOnce(Render) -> lightcraft_raster::Rgb32f + Send) -> Result<Arc<lightcraft_raster::Rgb32f>, String> {
+    fn get_or_generate(
+        &self,
+        how: Render,
+        render: impl FnOnce(Render) -> lightcraft_raster::Rgb32f + Send,
+    ) -> Result<Arc<lightcraft_raster::Rgb32f>, String> {
         let mut g = self.lock();
         let n = match &g.generation {
             Generation::Ready(p) => return Ok(p.clone()),
@@ -264,7 +276,7 @@ impl SceneSlot {
             Generation::Empty | Generation::Failed => g.start(),
         };
         drop(g);
-        let made = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| generate(render)));
+        let made = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| generate(how, render)));
         let mut g = self.lock();
         g.generation = match made {
             Ok(pixels) => Generation::Ready(Arc::new(pixels)),
@@ -446,13 +458,13 @@ mod tests {
             for _ in 0..16 {
                 let (slot, render, tx) = (slot.clone(), render.clone(), tx.clone());
                 pool.spawn(move || {
-                    let _ = tx.send(slot.get_or_generate(render).unwrap());
+                    let _ = tx.send(slot.get_or_generate(Render::Parallel, render).unwrap());
                 });
             }
             for _ in 0..4 {
                 let (slot, render, tx) = (slot.clone(), render.clone(), tx.clone());
                 std::thread::spawn(move || {
-                    let _ = tx.send(slot.get_or_generate(render).unwrap());
+                    let _ = tx.send(slot.get_or_generate(Render::Parallel, render).unwrap());
                 });
             }
             let got: Vec<_> = (0..20).map(|_| rx.recv().unwrap()).collect();
@@ -460,6 +472,33 @@ mod tests {
             (renders.load(Ordering::SeqCst), peak.load(Ordering::SeqCst))
         });
         assert_eq!((renders, peak), (1, 1));
+    }
+
+    /// A thumbnail-sized scene never waits for the scene pool: with every pool thread busy (full-size originals
+    /// rendering, minutes each on a small machine) it renders on the caller's thread. It queued behind them before,
+    /// and so did every export and thumbnail waiting for it.
+    #[test]
+    fn a_small_scene_does_not_wait_for_the_busy_scene_pool() {
+        let pool = render_pool().expect("the scene pool starts here");
+        let (release, held) = std::sync::mpsc::channel::<()>();
+        let held = Arc::new(std::sync::Mutex::new(held));
+        let (busy_tx, busy) = std::sync::mpsc::channel();
+        for _ in 0..pool.current_num_threads() {
+            let (held, busy_tx) = (held.clone(), busy_tx.clone());
+            pool.spawn(move || {
+                let _ = busy_tx.send(());
+                // until the test ends (`release` dropped) or at most a minute
+                let _ = held.lock().unwrap_or_else(std::sync::PoisonError::into_inner).recv_timeout(std::time::Duration::from_secs(60));
+            });
+        }
+        for _ in 0..pool.current_num_threads() {
+            busy.recv().unwrap();
+        }
+        let s = small_scene();
+        let edge = 509; // a size no other test asks for
+        let got = within(30, move || scene_pixels(&s, edge).unwrap());
+        assert_eq!(got.width.max(got.height), edge);
+        drop(release);
     }
 
     /// A rayon worker (the faces scan's) renders a scene on its own thread alone, so the work stays within its pool
@@ -472,7 +511,7 @@ mod tests {
             let mut seen = None;
             pool.install(|| {
                 let caller = std::thread::current().id();
-                slot.get_or_generate(|how| {
+                slot.get_or_generate(Render::Parallel, |how| {
                     seen = Some((how, caller, std::thread::current().id()));
                     pixels(1)
                 })
@@ -481,7 +520,7 @@ mod tests {
             let other = SceneSlot::default();
             let mut other_seen = None;
             other
-                .get_or_generate(|how| {
+                .get_or_generate(Render::Parallel, |how| {
                     other_seen = Some((how, std::thread::current().name().unwrap_or_default().to_string()));
                     pixels(1)
                 })
@@ -506,7 +545,7 @@ mod tests {
             let ask = |slot: &Arc<SceneSlot>| {
                 let (slot, renders, started_tx, go_rx) = (slot.clone(), renders.clone(), started_tx.clone(), go_rx.clone());
                 std::thread::spawn(move || {
-                    slot.get_or_generate(move |_| {
+                    slot.get_or_generate(Render::Parallel, move |_| {
                         renders.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                         let _ = started_tx.lock().unwrap().send(());
                         let _ = go_rx.lock().unwrap().recv();
@@ -537,7 +576,7 @@ mod tests {
             let failing = {
                 let slot = slot.clone();
                 std::thread::spawn(move || {
-                    slot.get_or_generate(move |_| {
+                    slot.get_or_generate(Render::Parallel, move |_| {
                         let _ = started_tx.send(());
                         let _ = go_rx.recv();
                         panic!("render failed");
@@ -548,14 +587,14 @@ mod tests {
             let waiters: Vec<_> = (0..2)
                 .map(|_| {
                     let slot = slot.clone();
-                    std::thread::spawn(move || slot.get_or_generate(|_| pixels(2)))
+                    std::thread::spawn(move || slot.get_or_generate(Render::Parallel, |_| pixels(2)))
                 })
                 .collect();
             until_waiting(&slot, 2);
             drop(go);
             let first = failing.join().unwrap();
             let waiters: Vec<_> = waiters.into_iter().map(|w| w.join().unwrap()).collect();
-            (first, waiters, slot.get_or_generate(|_| pixels(3)))
+            (first, waiters, slot.get_or_generate(Render::Parallel, |_| pixels(3)))
         });
         assert!(first.is_err() && waiters.iter().all(Result::is_err), "the callers of the failed generation get its error");
         assert_eq!(again.unwrap().width, 3);
@@ -585,7 +624,7 @@ mod tests {
                 let failing = {
                     let slot = slot.clone();
                     std::thread::spawn(move || {
-                        slot.get_or_generate(move |_| {
+                        slot.get_or_generate(Render::Parallel, move |_| {
                             let _ = started_tx.send(());
                             let _ = go_rx.recv();
                             panic!("render failed");
@@ -596,7 +635,7 @@ mod tests {
                 let waiters: Vec<_> = (0..3)
                     .map(|_| {
                         let slot = slot.clone();
-                        std::thread::spawn(move || slot.get_or_generate(|_| pixels(2)))
+                        std::thread::spawn(move || slot.get_or_generate(Render::Parallel, |_| pixels(2)))
                     })
                     .collect();
                 until_waiting(&slot, 3);
@@ -605,7 +644,7 @@ mod tests {
                     std::thread::spawn(move || {
                         loop {
                             if matches!(slot.lock().generation, Generation::Failed) {
-                                return slot.get_or_generate(|_| pixels(4));
+                                return slot.get_or_generate(Render::Parallel, |_| pixels(4));
                             }
                             std::hint::spin_loop();
                         }

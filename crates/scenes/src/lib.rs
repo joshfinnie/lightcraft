@@ -81,7 +81,8 @@ impl Scene {
         paint::render_serial(self.kind, self.seed, w, h)
     }
 
-    fn fit(&self, max_edge: usize) -> (usize, usize) {
+    /// The size [`Scene::render_fit`] renders at.
+    pub fn fit(&self, max_edge: usize) -> (usize, usize) {
         // never past the scene's own size: that is a demo photo's full resolution, and a size
         // from a damaged catalog (a width of 4294967295) asked for more memory than exists
         let max_edge = max_edge.min(self.width.max(self.height).max(1) as usize);
