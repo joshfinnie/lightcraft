@@ -676,19 +676,39 @@ params! {
 }
 
 params! {
-    /// `library.inspectLightroom`
+    /// `library.inspectLightroom`. The desktop app reads and imports a catalog in the background: there `status`
+    /// (or no `path`) reports the task, `cancel` stops it and `wait` waits for it. Here each call runs to the end
+    /// before it returns, so nothing is ever in flight.
     struct LightroomPath {
-        path: String,
+        path: Option<String>,
+        #[serde(default)]
+        status: bool,
+        #[serde(default)]
+        wait: bool,
+        #[serde(default)]
+        cancel: bool,
     }
 }
 
 params! {
-    /// `library.importLightroom`
+    /// `library.importLightroom` (`status`, `wait`, `cancel`: as for [`LightroomPath`])
     struct ImportLightroom {
-        path: String,
+        path: Option<String>,
         #[serde(default)]
         update_existing: bool,
+        #[serde(default)]
+        status: bool,
+        #[serde(default)]
+        wait: bool,
+        #[serde(default)]
+        cancel: bool,
     }
+}
+
+/// The path to read, or `None` for a status request (`status`, or no `path`): no task runs in the engine, so a
+/// status has nothing to report and a cancel nothing to stop.
+fn lightroom_target(path: Option<&str>, status: bool) -> Option<&std::path::Path> {
+    path.filter(|_| !status).map(std::path::Path::new)
 }
 
 params! {
@@ -1841,9 +1861,11 @@ pub fn specs() -> Vec<CommandSpec> {
         }),
         // ---- import
         cmd!(query "library.inspectLightroom", "Inspect Lightroom Catalog", [], None,
-        "{path: .lrcat} → {photos, collections, missing, warnings}; read-only, no Lightroom required",
+        "{path: .lrcat, status?, wait?, cancel?} → {photos, collections, missing, warnings}; read-only, no Lightroom required. The desktop app reads in the background: `status` (or no `path`) reports the task, `cancel` stops it, `wait` waits for it",
         LightroomPath, always, |_, p| {
-            let data = crate::lightroom_catalog::read(std::path::Path::new(&p.path)).map_err(|e| bad("library.inspectLightroom",e))?;
+            let _ = (p.wait, p.cancel);
+            let Some(path) = lightroom_target(p.path.as_deref(), p.status) else { return Ok(Value::Null) };
+            let data = crate::lightroom_catalog::read(path).map_err(|e| bad("library.inspectLightroom",e))?;
             Ok(json!({"photos":data.photos.len(),"collections":data.collections.iter().filter(|r|r.get("systemOnly").and_then(Value::as_f64).unwrap_or(0.0)==0.0).count(),"missing":data.photos.iter().filter(|p| !p.original_is_file()).map(|p|&p.path).collect::<Vec<_>>(),"warnings":data.warnings}))
         }),
         cmd!(
@@ -1851,10 +1873,14 @@ pub fn specs() -> Vec<CommandSpec> {
             "Import Lightroom Catalog",
             [],
             None,
-            "{path: .lrcat, updateExisting?: false}; direct import of paths, ratings, flags, metadata, keywords, collections, virtual copies & mapped edits. Archives source settings/history first. Existing edited photos are preserved unless updateExisting=true; source catalog is read-only.",
+            "{path: .lrcat, updateExisting?: false, status?, wait?, cancel?}; direct import of paths, ratings, flags, metadata, keywords, collections, virtual copies & mapped edits. Archives source settings/history first. Existing edited photos are preserved unless updateExisting=true; source catalog is read-only.",
             ImportLightroom,
             always,
-            |s, p| { crate::lightroom_catalog::import(s, std::path::Path::new(&p.path), p.update_existing) }
+            |s, p| {
+                let _ = (p.wait, p.cancel);
+                let Some(path) = lightroom_target(p.path.as_deref(), p.status) else { return Ok(Value::Null) };
+                crate::lightroom_catalog::import(s, path, p.update_existing)
+            }
         ),
         cmd!(
             query "library.importPreview",

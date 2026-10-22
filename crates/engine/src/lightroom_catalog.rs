@@ -1581,6 +1581,26 @@ mod tests {
         std::fs::remove_file(path).unwrap();
     }
 
+    /// The keys the desktop app reads for its background task (`status`, `wait`, `cancel`) are the command's own, so
+    /// the app's check of them (and an agent's call through the control channel) accepts them; here a status has
+    /// nothing in flight to report.
+    #[test]
+    fn inspect_and_import_take_the_apps_task_keys() {
+        let path = std::env::temp_dir().join(format!("lightcraft-native-catalog-keys-{}.lrcat", std::process::id()));
+        std::fs::write(&path, native_catalog(&photo_tables(("/catalog/", "")))).unwrap();
+        let mut s = crate::Session::new();
+        for id in ["library.inspectLightroom", "library.importLightroom"] {
+            assert_eq!(s.execute(id, &serde_json::json!({})).unwrap(), Value::Null, "{id}");
+            assert_eq!(s.execute(id, &serde_json::json!({"status": true, "cancel": true, "path": path})).unwrap(), Value::Null, "{id}");
+            assert!(s.execute(id, &serde_json::json!({"path": path, "stauts": true})).is_err(), "{id}: a misspelt key is refused");
+        }
+        let r = s.execute("library.inspectLightroom", &serde_json::json!({"path": path, "wait": true})).unwrap();
+        assert_eq!(r["photos"], 1, "{r}");
+        std::fs::write(&path, b"bad catalog").unwrap();
+        assert!(s.execute("library.inspectLightroom", &serde_json::json!({"path": path})).is_err());
+        std::fs::remove_file(path).unwrap();
+    }
+
     #[test]
     fn preparation_skips_missing_original_probes_but_keeps_catalog_records() {
         let dir = std::env::temp_dir().join(format!("lightcraft-lrcat-offline-probes-{}", std::process::id()));

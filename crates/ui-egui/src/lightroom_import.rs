@@ -533,10 +533,27 @@ mod tests {
 
     /// A task as `start_import` makes it, fed by a channel the test holds instead of a worker.
     fn fake_import(h: &crate::headless::Headless) -> (LightroomTask, mpsc::Sender<Message>, Arc<AtomicBool>, LightroomProgress) {
+        fake(h, Kind::Import)
+    }
+
+    fn fake(h: &crate::headless::Headless, kind: Kind) -> (LightroomTask, mpsc::Sender<Message>, Arc<AtomicBool>, LightroomProgress) {
         let (tx, rx) = mpsc::channel();
         let (cancel, progress) = (Arc::new(AtomicBool::new(false)), LightroomProgress::default());
-        let task = LightroomTask::new(&h.app.session, Kind::Import, "fixture.lrcat".into(), cancel.clone(), progress.clone(), rx);
+        let task = LightroomTask::new(&h.app.session, kind, "fixture.lrcat".into(), cancel.clone(), progress.clone(), rx);
         (task, tx, cancel, progress)
+    }
+
+    fn toast(h: &crate::headless::Headless) -> String {
+        h.app.ui.toast.as_ref().map(|t| t.0.to_string()).unwrap_or_default()
+    }
+
+    fn not_a_catalog(tag: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("lc-ui-lrimport-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("Lightroom Catalog.lrcat");
+        std::fs::write(&path, b"not really SQLite").unwrap();
+        path
     }
 
     fn demo() -> crate::headless::Headless {
@@ -687,5 +704,135 @@ mod tests {
         assert_eq!(report["collections"], 0);
         assert_eq!(report["missing"], serde_json::json!([]));
         assert_eq!(report["warnings"], serde_json::json!(["warning"]));
+    }
+
+    /// Inspect… on a file that is not a catalog fails with the reader's reason, in the toast and the status, and
+    /// leaves nothing running.
+    #[test]
+    fn inspecting_a_file_that_is_not_a_catalog_says_why() {
+        let mut h = demo();
+        let path = not_a_catalog("inspect");
+        let ctx = h.view.ctx.clone();
+        let r = command(&mut h.app, "library.inspectLightroom", &json!({"path": path, "wait": true}), &ctx).unwrap();
+        assert!(r["error"].as_str().is_some_and(|e| !e.is_empty()), "{r}");
+        assert_eq!(r["path"], json!(path));
+        assert!(h.app.lightroom.is_none());
+        assert!(toast(&h).starts_with("Lightroom inspection failed: "), "{}", toast(&h));
+        assert!(h.app.ui.dialog.is_none(), "an inspection has no result dialog");
+        let status = command(&mut h.app, "library.inspectLightroom", &json!({"status": true}), &ctx).unwrap();
+        assert_eq!(status, r, "status is the last result once the task is over");
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    /// A second Lightroom task, or one while an import runs, is refused; a status request while one runs says so.
+    #[test]
+    fn one_lightroom_task_at_a_time() {
+        let mut h = demo();
+        let ctx = h.view.ctx.clone();
+        let (task, tx, _, _) = fake(&h, Kind::Inspect);
+        h.app.lightroom = Some(task);
+        let path = not_a_catalog("busy");
+        for id in ["library.inspectLightroom", "library.importLightroom"] {
+            let e = command(&mut h.app, id, &json!({"path": path}), &ctx).unwrap_err();
+            assert_eq!(e, "a Lightroom catalog task is already running");
+        }
+        let status = command(&mut h.app, "library.inspectLightroom", &json!({}), &ctx).unwrap();
+        assert_eq!(status["running"], true, "{status}");
+        assert!(is_running(&h.app));
+        // the stack's cancel and the command's are the same flag
+        command(&mut h.app, "library.inspectLightroom", &json!({"status": true, "cancel": true}), &ctx).unwrap();
+        tx.send(Message::Inspected(Ok(json!({"photos": 3})))).unwrap();
+        let last = command(&mut h.app, "library.inspectLightroom", &json!({"wait": true}), &ctx).unwrap();
+        assert_eq!(last, json!({"cancelled": true, "path": "fixture.lrcat"}), "a result that arrives after a cancel is not kept");
+        assert_eq!(toast(&h), "Lightroom inspection cancelled");
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    /// The toast sums up an inspection, and a worker that goes away without a word is a failure, not a hang.
+    #[test]
+    fn inspection_results_and_a_lost_worker_are_reported() {
+        let mut h = demo();
+        let (task, tx, _, _) = fake(&h, Kind::Inspect);
+        h.app.lightroom = Some(task);
+        tx.send(Message::Inspected(Ok(json!({"photos": 3, "collections": 1, "missing": ["D:/a.NEF"], "warnings": []})))).unwrap();
+        h.step();
+        assert_eq!(toast(&h), "Lightroom catalog inspected: 3 photos, 1 collections, 1 missing");
+        assert_eq!(h.app.lightroom_last.as_ref().unwrap()["photos"], 3);
+
+        let (task, tx, _, _) = fake(&h, Kind::Import);
+        h.app.lightroom = Some(task);
+        drop(tx);
+        h.step();
+        assert!(h.app.lightroom.is_none());
+        assert_eq!(toast(&h), "Lightroom import failed: Lightroom worker stopped unexpectedly");
+        assert!(matches!(h.app.ui.dialog, Some(crate::state::Dialog::LightroomResult { first: None, .. })));
+    }
+
+    /// The archive index finishes after the photos are in: its failure is a warning on a finished import, and a
+    /// commit error noted earlier still reads as a failure.
+    #[test]
+    fn the_archive_index_finishing_reports_on_the_import() {
+        let mut h = demo();
+        let report = json!({"imported": 2, "photos": 2, "collections": 0, "failed": [["b.NEF", "unreadable"]]});
+        for (pending_error, result, expect) in [
+            (None, Ok(()), "Lightroom import complete: 2 photos added, 1 failed"),
+            (None, Err("disk full".to_string()), "Lightroom import complete: 2 photos added; index warning: disk full"),
+            (Some("the catalog moved"), Ok(()), "Lightroom import failed: the catalog moved"),
+            (Some("the catalog moved"), Err("disk full".to_string()), "Lightroom import failed: the catalog moved; index warning: disk full"),
+        ] {
+            h.app.ui.dialog = None;
+            let (task, tx, _, _) = fake_import(&h);
+            h.app.lightroom = Some(task);
+            let mut pending = json!({"running": true, "kind": "import", "report": report});
+            if let Some(e) = pending_error {
+                pending["error"] = json!(e);
+            }
+            h.app.lightroom_last = Some(pending);
+            tx.send(Message::Finalized(result)).unwrap();
+            h.step();
+            assert_eq!(toast(&h), expect);
+            let Some(crate::state::Dialog::LightroomResult { summary, details, .. }) = &h.app.ui.dialog else { panic!("{:?}", h.app.ui.dialog) };
+            assert_eq!(summary, expect);
+            assert!(details.iter().any(|d| d == "b.NEF: unreadable"), "{details:?}");
+        }
+    }
+
+    /// One warning per photo can be thousands: the result shows the first few and counts the rest.
+    #[test]
+    fn a_long_report_stays_short() {
+        let failed: Vec<_> = (0..6).map(|i| json!([format!("{i}.NEF"), "unreadable"])).collect();
+        let warnings: Vec<_> = (0..12).map(|i| format!("warning {i}")).collect();
+        let value = json!({"report": {"photos": 40, "collections": 2, "failed": failed, "warnings": warnings, "missing": ["x"], "mapping": {"a": 9, "b": 7}, "library": "/lib"}});
+        let crate::state::Dialog::LightroomResult { summary, library, details, first } = result_dialog(&value, "done") else {
+            panic!("a result dialog")
+        };
+        assert_eq!(summary, "done");
+        assert_eq!(library.as_deref(), Some("/lib"));
+        assert_eq!(first, Some(7), "Show in Library goes to the first photo added");
+        assert_eq!(details.first().map(String::as_str), Some("40 catalog records processed; 2 collections."));
+        assert_eq!(details.iter().filter(|d| d.ends_with(": unreadable")).count(), 4);
+        assert_eq!(details.iter().filter(|d| d.starts_with("warning ")).count(), 8);
+        assert_eq!(details.last().map(String::as_str), Some("4 more warnings."));
+        assert!(details.iter().any(|d| d.starts_with("1 originals are missing.")));
+        let failed = json!({"error": "no", "report": {"mapping": {"a": 1}}});
+        assert!(matches!(result_dialog(&failed, "x"), crate::state::Dialog::LightroomResult { first: None, .. }), "a failure offers no photo");
+    }
+
+    /// The status, wait and cancel the docs give for a running task work through `app.run` (the control channel and
+    /// MCP), not only from inside the app: the engine's check of the params must accept them.
+    #[test]
+    fn status_wait_and_cancel_work_through_the_command_path() {
+        let mut h = demo();
+        for id in ["library.inspectLightroom", "library.importLightroom"] {
+            assert_eq!(h.app.run(id, json!({"status": true})), Ok(Value::Null), "{id}: nothing has run");
+        }
+        let (task, tx, cancel, _) = fake(&h, Kind::Inspect);
+        h.app.lightroom = Some(task);
+        assert_eq!(h.app.run("library.inspectLightroom", json!({"status": true})).unwrap()["running"], true);
+        h.app.run("library.inspectLightroom", json!({"status": true, "cancel": true})).unwrap();
+        assert!(cancel.load(Ordering::Relaxed));
+        tx.send(Message::Inspected(Err("stopped".into()))).unwrap();
+        let last = h.app.run("library.importLightroom", json!({"wait": true})).unwrap();
+        assert_eq!(last, json!({"cancelled": true, "path": "fixture.lrcat"}));
     }
 }
