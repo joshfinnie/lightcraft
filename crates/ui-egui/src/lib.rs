@@ -2145,7 +2145,17 @@ mod cache_tests {
 }
 
 #[cfg(test)]
+mod tests_app_commands;
+#[cfg(test)]
+mod tests_denoise_panel;
+#[cfg(test)]
+mod tests_edit_panel;
+#[cfg(test)]
+mod tests_masking_menus;
+#[cfg(test)]
 mod tests_model_setup;
+#[cfg(test)]
+mod tests_settings_tabs;
 
 #[cfg(test)]
 mod tests_docking_acceptance;

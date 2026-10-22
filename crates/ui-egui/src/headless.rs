@@ -297,6 +297,16 @@ impl Headless {
         self.time
     }
 
+    /// Where the last frame painted `text` (exactly), the last one painted if there are several: a popup is painted
+    /// over the panel it opens from. For tests that click menu items and checkboxes no widget id names.
+    #[cfg(test)]
+    pub(crate) fn text_center(&self, text: &str) -> Option<egui::Pos2> {
+        self.view.painted_shapes().into_iter().rev().find_map(|s| match s {
+            egui::epaint::Shape::Text(t) if t.galley.job.text == text => Some(t.galley.rect.translate(t.pos.to_vec2()).center()),
+            _ => None,
+        })
+    }
+
     /// Every piece of text the last frame painted ([`HeadlessView::painted_text`]).
     pub fn painted_text(&self) -> Vec<String> {
         self.view.painted_text()

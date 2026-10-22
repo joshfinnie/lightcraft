@@ -8,7 +8,7 @@ use serde_json::json;
 
 use crate::{LightcraftApp, Services, model_setup, state::Dialog};
 
-fn setup(name: &str) -> (LightcraftApp, PathBuf, PhotoId) {
+pub(crate) fn setup(name: &str) -> (LightcraftApp, PathBuf, PhotoId) {
     let dir = std::env::temp_dir().join(format!("lc-model-flow-{name}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     let mut s = Session::new().with_fs();
@@ -30,7 +30,7 @@ fn setup(name: &str) -> (LightcraftApp, PathBuf, PhotoId) {
     (LightcraftApp::new(s, Services::default()), dir, id)
 }
 
-fn denoise_file(dir: &Path) -> PathBuf {
+pub(crate) fn denoise_file(dir: &Path) -> PathBuf {
     let source = dir.join("source");
     std::fs::create_dir_all(&source).unwrap();
     let bytes = lightcraft_denoise::synthetic::smoothing_onnx();
@@ -53,7 +53,7 @@ fn denoise_file(dir: &Path) -> PathBuf {
     source.join("model.onnx")
 }
 
-fn install_denoise(app: &mut LightcraftApp, dir: &Path) {
+pub(crate) fn install_denoise(app: &mut LightcraftApp, dir: &Path) {
     app.run("denoise.models.install", json!({"path": denoise_file(dir), "acknowledged": true})).unwrap();
 }
 

@@ -604,7 +604,7 @@ pub(super) fn mb(bytes: Option<u64>) -> String {
     }
 }
 
-pub(super) fn sentence(s: &str) -> String {
+pub(crate) fn sentence(s: &str) -> String {
     let s = s.trim();
     let mut out = crate::i18n::upper_first(s);
     if !out.is_empty() && !out.ends_with(['.', '!', '?']) {
@@ -701,4 +701,53 @@ pub fn model_dialog(app: &mut LightcraftApp, ui: &mut egui::Ui, t: &Tokens, info
         "The model is kept on this computer only. LightCraft never uploads or shares it."
     };
     ui.label(RichText::new(tr(closing)).font(t.font(11.5)).color(t.text_dim));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_pace_eases_off_while_the_user_works_and_speeds_up_when_they_watch() {
+        assert_eq!(pace_for(true, true, 0.0, 0.0, true), "light", "minimized");
+        assert_eq!(pace_for(false, false, 0.0, 0.0, true), "normal", "another app has the focus");
+        assert_eq!(pace_for(true, false, 0.1, 0.1, true), "pause", "typing or dragging");
+        assert_eq!(pace_for(true, false, 1.0, 1.0, true), "light", "the pointer just moved");
+        assert_eq!(pace_for(true, false, 10.0, 10.0, true), "full", "watching the Settings tab");
+        assert_eq!(pace_for(true, false, 10.0, 10.0, false), "normal");
+    }
+
+    #[test]
+    fn sizes_counts_and_sentences_read_as_written() {
+        assert_eq!(mb(None), "");
+        assert_eq!(mb(Some(0)), "1 KB", "never 0 KB");
+        assert_eq!(mb(Some(250_400)), "250 KB");
+        assert_eq!(mb(Some(2_450_000)), "2.5 MB");
+        assert_eq!(mb(Some(123_456_789)), "123 MB");
+        assert_eq!(count(1, "photo waiting", "photos waiting"), "1 photo waiting");
+        assert_eq!(count(3, "photo waiting", "photos waiting"), "3 photos waiting");
+        assert_eq!(sentence("  the file is gone "), "The file is gone.");
+        assert_eq!(sentence("Done!"), "Done!");
+        assert_eq!(sentence(""), "");
+    }
+
+    #[test]
+    fn the_licence_line_names_the_terms() {
+        let line = |l: Value| licence_line(&json!({"licence": l}));
+        assert_eq!(line(json!({"name": "MIT", "commercial": "yes"})), "MIT · commercial use allowed");
+        assert_eq!(line(json!({"name": "GPL-3.0", "commercial": "yes"})), "GPL-3.0 · commercial use subject to GPL conditions");
+        assert_eq!(line(json!({"name": "CC-BY-NC-4.0", "commercial": "no"})), "CC-BY-NC-4.0 · non-commercial use only");
+        assert_eq!(line(json!({"name": ""})), "Unknown licence · terms unclear");
+        assert_eq!(line(Value::Null), "Unknown licence · terms unclear");
+    }
+
+    #[test]
+    fn the_device_line_says_where_the_work_runs() {
+        assert_eq!(device_line(&json!({"kind": "gpu", "adapter": "M1"}), "cpu"), "The processor does the work.");
+        assert_eq!(device_line(&json!({"kind": "gpu", "adapter": "Apple M1 Pro"}), "auto"), "Running on Apple M1 Pro.");
+        assert_eq!(device_line(&json!({"kind": "gpu"}), "gpu"), "Running on the graphics card.");
+        assert_eq!(device_line(&json!({"kind": "cpu", "reason": "it was faster here."}), "auto"), "Running on the processor: it was faster here.");
+        assert_eq!(device_line(&json!({"kind": "cpu"}), "auto"), "Running on the processor: the graphics card is not used.");
+        assert_eq!(device_line(&json!({"kind": "pending"}), "auto"), "The graphics card is set up when the next photo is made.");
+    }
 }
