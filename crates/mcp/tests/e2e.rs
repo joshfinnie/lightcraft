@@ -169,7 +169,8 @@ fn fake_app() -> String {
 #[test]
 fn remote_set_exposure_and_render() {
     let addr = fake_app();
-    let remote = Remote::connect(&addr).unwrap();
+    // the stand-in app renders in this test's process: as slow as the build (several times slower under coverage)
+    let remote = Remote::connect(&addr).unwrap().with_reply_timeout(lightcraft_testkit::scaled(lightcraft_mcp::REPLY_TIMEOUT));
     assert!(remote.has_ui());
     let mut server = Server::new(Box::new(remote));
     exposure_roundtrip(&mut server);
@@ -248,7 +249,7 @@ fn export_progress_and_cancel() {
             }
         }
     });
-    let next = || rx.recv_timeout(Duration::from_secs(30)).expect("MCP reply/progress");
+    let next = || rx.recv_timeout(lightcraft_testkit::scaled(Duration::from_secs(30))).expect("MCP reply/progress");
     writeln!(send, "{}", call(1, "query_photos", json!({"limit":8}))).unwrap();
     let query = next();
     let ids: Vec<_> = query["result"]["structuredContent"]["photos"].as_array().unwrap().iter().map(|p| p["id"].clone()).collect();

@@ -281,6 +281,7 @@ fn hint(need: &str) -> &'static str {
         "input" => "the input files the reasons name",
         "system" => "what the operating system provides",
         "feature" => "support this build doesn't have yet",
+        "speed" => "a build at full speed (not coverage, no stretched deadlines)",
         _ => "what the reasons name",
     }
 }

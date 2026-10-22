@@ -47,7 +47,10 @@ fn settle_photo(h: &mut Harness<'_, LightcraftApp>) {
         } else {
             quiet = 0;
         }
-        assert!(started.elapsed() < Duration::from_secs(30), "the synthetic photo and panel thumbnails must finish rendering before capture");
+        assert!(
+            started.elapsed() < lightcraft_testkit::scaled(Duration::from_secs(30)),
+            "the synthetic photo and panel thumbnails must finish rendering before capture"
+        );
         std::thread::sleep(Duration::from_millis(5));
     }
 }

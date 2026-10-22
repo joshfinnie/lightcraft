@@ -376,8 +376,11 @@ impl Headless {
     }
 
     /// Run frames until nothing is pending (renders finished, input consumed) for a few frames in
-    /// a row, or `timeout` passes. Returns whether it settled.
+    /// a row, or `timeout` passes. Returns whether it settled. (In this crate's tests the timeout is
+    /// stretched in a slow build: [`lightcraft_testkit::scaled`].)
     pub fn settle(&mut self, timeout: Duration) -> bool {
+        #[cfg(test)]
+        let timeout = lightcraft_testkit::scaled(timeout);
         let t0 = Instant::now();
         let mut quiet = 0;
         loop {
@@ -401,6 +404,8 @@ impl Headless {
     /// Run frames until `done` holds or `timeout` passes (a render that finishes on a busy machine
     /// after a quiet spell, where [`Self::settle`] alone would stop too early). Returns `done`.
     pub fn step_until(&mut self, timeout: Duration, done: impl Fn(&Self) -> bool) -> bool {
+        #[cfg(test)]
+        let timeout = lightcraft_testkit::scaled(timeout);
         let t0 = Instant::now();
         while !done(self) {
             if t0.elapsed() > timeout {
@@ -1713,7 +1718,7 @@ mod tests {
         // the pictures are made and kept, well beyond the old budget (a few demo photos share a scene, so two faces can share a
         // picture: the count is a little under the number of tiles)
         let started = Instant::now();
-        while h.app.renderer.variant_textures() < drawn - 20 && started.elapsed() < Duration::from_secs(60) {
+        while h.app.renderer.variant_textures() < drawn - 20 && started.elapsed() < lightcraft_testkit::scaled(Duration::from_secs(60)) {
             h.step();
             std::thread::sleep(Duration::from_millis(20));
         }
@@ -2350,7 +2355,7 @@ mod tests {
     #[test]
     fn a_slow_photos_import_never_blocks_the_window() {
         let mut h = demo([1000.0, 700.0]);
-        let t = Duration::from_secs(30);
+        let t = lightcraft_testkit::scaled(Duration::from_secs(30));
         let out = std::env::temp_dir().join(format!("lc-photos-slow-ui-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&out);
         std::fs::create_dir_all(&out).unwrap();
@@ -2362,18 +2367,18 @@ mod tests {
         h.app.session.apple_photos_background = true; // as the desktop app sets it
         h.app.session.apple_photos = Some(Arc::new(move |args: &[String], _| {
             // a regression (Photos on the UI thread) fails the timing below instead of hanging
-            let _ = wait.lock().unwrap().recv_timeout(Duration::from_secs(20));
+            let _ = wait.lock().unwrap().recv_timeout(lightcraft_testkit::scaled(Duration::from_secs(20)));
             let n = args.len() - args.iter().position(|a| a == lightcraft_engine::apple_photos::MARKER).unwrap() - 2;
             Ok(lightcraft_engine::apple_photos::Output { status: Some(0), stdout: "ID\n".repeat(n), stderr: String::new() })
         }));
         let t0 = Instant::now();
         let r =
             h.request("engine.execute", json!({"command": "export.addToPhotos", "params": {"paths": [file.to_string_lossy()], "album": "Slow"}}), t);
-        assert!(t0.elapsed() < Duration::from_secs(5), "answered at once: {r}");
+        assert!(t0.elapsed() < lightcraft_testkit::scaled(Duration::from_secs(5)), "answered at once: {r}");
         assert_eq!(r["result"]["running"], true, "{r}");
         go.send(()).unwrap();
         while !h.app.ui.toast.as_ref().is_some_and(|t| t.0.contains("Apple Photos")) {
-            assert!(t0.elapsed() < Duration::from_secs(20), "the outcome is announced");
+            assert!(t0.elapsed() < lightcraft_testkit::scaled(Duration::from_secs(20)), "the outcome is announced");
             h.step();
         }
         assert_eq!(h.app.ui.toast.as_ref().unwrap().0, "1 added to Apple Photos album “Slow”");
@@ -2381,12 +2386,12 @@ mod tests {
             let t1 = Instant::now();
             let p = json!({"dir": out.to_string_lossy(), "longEdge": 32, "addToPhotos": true});
             let r = h.request("engine.execute", json!({"command": "app.export", "params": p}), t);
-            assert!(t1.elapsed() < Duration::from_secs(10), "the export answers without waiting for Photos: {r}");
+            assert!(t1.elapsed() < lightcraft_testkit::scaled(Duration::from_secs(10)), "the export answers without waiting for Photos: {r}");
             assert_eq!(r["result"]["applePhotos"]["running"], true, "{r}");
             assert_eq!(r["result"]["applePhotos"]["job"], 2, "{r}");
             go.send(()).unwrap();
             while !h.app.ui.toast.as_ref().is_some_and(|t| t.0.starts_with("1 added to Apple Photos") && !t.0.contains("Slow")) {
-                assert!(t1.elapsed() < Duration::from_secs(20), "the outcome is announced");
+                assert!(t1.elapsed() < lightcraft_testkit::scaled(Duration::from_secs(20)), "the outcome is announced");
                 h.step();
             }
         }
@@ -2468,7 +2473,7 @@ mod tests {
             return; // addToPhotos is refused before exporting elsewhere
         }
         let mut h = demo([1000.0, 700.0]);
-        let t = Duration::from_secs(10);
+        let t = lightcraft_testkit::scaled(Duration::from_secs(10));
         let out = std::env::temp_dir().join(format!("lc-photos-hold-ui-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&out);
         std::fs::create_dir_all(&out).unwrap();
@@ -2478,7 +2483,7 @@ mod tests {
         let (go, wait) = std::sync::mpsc::channel::<()>();
         let wait = std::sync::Mutex::new(wait);
         h.app.services.write_shared = Some(Arc::new(move |p: &str, bytes: &[u8]| {
-            let _ = wait.lock().unwrap().recv_timeout(Duration::from_secs(20));
+            let _ = wait.lock().unwrap().recv_timeout(lightcraft_testkit::scaled(Duration::from_secs(20)));
             lightcraft_engine::export::write_file(p, bytes)
         }));
         let calls = Arc::new(std::sync::Mutex::new(Vec::<Vec<String>>::new()));
@@ -2498,7 +2503,7 @@ mod tests {
         go.send(()).unwrap();
         let t0 = Instant::now();
         while h.app.export.is_some() {
-            assert!(t0.elapsed() < Duration::from_secs(20), "the export finishes");
+            assert!(t0.elapsed() < lightcraft_testkit::scaled(Duration::from_secs(20)), "the export finishes");
             h.step();
         }
         let last = h.app.last_export_result.clone().unwrap();

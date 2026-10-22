@@ -3435,7 +3435,7 @@ mod tests {
             });
             tx.send(r.and_then(|r| r)).ok();
         });
-        let r = rx.recv_timeout(std::time::Duration::from_secs(60));
+        let r = rx.recv_timeout(lightcraft_testkit::scaled(std::time::Duration::from_secs(60)));
         assert!(matches!(r, Ok(Err(_))), "the batch returns an error instead of hanging: {r:?}");
     }
 

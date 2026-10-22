@@ -1319,7 +1319,8 @@ mod tests {
         let mut img = blank(4000, 2500);
         let t = std::time::Instant::now();
         SlideOverlays::resolve(&s, Some(&p)).draw_front(&mut img, &l);
-        assert!(t.elapsed().as_secs_f64() < 20.0, "{:?}", t.elapsed());
+        // generous (a busy machine): drawing every glyph instead takes minutes
+        assert!(t.elapsed() < lightcraft_testkit::scaled(std::time::Duration::from_secs(20)), "{:?}", t.elapsed());
         assert!(img.get(100, 300)[0] > 0, "the text's start shows");
     }
 }

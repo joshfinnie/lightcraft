@@ -359,20 +359,22 @@ mod tests {
         assert!(got.windows(2).all(|w| Arc::ptr_eq(&w[0], &w[1])), "every request got the same pixels");
     }
 
-    /// Run `f` on a thread of its own and wait for it at most `secs`: a deadlock fails the test instead of hanging it.
+    /// Run `f` on a thread of its own and wait for it at most `secs` (stretched in a slow build): a deadlock fails the
+    /// test instead of hanging it.
     fn within<T: Send + 'static>(secs: u64, f: impl FnOnce() -> T + Send + 'static) -> T {
         let (tx, rx) = std::sync::mpsc::channel();
         std::thread::spawn(move || {
             let _ = tx.send(f());
         });
-        rx.recv_timeout(std::time::Duration::from_secs(secs)).expect("deadlocked")
+        rx.recv_timeout(lightcraft_testkit::scaled(std::time::Duration::from_secs(secs))).expect("deadlocked")
     }
 
-    /// Wait (at most ten seconds) until `n` callers wait for `slot`'s generation.
+    /// Wait (at most ten seconds, stretched in a slow build) until `n` callers wait for `slot`'s generation.
     fn until_waiting(slot: &SceneSlot, n: usize) {
         let started = std::time::Instant::now();
+        let limit = lightcraft_testkit::scaled(std::time::Duration::from_secs(10));
         while slot.lock().waiting < n {
-            assert!(started.elapsed() < std::time::Duration::from_secs(10), "the callers never got to wait");
+            assert!(started.elapsed() < limit, "the callers never got to wait");
             std::thread::sleep(std::time::Duration::from_millis(1));
         }
     }

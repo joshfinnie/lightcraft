@@ -34,7 +34,12 @@ pub struct Remote {
     /// Sent first on every connection ([`control_auth`]). `None`: look it up at each connection
     /// ([`control_auth::client_token`]); `Some(None)`: send none.
     token: Option<Option<String>>,
+    /// How long a reply may take ([`REPLY_TIMEOUT`] unless [`Remote::with_reply_timeout`] says otherwise).
+    reply_timeout: Duration,
 }
+
+/// How long the app may take to answer: it answers within 60 s (its own timeout); this leaves headroom.
+pub const REPLY_TIMEOUT: Duration = Duration::from_secs(90);
 
 /// The id of the `auth` request that opens each connection (requests count from 1).
 const AUTH_ID: u64 = 0;
@@ -52,7 +57,16 @@ impl Remote {
     /// A remote that connects on first use (the app may start after the MCP server). The token
     /// is looked up again at each connection, so an app started later is found with its own.
     pub fn lazy(addr: &str) -> Self {
-        Self { addr: addr.to_string(), conn: None, next_id: 1, token: None }
+        Self { addr: addr.to_string(), conn: None, next_id: 1, token: None, reply_timeout: REPLY_TIMEOUT }
+    }
+
+    /// Wait this long for each reply instead of [`REPLY_TIMEOUT`] (an app on a slow machine, or a test's stand-in).
+    pub fn with_reply_timeout(mut self, timeout: Duration) -> Self {
+        self.reply_timeout = timeout;
+        if let Some((_, stream)) = &self.conn {
+            stream.set_read_timeout(Some(timeout)).ok();
+        }
+        self
     }
 
     /// Use this token instead of looking one up (`None`: send none).
@@ -74,8 +88,7 @@ impl Remote {
             match TcpStream::connect_timeout(&sa, Duration::from_millis(800)) {
                 Ok(s) => {
                     s.set_nodelay(true).ok();
-                    // The app answers within 60 s (its own timeout); leave headroom.
-                    s.set_read_timeout(Some(Duration::from_secs(90))).ok();
+                    s.set_read_timeout(Some(self.reply_timeout)).ok();
                     let read = s.try_clone()?;
                     let mut conn = (BufReader::new(read), s);
                     self.authenticate(&mut conn)?;

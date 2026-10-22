@@ -19,6 +19,13 @@
 //! `cargo xtask ci` lists the skips by need and reason in its summary and in
 //! `target/ci/report.json`. A test that runs part of its checks (e.g. only the CPU half) records
 //! the part it could not run the same way.
+//!
+//! **Deadlines.** A test that waits for background work gives up after a deadline, so a hang fails
+//! the run instead of stalling it. A coverage build runs several times slower, so a deadline sized
+//! for a normal build fails there for no fault of the code. Such a test sizes its deadline with
+//! [`scaled`]: unchanged normally, [`COVERAGE_TIME_SCALE`] times longer under coverage, and
+//! [`TIME_SCALE_ENV`] stretches it on a slow machine. A test that checks how fast something is (a
+//! speed budget) asks [`speed_budgets`] first, and records a [`Need::Speed`] skip when it can't.
 #![forbid(unsafe_code)]
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 #![allow(clippy::disallowed_methods)]
@@ -46,6 +53,9 @@ pub enum Need {
     /// Support this build doesn't have yet (a decoder that refuses a file variant, an optional
     /// cargo feature that is off).
     Feature,
+    /// A build that runs at full speed: a speed budget means nothing under coverage or a stretched
+    /// [`time_scale`].
+    Speed,
 }
 
 impl Need {
@@ -58,6 +68,7 @@ impl Need {
             Need::Input => "input",
             Need::System => "system",
             Need::Feature => "feature",
+            Need::Speed => "speed",
         }
     }
 }
@@ -133,11 +144,64 @@ fn escape(s: &str) -> String {
     out
 }
 
+/// The environment variable that stretches test deadlines on a slow machine: a number from 1 to
+/// [`MAX_TIME_SCALE`] (`LIGHTCRAFT_TEST_TIME_SCALE=4`).
+pub const TIME_SCALE_ENV: &str = "LIGHTCRAFT_TEST_TIME_SCALE";
+
+/// How much longer deadlines are in a coverage build, unless [`TIME_SCALE_ENV`] says otherwise.
+pub const COVERAGE_TIME_SCALE: f64 = 10.0;
+
+/// The largest stretch [`TIME_SCALE_ENV`] can ask for.
+pub const MAX_TIME_SCALE: f64 = 100.0;
+
+/// Whether this test binary is a coverage build: `cargo llvm-cov` names the profile file the
+/// instrumented binary writes in `LLVM_PROFILE_FILE`.
+pub fn instrumented() -> bool {
+    std::env::var_os("LLVM_PROFILE_FILE").is_some_and(|v| !v.is_empty())
+}
+
+/// How much longer than normal deadlines are here (1 in a normal run).
+pub fn time_scale() -> f64 {
+    scale_from(std::env::var(TIME_SCALE_ENV).ok().as_deref(), instrumented())
+}
+
+fn scale_from(env: Option<&str>, instrumented: bool) -> f64 {
+    match env.and_then(|v| v.trim().parse::<f64>().ok()).filter(|v| v.is_finite()) {
+        Some(v) => v.clamp(1.0, MAX_TIME_SCALE),
+        None if instrumented => COVERAGE_TIME_SCALE,
+        None => 1.0,
+    }
+}
+
+/// A deadline of `d` in a normal run, stretched by [`time_scale`] where the build or the machine is
+/// slower.
+pub fn scaled(d: std::time::Duration) -> std::time::Duration {
+    d.mul_f64(time_scale())
+}
+
+/// Whether a test's speed budget can be checked here: not in a coverage build, nor where deadlines
+/// are stretched. A test that can't check one records `skip!(Speed, …)`.
+pub fn speed_budgets() -> bool {
+    !instrumented() && time_scale() <= 1.0
+}
+
 pub mod calls;
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn deadlines_stretch_under_coverage_and_on_request() {
+        assert_eq!(scale_from(None, false), 1.0);
+        assert_eq!(scale_from(None, true), COVERAGE_TIME_SCALE);
+        assert_eq!(scale_from(Some("4"), false), 4.0);
+        assert_eq!(scale_from(Some(" 2.5 "), true), 2.5, "the variable wins over the coverage default");
+        assert_eq!(scale_from(Some("0.1"), false), 1.0, "never shorter than normal");
+        assert_eq!(scale_from(Some("1e9"), false), MAX_TIME_SCALE);
+        assert_eq!(scale_from(Some("NaN"), true), COVERAGE_TIME_SCALE);
+        assert_eq!(scale_from(Some("fast"), false), 1.0);
+    }
 
     #[test]
     fn an_entry_is_one_json_line_with_its_text_escaped() {
