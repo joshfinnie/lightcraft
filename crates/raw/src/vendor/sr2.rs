@@ -76,6 +76,7 @@ const SEED: [u32; 127] = [
 ];
 
 /// The seed (first 127 keystream words) for `key`, the little-endian `u32` of tag `0x7221`; see the module docs.
+#[expect(clippy::indexing_slicing, reason = "a fixed 128-word generator state indexed below 128 (`& 127`)")]
 fn seed_from_key(key: u32) -> [u32; 127] {
     let mut p = [0u32; 128];
     let mut k = key;
@@ -109,6 +110,7 @@ fn apply_keystream(block: &mut [u8]) {
 }
 
 /// [`apply_keystream`] for the keystream starting with `seed`.
+#[expect(clippy::indexing_slicing, reason = "a fixed 127-word ring indexed modulo its length")]
 fn apply_keystream_with(block: &mut [u8], seed: [u32; 127]) {
     let mut ring = seed;
     for (n, word) in block.as_chunks_mut::<4>().0.iter_mut().enumerate() {

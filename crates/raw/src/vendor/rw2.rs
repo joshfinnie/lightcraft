@@ -263,6 +263,7 @@ fn packed(b: &[u8; 16], bits: u32, out: &mut [u16]) {
     }
 }
 
+#[expect(clippy::indexing_slicing, reason = "two colours' predictors indexed by `i & 1`, four steps by a 2-bit field")]
 fn format4(b: &[u8; 16], out: &mut [u16]) {
     let mut f = Fields::new(b);
     let (mut prev, mut seeded, mut step) = ([0i32; 2], [false; 2], STEPS[0]);
@@ -288,6 +289,7 @@ fn format4(b: &[u8; 16], out: &mut [u16]) {
     }
 }
 
+#[expect(clippy::indexing_slicing, reason = "two colours' predictors indexed by `i & 1`, four steps by a 2-bit field")]
 fn format6(b: &[u8; 16], bits14: bool, out: &mut [u16]) {
     let (seed, code, groups, bias) = if bits14 { (14, 10, 3, 512) } else { (12, 8, 4, 128) };
     let mut f = Fields::new(b);
@@ -380,15 +382,16 @@ fn format8<'a>(ifd: &Ifd, order: ByteOrder, bytes: &'a [u8], w: usize, h: usize)
     }
     let mut strips = Vec::with_capacity(n);
     let mut x = 0usize;
-    for i in 0..n {
-        let (left, width, height) = (lefts[i] as usize, widths[i] as usize, heights[i] as usize);
-        let len = usize::try_from(bits[i].div_ceil(8)).unwrap_or(usize::MAX);
-        let data = usize::try_from(offsets[i]).ok().and_then(|o| bytes.get(o..o.checked_add(len)?));
+    let lists = offsets.iter().zip(&lefts).zip(&bits).zip(widths.iter().zip(&heights));
+    for (i, (((&offset, &left), &bits), (&width, &height))) in lists.enumerate() {
+        let (left, width, height) = (left as usize, width as usize, height as usize);
+        let len = usize::try_from(bits.div_ceil(8)).unwrap_or(usize::MAX);
+        let data = usize::try_from(offset).ok().and_then(|o| bytes.get(o..o.checked_add(len)?));
         let Some(data) = data.filter(|_| left == x && width > 0 && height == h) else {
             return Err(RawError::Corrupt(format!("RW2 format 8: strip {i} outside the image or file")));
         };
         x += width;
-        strips.push(Strip { data, width, height, bits: bits[i] });
+        strips.push(Strip { data, width, height, bits });
     }
     if x != w {
         return Err(RawError::Corrupt(format!("RW2 format 8: strips cover {x} of {w} columns")));
@@ -579,7 +582,7 @@ pub(crate) fn decode(bytes: &[u8], mode: Mode) -> Result<RawImage> {
     };
     let rgb = if tags.iter().all(|&v| v == 0.0) { [DEFAULT_BLACK; 3] } else { tags.map(|v| v + offset) };
     // per CFA position, anchored at the active area
-    let values = cfa.shifted(active.x, active.y).pattern.iter().map(|&c| rgb[c as usize]).collect();
+    let values = cfa.shifted(active.x, active.y).pattern.iter().map(|&c| rgb.get(c as usize).copied().unwrap_or(rgb[1])).collect();
     let black = BlackLevel { repeat_rows: 2, repeat_cols: 2, values, ..Default::default() };
     let full = ((1u32 << bits.clamp(1, 16)) - 1) as f32;
     let white = if data.is_empty() {

@@ -281,15 +281,15 @@ pub(crate) fn decode_rows(src: &[u8], w: usize, h: usize, rows: usize, bits: u32
             };
             // a run of large differences in a corrupt stream can drive a predictor past i32 (issue #1515)
             let overflow = || RawError::Corrupt(format!("NEF: predictor out of range at row {y}"));
+            let Some(hp) = hpred.get_mut(x & 1) else { continue };
             let p = if x < 2 {
                 let s = seeds.get_mut(x).ok_or(RawError::Limit("NEF column"))?;
                 *s = s.checked_add(d).ok_or_else(overflow)?;
-                hpred[x & 1] = *s;
+                *hp = *s;
                 *s
             } else {
-                let p = hpred[x & 1].checked_add(d).ok_or_else(overflow)?;
-                hpred[x & 1] = p;
-                p
+                *hp = hp.checked_add(d).ok_or_else(overflow)?;
+                *hp
             };
             let v = p.clamp(0, max);
             clipped += (v != p && (table.split == 0 || y < table.split)) as usize;

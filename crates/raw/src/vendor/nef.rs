@@ -222,7 +222,7 @@ pub(crate) fn trailing_masked_columns(d: &[u16], w: usize, bits: u32) -> usize {
 
 pub(crate) fn decode(bytes: &[u8], mode: Mode) -> Result<RawImage> {
     let tiff = Tiff::parse(bytes)?;
-    let ifd0 = &tiff.ifds[0];
+    let ifd0 = super::ifd0(&tiff)?;
     let raw = raw_ifd(&tiff).ok_or_else(|| RawError::Unsupported("NEF without a CFA image IFD".into()))?;
     let info = raw.image()?;
     let (w, h) = (info.width as usize, info.height as usize);
@@ -255,11 +255,10 @@ pub(crate) fn decode(bytes: &[u8], mode: Mode) -> Result<RawImage> {
         },
         _ => BlackLevel::uniform(nrw_black(mn.as_ref(), bits).unwrap_or(0.0)),
     };
-    let wb = mn
-        .as_ref()
-        .and_then(|m| m.ifd.f64s(WB_RB_LEVELS))
-        .filter(|v| v.len() >= 2 && v[0] > 0.1 && v[1] > 0.1 && v[0] < 10.0 && v[1] < 10.0)
-        .map(|v| [v[0] as f32, 1.0, v[1] as f32]);
+    let wb = mn.as_ref().and_then(|m| m.ifd.f64s(WB_RB_LEVELS)).and_then(|v| match *v {
+        [r, b, ..] if r > 0.1 && r < 10.0 && b > 0.1 && b < 10.0 => Some([r as f32, 1.0, b as f32]),
+        _ => None,
+    });
     let cfa = match (raw.u64s(t::CFA_REPEAT_PATTERN_DIM).as_deref(), raw.bytes(t::CFA_PATTERN_EP)) {
         (Some([2, 2]), Some(p)) if p.len() == 4 && p.iter().all(|&c| c <= 2) => Cfa { width: 2, height: 2, pattern: p.to_vec() },
         _ => Cfa::bayer_static("RGGB"),

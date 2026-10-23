@@ -47,7 +47,7 @@ impl Huffman {
                 return Err(RawError::Unsupported(format!("PEF Huffman code of length {len}")));
             }
             let first = (code >> (12 - len) << (12 - len)) as usize;
-            for e in &mut lut[first..first + (1 << (12 - len))] {
+            for e in lut.iter_mut().skip(first).take(1 << (12 - len)) {
                 if e.1 == 0 {
                     *e = (sym as u8, len);
                 }
@@ -113,7 +113,7 @@ impl<'a> Bits<'a> {
 /// Decode one difference: Huffman category then T.81 additional bits.
 #[inline]
 pub(crate) fn diff(bits: &mut Bits, h: &Huffman) -> Option<i32> {
-    let (sym, len) = h.lut[bits.peek(12) as usize];
+    let (sym, len) = h.lut.get(bits.peek(12) as usize).copied().unwrap_or((0, 0));
     if len == 0 {
         return None;
     }
@@ -131,13 +131,15 @@ pub(crate) fn diff(bits: &mut Bits, h: &Huffman) -> Option<i32> {
 
 /// Parse the maker-note Huffman table.
 pub(crate) fn table(b: &[u8], order: ByteOrder) -> Result<Huffman> {
-    let u16_at = |i: usize| b.get(i..i + 2).map(|s| order.u16([s[0], s[1]]));
+    let u16_at = |i: usize| b.get(i..i + 2).and_then(|s| s.try_into().ok()).map(|s| order.u16(s));
     let d = u16_at(0).ok_or_else(|| RawError::Corrupt("PEF Huffman table too short".into()))? as usize;
     let n = d + 12;
     if n > 17 || b.len() < 14 + 3 * n {
         return Err(RawError::Corrupt(format!("PEF Huffman table: {n} symbols in {} bytes", b.len())));
     }
-    let codes: Vec<(u16, u8)> = (0..n).map(|i| (u16_at(14 + 2 * i).unwrap_or(0) & 0x0fff, b[14 + 2 * n + i])).collect();
+    // n codes, then n code lengths
+    let lengths = b.get(14 + 2 * n..14 + 3 * n).unwrap_or_default();
+    let codes: Vec<(u16, u8)> = lengths.iter().enumerate().map(|(i, &len)| (u16_at(14 + 2 * i).unwrap_or(0) & 0x0fff, len)).collect();
     Huffman::new(&codes)
 }
 
@@ -149,26 +151,33 @@ pub(crate) fn decode_huffman(src: &[u8], h: &Huffman, w: usize, hgt: usize, bits
     if (src.len() as u64).saturating_mul(8) < samples as u64 {
         return Err(RawError::Corrupt(format!("PEF: {w} x {hgt} samples need more than the {} bytes of data there", src.len())));
     }
+    if w == 0 {
+        return Ok(Vec::new());
+    }
     let mut out = vec![0u16; samples];
     let mut bits = Bits::new(src);
     let mut vpred = [[0i32; 2]; 2];
     let max = (1i32 << bits_per.min(16)) - 1;
-    for y in 0..hgt {
+    for (y, row) in out.chunks_exact_mut(w).enumerate() {
         let mut hpred = [0i32; 2];
-        let row = &mut out[y * w..(y + 1) * w];
+        let vrow = if y & 1 == 0 { &mut vpred[0] } else { &mut vpred[1] };
         for (x, o) in row.iter_mut().enumerate() {
             let d = diff(&mut bits, h).ok_or_else(|| RawError::Corrupt(format!("PEF: invalid Huffman code at row {y}")))?;
             // a run of large differences in a corrupt stream can drive a predictor past i32 (issue #1515)
             let overflow = || RawError::Corrupt(format!("PEF: predictor out of range at row {y}"));
-            let p = if x < 2 {
-                let v = vpred[y & 1][x].checked_add(d).ok_or_else(overflow)?;
-                vpred[y & 1][x] = v;
-                hpred[x] = v;
-                v
-            } else {
-                let v = hpred[x & 1].checked_add(d).ok_or_else(overflow)?;
-                hpred[x & 1] = v;
-                v
+            // the first two samples of a row predict from the row two above, the others from two to the left
+            let Some(hp) = hpred.get_mut(x & 1) else { continue };
+            let p = match vrow.get_mut(x) {
+                Some(vp) => {
+                    let v = vp.checked_add(d).ok_or_else(overflow)?;
+                    (*vp, *hp) = (v, v);
+                    v
+                }
+                None => {
+                    let v = hp.checked_add(d).ok_or_else(overflow)?;
+                    *hp = v;
+                    v
+                }
             };
             *o = p.clamp(0, max) as u16;
         }
@@ -237,7 +246,7 @@ fn is_exactly_packed(info: &ImageInfo, file_len: u64) -> bool {
 
 pub(crate) fn decode(bytes: &[u8], mode: Mode) -> Result<RawImage> {
     let tiff = Tiff::parse(bytes)?;
-    let ifd0 = &tiff.ifds[0];
+    let ifd0 = super::ifd0(&tiff)?;
     let info = ifd0.image()?;
     let (w, hgt) = (info.width as usize, info.height as usize);
     let bits = info.bits() as u32;
@@ -247,7 +256,10 @@ pub(crate) fn decode(bytes: &[u8], mode: Mode) -> Result<RawImage> {
     let make = ifd0.string(t::MAKE).unwrap_or_default();
     let mn =
         tiff.exif().and_then(|e| e.get(t::MAKER_NOTE)).and_then(|e| makernote::parse_makernote(bytes, e.offset, e.count() as u64, tiff.order, &make));
-    let pair = |tag: u16| mn.as_ref().and_then(|m| m.ifd.u64s(tag)).filter(|v| v.len() == 2).map(|v| (v[0] as usize, v[1] as usize));
+    let pair = |tag: u16| match *mn.as_ref()?.ifd.u64s(tag)? {
+        [a, b] => Some((a as usize, b as usize)),
+        _ => None,
+    };
     let tagged = match (pair(CROP_ORIGIN), pair(CROP_SIZE)) {
         // checked: the tags are file data; `x + cw` on a hostile value would wrap past the bounds
         (Some((x, y)), Some((cw, ch)))
@@ -303,18 +315,16 @@ pub(crate) fn decode(bytes: &[u8], mode: Mode) -> Result<RawImage> {
         _ => cfa_from_exif(&tiff).unwrap_or_else(|| Cfa::bayer_static("BGGR")),
     };
     let black = match black_point.as_deref() {
-        Some(v @ [_, _, _, _]) => {
-            // RGGB-ordered levels → per CFA position at the active area origin
-            let a = cfa.shifted(active.x, active.y);
-            let values = a.pattern.iter().map(|&c| [v[0], (v[1] + v[2]) / 2.0, v[3]][c as usize] as f32).collect();
-            BlackLevel { repeat_rows: 2, repeat_cols: 2, values, ..Default::default() }
-        }
+        Some(&[r, g1, g2, b]) => super::rggb_black(&cfa, active, [r, g1, g2, b]),
         _ if active.x >= 4 => black_from_columns(samples, w, 0..active.x.saturating_sub(2), 0..hgt, active),
         _ => BlackLevel::uniform(0.0),
     };
-    let wb = mn.as_ref().and_then(|m| m.ifd.f64s(WB_LEVELS)).filter(|v| v.len() == 4 && v.iter().all(|x| *x > 0.0)).map(|v| {
-        let g = (v[1] + v[2]) / 2.0;
-        [(v[0] / g) as f32, 1.0, (v[3] / g) as f32]
+    let wb = mn.as_ref().and_then(|m| m.ifd.f64s(WB_LEVELS)).and_then(|v| match *v {
+        [r, g1, g2, b] if v.iter().all(|x| *x > 0.0) => {
+            let g = (g1 + g2) / 2.0;
+            Some([(r / g) as f32, 1.0, (b / g) as f32])
+        }
+        _ => None,
     });
     let mut metadata = lightcraft_meta::from_tiff(&tiff);
     metadata.width = Some(active.width as u32);

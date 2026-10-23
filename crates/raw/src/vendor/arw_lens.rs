@@ -291,7 +291,12 @@ pub(super) fn corrections(
     });
     let (p, s) = (plain.as_ref(), encrypted.as_ref());
     // CA: two contiguous 16-sample curves after the count
-    let split = |v: [i16; 32]| -> [[i16; 16]; 2] { std::array::from_fn(|c| std::array::from_fn(|i| v[16 * c + i])) };
+    let split = |v: [i16; 32]| -> [[i16; 16]; 2] {
+        match *v.as_chunks::<16>().0 {
+            [a, b] => [a, b],
+            _ => [[0; 16]; 2],
+        }
+    };
     let table16 = |tags: (u16, u16)| combine(raw_copy(raw, p, tags.0, parsed_table::<16>), sr2_copy(s, tags.1, |d, e| d.table::<16>(e)));
     let shading_table = table16(SHADING.table);
     let distortion_table = table16(DISTORTION.table);
@@ -338,6 +343,7 @@ pub(super) fn corrections(
 /// camera models and the 16-entry layout; unknown models and implausible or non-smooth maps are left uncorrected.
 /// See docs/sony-lens-corrections.md. A camera setting of Off does not remove the lens data: the user can enable it
 /// in the developer.
+#[expect(clippy::indexing_slicing, reason = "a fixed 16-entry table read at 0..=15 and a 4 × 4 normal-equation system")]
 fn distortion(model: &str, table: &[i16; 16], active: Rect, crop: Rect) -> Option<Opcode> {
     // A matching table shape does not establish its scale or radial normalization on another body.
     if !DISTORTION_MODELS.contains(&model) {
@@ -416,6 +422,7 @@ fn distortion(model: &str, table: &[i16; 16], active: Rect, crop: Rect) -> Optio
 }
 
 /// Small fixed-size least-squares system; partial pivoting, no input-sized allocations.
+#[expect(clippy::indexing_slicing, reason = "4 × 4 elimination, every index below 4")]
 fn solve4(mut a: [[f64; 4]; 4], mut b: [f64; 4]) -> Option<[f64; 4]> {
     for col in 0..4 {
         let pivot = (col..4).max_by(|&i, &j| a[i][col].abs().total_cmp(&a[j][col].abs()))?;

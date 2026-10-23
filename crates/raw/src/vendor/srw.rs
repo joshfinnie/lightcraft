@@ -62,7 +62,7 @@ fn keyed(mn: &Ifd, tag: u16, sign: i64) -> Option<Vec<i64>> {
     let key = mn.u64s(ENCRYPTION_KEY).filter(|k| k.len() == 11)?;
     let vals = mn.f64s(tag)?;
     // 32-bit entries: the stored value wraps modulo 2^32 (a negative number stored as a LONG)
-    Some(vals.iter().enumerate().map(|(i, &v)| i64::from((v as i64).wrapping_add(sign * key[i % 11] as i64) as i32)).collect())
+    Some(vals.iter().zip(key.iter().cycle()).map(|(&v, &k)| i64::from((v as i64).wrapping_add(sign * k as i64) as i32)).collect())
 }
 
 /// The raw image's IFD: the one with a private compression value.
@@ -107,7 +107,7 @@ pub(crate) fn decode(bytes: &[u8], mode: Mode) -> Result<RawImage> {
         )));
     };
     let data = if mode == Mode::Full {
-        let src = chunk_bytes(bytes, &chunks[0]).ok_or_else(|| RawError::Corrupt("SRW strip outside file".into()))?;
+        let src = chunks.first().and_then(|c| chunk_bytes(bytes, c)).ok_or_else(|| RawError::Corrupt("SRW strip outside file".into()))?;
         crate::check_stored(
             src.len(),
             n as u64,
@@ -135,8 +135,10 @@ pub(crate) fn decode(bytes: &[u8], mode: Mode) -> Result<RawImage> {
     let active = mn
         .as_ref()
         .and_then(|m| m.u64s(SENSOR_AREAS))
-        .filter(|v| v.len() == 8)
-        .map(|v| (v[4] as usize, v[5] as usize, v[6] as usize, v[7] as usize))
+        .and_then(|v| match *v {
+            [_, _, _, _, l, tp, r, b] => Some((l as usize, tp as usize, r as usize, b as usize)),
+            _ => None,
+        })
         .filter(|&(l, tp, r, b)| l < r && tp < b && r <= w && b <= h)
         .map_or(Rect::new(0, 0, w, h), |(l, tp, r, b)| Rect::new(l, tp, r - l, b - tp));
     let cfa = match (raw.u64s(t::CFA_REPEAT_PATTERN_DIM).as_deref(), raw.bytes(t::CFA_PATTERN_EP)) {
@@ -147,7 +149,11 @@ pub(crate) fn decode(bytes: &[u8], mode: Mode) -> Result<RawImage> {
     let levels = mn.as_ref().and_then(|m| keyed(m, RAW_DATA, 1)).filter(|v| v.len() == 12);
     let RawData::U16(samples) = &data else { return Err(RawError::Unsupported("float SRW".into())) };
     // saturation: the file's level, or lower where the samples pile up (EX1 clips at 15882 of its stated 16383)
-    let stated = levels.as_ref().filter(|v| v[4..].iter().all(|&x| x == v[4]) && (255..=65535).contains(&v[4])).map(|v| v[4] as f32);
+    // the saturation levels are entries 4.. (one per channel, all equal on every body seen)
+    let stated = levels.as_deref().and_then(|v| v.get(4..)).and_then(|sat| match sat {
+        [first, rest @ ..] if rest.iter().all(|x| x == first) && (255..=65535).contains(first) => Some(*first as f32),
+        _ => None,
+    });
     let bits = stated.map_or((info.bits() as u32).clamp(8, 16), |s| 32 - (s as u32).leading_zeros());
     let plateau = (!samples.is_empty()).then(|| white_from_data(&active_rows(samples, w, active), bits));
     let white = match (stated, plateau) {
@@ -156,22 +162,24 @@ pub(crate) fn decode(bytes: &[u8], mode: Mode) -> Result<RawImage> {
         (None, Some(p)) => p,
         (None, None) => 4095.0,
     };
-    let tagged_black =
-        mn.as_ref().and_then(|m| keyed(m, WB_BLACK, -1)).filter(|v| v.len() == 4 && v.iter().all(|&x| (0..=u16::MAX as i64).contains(&x)));
+    let tagged_black = mn.as_ref().and_then(|m| keyed(m, WB_BLACK, -1)).and_then(|v| match *v {
+        [r, g1, g2, b] if v.iter().all(|&x| (0..=u16::MAX as i64).contains(&x)) => Some([r, g1, g2, b]),
+        _ => None,
+    });
     let black = match tagged_black {
-        Some(v) if v.iter().any(|&x| x > 0) => {
-            // RGGB-ordered levels -> per CFA position at the active area origin
-            let a = cfa.shifted(active.x, active.y);
-            let values = a.pattern.iter().map(|&c| [v[0], (v[1] + v[2]) / 2, v[3]][c as usize] as f32).collect();
-            BlackLevel { repeat_rows: 2, repeat_cols: 2, values, ..Default::default() }
+        Some([r, g1, g2, b]) if [r, g1, g2, b].iter().any(|&x| x > 0) => {
+            super::rggb_black(&cfa, active, [r as f64, ((g1 + g2) / 2) as f64, ((g1 + g2) / 2) as f64, b as f64])
         }
         // the file states no black level: measure the masked band around the active area, when there is one
         _ => masked_black(samples, w, h, active, white),
     };
     // as-shot white balance: gains with the greens near 4096 (unity)
-    let wb = mn.as_ref().and_then(|m| keyed(m, WB_UNCORRECTED, -1)).filter(|v| v.len() == 4 && v.iter().all(|&x| x > 0)).map(|v| {
-        let g = (v[1] + v[2]) as f64 / 2.0;
-        [(v[0] as f64 / g) as f32, 1.0, (v[3] as f64 / g) as f32]
+    let wb = mn.as_ref().and_then(|m| keyed(m, WB_UNCORRECTED, -1)).and_then(|v| match *v {
+        [r, g1, g2, b] if v.iter().all(|&x| x > 0) => {
+            let g = (g1 + g2) as f64 / 2.0;
+            Some([(r as f64 / g) as f32, 1.0, (b as f64 / g) as f32])
+        }
+        _ => None,
     });
     let mut metadata = lightcraft_meta::from_tiff(&tiff);
     let crop = picture_crop(&tiff, active);
@@ -213,7 +221,7 @@ fn lsb_is_smoother(src: &[u8], w: usize, h: usize) -> bool {
         let Some(row) = y.checked_mul(stride).and_then(|s| src.get(s..s + stride)) else { break };
         unpack_msb(row, 12, &mut a);
         unpack_lsb(row, 12, &mut b);
-        let spread = |v: &[u16]| v.windows(3).map(|p| u64::from(p[0].abs_diff(p[2]))).sum::<u64>();
+        let spread = |v: &[u16]| v.windows(3).map(|p| if let &[a, _, c] = p { u64::from(a.abs_diff(c)) } else { 0 }).sum::<u64>();
         msb += spread(&a);
         lsb += spread(&b);
     }

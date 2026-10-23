@@ -25,6 +25,7 @@
 #![forbid(unsafe_code)]
 #![cfg_attr(test, allow(clippy::disallowed_methods))]
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
+#![deny(clippy::indexing_slicing)]
 
 mod binned;
 pub mod color;

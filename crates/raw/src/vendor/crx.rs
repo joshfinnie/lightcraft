@@ -502,8 +502,8 @@ struct Bits<'a> {
 impl Bits<'_> {
     /// The next 32 bits, MSB first, when at least that many remain before the end of the stream.
     fn peek32(&self) -> Option<u32> {
-        let bytes = self.src.get(self.at / 8..self.at / 8 + 5)?;
-        let word = u64::from_be_bytes([0, 0, 0, bytes[0], bytes[1], bytes[2], bytes[3], bytes[4]]);
+        let &[b0, b1, b2, b3, b4] = self.src.get(self.at / 8..self.at / 8 + 5)? else { return None };
+        let word = u64::from_be_bytes([0, 0, 0, b0, b1, b2, b3, b4]);
         Some((word >> (8 - self.at % 8)) as u32)
     }
 

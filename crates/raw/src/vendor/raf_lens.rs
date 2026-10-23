@@ -110,19 +110,21 @@ fn read(ifd: &Ifd, tag: u16, half_diagonal: f64) -> Option<Table> {
     if v.is_empty() || v.iter().any(|x| !x.is_finite()) {
         return None;
     }
-    let n = (v.len() - 1) / 2;
-    if !(3..=40).contains(&n) || v.len() != 1 + 2 * n {
+    // the scale, then n knots and n values
+    let (&scale, rest) = v.split_first()?;
+    let n = rest.len() / 2;
+    if !(3..=40).contains(&n) || rest.len() != 2 * n {
         return None;
     }
-    let scale = v[0];
     if scale <= 0.0 || (scale * n as f64 / half_diagonal - 1.0).abs() > SCALE_TOLERANCE {
         return None;
     }
-    let knots = v[1..1 + n].to_vec();
-    if knots[0] < 0.0 || knots.windows(2).any(|w| w[1] <= w[0]) || !(0.5..=2.0).contains(&knots[n - 1]) {
+    let (knots, values) = rest.split_at(n);
+    let (&first, &last) = (knots.first()?, knots.last()?);
+    if first < 0.0 || knots.windows(2).any(|w| matches!(w, &[a, b] if b <= a)) || !(0.5..=2.0).contains(&last) {
         return None;
     }
-    Some(Table { knots, values: v[1 + n..].to_vec() })
+    Some(Table { knots: knots.to_vec(), values: values.to_vec() })
 }
 
 impl Table {
@@ -130,21 +132,24 @@ impl Table {
     /// when the first knot lies above it (distortion is 0 and illumination 100 % on the axis).
     fn at(&self, x: f64, at_zero: Option<f64>) -> f64 {
         let (k, y) = (&self.knots, &self.values);
-        if let (Some(z), true) = (at_zero, k[0] > 0.0)
-            && x < k[0]
+        let (Some(&k0), Some(&y0), Some(&y_last)) = (k.first(), y.first(), y.last()) else { return at_zero.unwrap_or(0.0) };
+        if let (Some(z), true) = (at_zero, k0 > 0.0)
+            && x < k0
         {
-            return z + (y[0] - z) * (x / k[0]).max(0.0);
+            return z + (y0 - z) * (x / k0).max(0.0);
         }
-        if x <= k[0] {
-            return y[0];
+        if x <= k0 {
+            return y0;
         }
-        match k.iter().position(|&p| p >= x) {
-            None => y[y.len() - 1],
-            Some(i) => y[i - 1] + (y[i] - y[i - 1]) * (x - k[i - 1]) / (k[i] - k[i - 1]),
+        // the knot segment holding x: (k[i-1], k[i]] with its values
+        let segment = k.windows(2).zip(y.windows(2)).find(|(kw, _)| matches!(kw, [_, hi] if *hi >= x));
+        match segment {
+            Some((&[ka, kb], &[ya, yb])) => ya + (yb - ya) * (x - ka) / (kb - ka),
+            _ => y_last,
         }
     }
     fn last(&self) -> f64 {
-        self.knots[self.knots.len() - 1]
+        self.knots.last().copied().unwrap_or(0.0)
     }
 }
 
@@ -183,6 +188,7 @@ fn zoom(table: &Table, nearest: f64) -> Option<f64> {
 
 /// Fit `target(r) ≈ Σ c_i basis_i(r)` on `r ∈ [0, 1]` minimising the largest deviation (iteratively reweighted least
 /// squares), returning the coefficients and that deviation.
+#[expect(clippy::indexing_slicing, reason = "N × N normal equations of N basis terms, every index below N")]
 fn minimax<const N: usize>(basis: impl Fn(f64) -> [f64; N], target: impl Fn(f64) -> f64) -> Option<([f64; N], f64)> {
     let rows: Vec<([f64; N], f64)> = (0..=SAMPLES).map(|j| j as f64 / SAMPLES as f64).map(|r| (basis(r), target(r))).collect();
     let mut weight = vec![1.0; rows.len()];
@@ -236,6 +242,7 @@ fn polynomial(source: impl Fn(f64) -> f64) -> Option<[f64; 4]> {
 }
 
 /// Gaussian elimination with partial pivoting for the small normal equations.
+#[expect(clippy::indexing_slicing, reason = "N × N elimination, every index below N")]
 fn solve<const N: usize>(mut a: [[f64; N]; N], mut b: [f64; N]) -> Option<[f64; N]> {
     for col in 0..N {
         let pivot = (col..N).max_by(|&i, &j| a[i][col].abs().total_cmp(&a[j][col].abs()))?;

@@ -94,8 +94,9 @@ pub(crate) fn unpack_row_le32_msb(src: &[u8], bits: u32, out: &mut [u16]) {
         .chunks(4)
         .flat_map(|c| {
             let mut w = [0u8; 4];
-            w[..c.len()].copy_from_slice(c);
-            [w[3], w[2], w[1], w[0]]
+            w.iter_mut().zip(c).for_each(|(o, &b)| *o = b);
+            w.reverse();
+            w
         })
         .collect();
     unpack_msb(&swapped, bits, out);
@@ -110,10 +111,10 @@ pub(crate) fn unpack_row_blocks16(src: &[u8], out: &mut [u16]) -> Result<()> {
     let (blocks, _) = src.as_chunks::<16>();
     let (pixels, _) = out.as_chunks_mut::<10>();
     for (block, px) in blocks.iter().zip(pixels) {
-        for k in 0..5 {
-            let (b0, b1, b2) = (block[3 * k] as u16, block[3 * k + 1] as u16, block[3 * k + 2] as u16);
-            px[2 * k] = b0 | (b1 & 15) << 8;
-            px[2 * k + 1] = b1 >> 4 | b2 << 4;
+        // five 3-byte groups of two 12-bit samples (byte 15 is the pad)
+        for (&[b0, b1, b2], pair) in block.as_chunks::<3>().0.iter().zip(px.as_chunks_mut::<2>().0) {
+            let [b0, b1, b2] = [b0, b1, b2].map(u16::from);
+            *pair = [b0 | (b1 & 15) << 8, b1 >> 4 | b2 << 4];
         }
     }
     Ok(())
@@ -144,7 +145,9 @@ pub(crate) fn cfa_from_data(d: &[u16], w: usize, a: Rect) -> Cfa {
                 // rows past the end of the samples: nothing more to read
                 let Some(row) = row.and_then(|start| d.get(start..start.checked_add(BLOCK)?)) else { break };
                 for (x, &v) in row.iter().enumerate() {
-                    sums[(y & 1) * 2 + (x & 1)] += v as i64;
+                    if let Some(s) = sums.get_mut((y & 1) * 2 + (x & 1)) {
+                        *s += v as i64;
+                    }
                 }
             }
             let [s0, s1, s2, s3] = sums;
@@ -201,7 +204,7 @@ fn field_rows(strips: &[(u64, u64)], w: usize, h: usize, file_len: usize) -> Opt
 
 pub(crate) fn decode(bytes: &[u8], mode: Mode) -> Result<RawImage> {
     let tiff = Tiff::parse(bytes)?;
-    let ifd0 = &tiff.ifds[0];
+    let ifd0 = super::ifd0(&tiff)?;
     let info = ifd0.image()?;
     let (w, h) = (info.width as usize, info.height as usize);
     crate::check_dimensions(w as u64, h as u64)?;
@@ -216,28 +219,28 @@ pub(crate) fn decode(bytes: &[u8], mode: Mode) -> Result<RawImage> {
         let d = read_image(bytes, &info, tiff.order, Packing::Word16)?;
         (d, 16)
     } else if is_block16(w, n, total, chunks.len()) {
-        let src = chunk_bytes(bytes, &chunks[0]).ok_or_else(|| RawError::Corrupt("ORF strip outside file".into()))?;
+        let src = chunks.first().and_then(|c| chunk_bytes(bytes, c)).ok_or_else(|| RawError::Corrupt("ORF strip outside file".into()))?;
         let stride = w / 10 * 16;
         if src.len() as u64 != total || src.len() / stride != h {
             return Err(RawError::Corrupt("ORF strip shorter than its rows".into()));
         }
         let d = if mode == Mode::Full || stated.is_none() {
             let mut d = vec![0u16; n];
-            d.par_chunks_mut(w).enumerate().try_for_each(|(y, row)| unpack_row_blocks16(&src[y * stride..(y + 1) * stride], row))?;
+            d.par_chunks_mut(w).zip(src.par_chunks(stride)).try_for_each(|(row, src)| unpack_row_blocks16(src, row))?;
             d
         } else {
             Vec::new()
         };
         (RawData::U16(d), 12)
     } else if total * 8 >= (n as u64) * 12 && total * 8 < (n as u64) * 13 && chunks.len() == 1 {
-        let src = chunk_bytes(bytes, &chunks[0]).ok_or_else(|| RawError::Corrupt("ORF strip outside file".into()))?;
+        let src = chunks.first().and_then(|c| chunk_bytes(bytes, c)).ok_or_else(|| RawError::Corrupt("ORF strip outside file".into()))?;
         // the depth is fixed here, so a header-only probe needs the samples only when the file doesn't state its
         // colour-filter layout
         crate::check_stored(src.len(), n as u64, 12)?;
         let d = if mode == Mode::Full || stated.is_none() {
             let stride = src.len() / h;
             let mut d = vec![0u16; n];
-            d.par_chunks_mut(w).enumerate().for_each(|(y, row)| unpack_row_le32_msb(&src[y * stride..(y + 1) * stride], 12, row));
+            d.par_chunks_mut(w).zip(src.par_chunks(stride.max(1))).for_each(|(row, src)| unpack_row_le32_msb(src, 12, row));
             d
         } else {
             Vec::new()
@@ -297,18 +300,16 @@ pub(crate) fn decode(bytes: &[u8], mode: Mode) -> Result<RawImage> {
     };
     let cfa = stated.unwrap_or_else(|| cfa_from_data(samples, w, active));
     let black = match ip.as_ref().and_then(|i| i.f64s(BLACK)).as_deref() {
-        Some(v @ [_, _, _, _]) => {
-            let a = cfa.shifted(active.x, active.y);
-            let values = a.pattern.iter().map(|&c| [v[0], (v[1] + v[2]) / 2.0, v[3]][c as usize] as f32).collect();
-            BlackLevel { repeat_rows: 2, repeat_cols: 2, values, ..Default::default() }
-        }
+        Some(&[r, g1, g2, b]) => super::rggb_black(&cfa, active, [r, g1, g2, b]),
         _ => BlackLevel::uniform(mn.as_ref().filter(|_| ip.is_none()).and_then(|m| maker_note_black(m, bits)).unwrap_or(0.0)),
     };
     let wb = ip
         .as_ref()
         .and_then(|i| i.f64s(WB_RB))
-        .filter(|v| v.len() >= 2 && v[0] > 0.0 && v[1] > 0.0)
-        .map(|v| [(v[0] / 256.0) as f32, 1.0, (v[1] / 256.0) as f32])
+        .and_then(|v| match *v {
+            [r, b, ..] if r > 0.0 && b > 0.0 => Some([(r / 256.0) as f32, 1.0, (b / 256.0) as f32]),
+            _ => None,
+        })
         .or_else(|| {
             // the red and blue gains lead the main note's entries 0x1017/0x1018 on the two-field compacts and on
             // the E-10 (16-bit words, no ImageProcessing; 384 and 406 on its CC0 file 5424)

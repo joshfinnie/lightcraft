@@ -49,6 +49,19 @@ pub(crate) fn cfa_from_exif(tiff: &Tiff) -> Option<Cfa> {
     (two(c0, c1) && two(r0, r1)).then(|| Cfa::bayer_static(name))
 }
 
+/// The first IFD (`Tiff::parse` refuses a file without one; this says so instead of indexing).
+pub(crate) fn ifd0(tiff: &Tiff) -> crate::Result<&lightcraft_tiff::Ifd> {
+    tiff.ifds.first().ok_or_else(|| crate::RawError::Corrupt("TIFF without an IFD".into()))
+}
+
+/// Black levels stated in R, G1, G2, B order, per position of `cfa` anchored at the active area origin (the greens
+/// take their mean).
+pub(crate) fn rggb_black(cfa: &Cfa, active: Rect, [r, g1, g2, b]: [f64; 4]) -> BlackLevel {
+    let g = (g1 + g2) / 2.0;
+    let values = cfa.shifted(active.x, active.y).pattern.iter().map(|&c| [r, g, b].get(c as usize).copied().unwrap_or(g) as f32).collect();
+    BlackLevel { repeat_rows: 2, repeat_cols: 2, values, ..Default::default() }
+}
+
 /// Black level per 2×2 CFA position (anchored at the active area origin) from masked sensor columns `cols` over
 /// rows `rows`. Falls back to 0 when the region is empty.
 pub(crate) fn black_from_columns(data: &[u16], width: usize, cols: Range<usize>, rows: Range<usize>, active: Rect) -> BlackLevel {
@@ -58,14 +71,22 @@ pub(crate) fn black_from_columns(data: &[u16], width: usize, cols: Range<usize>,
         let py = (y as isize - active.y as isize).rem_euclid(2) as usize;
         for x in cols.start..cols.end.min(width) {
             let px = (x as isize - active.x as isize).rem_euclid(2) as usize;
-            sum[py * 2 + px] += data[y * width + x] as f64;
-            n[py * 2 + px] += 1;
+            if let (Some(&v), Some(s), Some(n)) = (data.get(y * width + x), sum.get_mut(py * 2 + px), n.get_mut(py * 2 + px)) {
+                *s += v as f64;
+                *n += 1;
+            }
         }
     }
     if n.contains(&0) {
         return BlackLevel::uniform(0.0);
     }
-    BlackLevel { repeat_rows: 2, repeat_cols: 2, values: (0..4).map(|i| (sum[i] / n[i] as f64) as f32).collect(), delta_h: vec![], delta_v: vec![] }
+    BlackLevel {
+        repeat_rows: 2,
+        repeat_cols: 2,
+        values: sum.iter().zip(n).map(|(s, n)| (s / n as f64) as f32).collect(),
+        delta_h: vec![],
+        delta_v: vec![],
+    }
 }
 
 /// Samples of up to 512 evenly spaced rows of the active area, for [`white_from_data`]: the borders can hold
@@ -182,11 +203,11 @@ pub(crate) fn fit_radial_warp(source_of_u: &dyn Fn(f64) -> f64, max_fit_error: f
     let mut rhs = [0.0; 4];
     for &(u, v) in &samples {
         let f = basis(u);
-        for (i, fi) in f.iter().enumerate() {
-            for (j, fj) in f.iter().enumerate() {
-                a[i][j] += fi * fj;
+        for ((row, r), fi) in a.iter_mut().zip(&mut rhs).zip(&f) {
+            for (cell, fj) in row.iter_mut().zip(&f) {
+                *cell += fi * fj;
             }
-            rhs[i] += fi * v;
+            *r += fi * v;
         }
     }
     let k = solve4(a, rhs)?;
@@ -200,6 +221,7 @@ pub(crate) fn fit_radial_warp(source_of_u: &dyn Fn(f64) -> f64, max_fit_error: f
 }
 
 /// Solve the 4 × 4 system `a·x = b` (Gaussian elimination with partial pivoting); `None` when singular or not finite.
+#[expect(clippy::indexing_slicing, reason = "4 × 4 elimination, every index below 4")]
 fn solve4(mut a: [[f64; 4]; 4], mut b: [f64; 4]) -> Option<[f64; 4]> {
     for c in 0..4 {
         let p = (c..4).max_by(|&i, &j| a[i][c].abs().total_cmp(&a[j][c].abs()))?;

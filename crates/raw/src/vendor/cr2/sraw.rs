@@ -128,13 +128,20 @@ impl Planes {
                     let q = first + r * per_row + k;
                     let (qy, qx) = (q / mcus_per_frame_row, q % mcus_per_frame_row);
                     let px = (x0 / m + k) * 2;
+                    let [luma, cb, cr] = [0, 1, 2].map(|i| frame.planes.get(i).map(Vec::as_slice).unwrap_or_default());
                     for dy in 0..v {
                         let src = (qy * v + dy) * layout.frame_width + qx * 2;
                         let dst = (r * v + dy) * w + px;
-                        p.y[dst..dst + 2].copy_from_slice(&frame.planes[0][src..src + 2]);
+                        if let (Some(d), Some(s)) = (p.y.get_mut(dst..dst + 2), luma.get(src..src + 2)) {
+                            d.copy_from_slice(s);
+                        }
                     }
-                    p.cb[r * cw + px / 2] = frame.planes[1][qy * mcus_per_frame_row + qx];
-                    p.cr[r * cw + px / 2] = frame.planes[2][qy * mcus_per_frame_row + qx];
+                    let (at, from) = (r * cw + px / 2, qy * mcus_per_frame_row + qx);
+                    for (plane, src) in [(&mut p.cb, cb), (&mut p.cr, cr)] {
+                        if let (Some(d), Some(&s)) = (plane.get_mut(at), src.get(from)) {
+                            *d = s;
+                        }
+                    }
                 }
             }
             x0 += sw;
@@ -143,6 +150,7 @@ impl Planes {
     }
 
     /// Mean luma / Cb / Cr over the pixel window `[x0, x1) × [y0, y1)` (non-empty, inside the image).
+    #[expect(clippy::indexing_slicing, reason = "planes `arrange` sized from the layout, read over a window inside them")]
     fn window_mean(&self, x0: usize, x1: usize, y0: usize, y1: usize) -> (f64, f64, f64) {
         let (mut sy, mut ny) = (0f64, 0f64);
         for y in y0..y1 {
@@ -165,6 +173,7 @@ impl Planes {
     }
 
     /// Linear RGB (`width × height × 3`): `R = Y + a·Cr`, `B = Y + b·Cb`, `G` from the luma equation.
+    #[expect(clippy::indexing_slicing, reason = "planes `arrange` sized from the layout: width × height luma, half-width chroma rows")]
     fn to_rgb(&self, a: f64, b: f64) -> Vec<u16> {
         let (gr, gb) = ((KR / KG * a) as f32, (KB / KG * b) as f32);
         let (a, b) = (a as f32, b as f32);
@@ -285,8 +294,8 @@ fn chroma_gains(planes: &Planes, preview: &Preview, active: Rect) -> Option<(f64
             let y0 = (g.y0 + j as f64 * g.sy) as usize;
             let y1 = ((g.y0 + (j + 1) as f64 * g.sy) as usize).min(planes.height);
             for i in 0..preview.width {
-                let p = &preview.rgb[(j * preview.width + i) * 3..][..3];
-                let [r, gr, b] = [f64::from(p[0]), f64::from(p[1]), f64::from(p[2])];
+                let Some(&[r, gr, b]) = preview.rgb.get((j * preview.width + i) * 3..).and_then(|p| p.first_chunk::<3>()) else { continue };
+                let [r, gr, b] = [r, gr, b].map(f64::from);
                 if r.max(gr).max(b) >= FIT_LIMIT || r.min(gr).min(b) <= 0.0 {
                     continue;
                 }
@@ -335,7 +344,7 @@ fn colour_data_black(words: &[u64]) -> Option<f32> {
 
 /// Decode a Canon sRAW / mRAW CR2 into linear white-balanced camera RGB (`cpp` 3).
 pub(super) fn decode(bytes: &[u8], tiff: &Tiff, raw: &Ifd, mode: Mode) -> Result<RawImage> {
-    let ifd0 = &tiff.ifds[0];
+    let ifd0 = crate::vendor::ifd0(tiff)?;
     let off = raw.u64(t::STRIP_OFFSETS).ok_or(RawError::Tiff(lightcraft_tiff::TiffError::MissingTag(t::STRIP_OFFSETS)))?;
     let len = raw.u64(t::STRIP_BYTE_COUNTS).unwrap_or(bytes.len() as u64 - off.min(bytes.len() as u64));
     let chunk = Chunk { index: 0, x: 0, y: 0, width: 0, height: 0, plane: 0, offset: off, len };
@@ -349,8 +358,8 @@ pub(super) fn decode(bytes: &[u8], tiff: &Tiff, raw: &Ifd, mode: Mode) -> Result
         tiff.exif().and_then(|e| e.get(t::MAKER_NOTE)).and_then(|e| makernote::parse_makernote(bytes, e.offset, e.count() as u64, tiff.order, &make));
     let (w, h) = (layout.width, layout.height);
     let mut active = Rect::new(0, 0, w, h);
-    if let Some(si) = mn.as_ref().and_then(|m| m.ifd.u64s(SENSOR_INFO)).filter(|v| v.len() >= 9) {
-        let (l, tp, r, b) = (si[5] as usize, si[6] as usize, si[7] as usize, si[8] as usize);
+    if let Some(&[l, tp, r, b]) = mn.as_ref().and_then(|m| m.ifd.u64s(SENSOR_INFO)).as_deref().and_then(|si| si.get(5..9)) {
+        let (l, tp, r, b) = (l as usize, tp as usize, r as usize, b as usize);
         if r > l && b > tp && r < w && b < h {
             active = Rect::new(l, tp, r - l + 1, b - tp + 1);
         }

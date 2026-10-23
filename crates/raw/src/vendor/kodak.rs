@@ -73,7 +73,7 @@ pub(crate) fn decode(bytes: &[u8], mode: Mode) -> Result<RawImage> {
     };
     let curve: Vec<u16> = raw
         .u64s(RESPONSE_CURVE)
-        .filter(|c| c.len() == CURVE_LEN && c.windows(2).all(|p| p[0] <= p[1]) && c.iter().all(|&v| v < CURVE_LEN as u64))
+        .filter(|c| c.len() == CURVE_LEN && c.is_sorted() && c.iter().all(|&v| v < CURVE_LEN as u64))
         .ok_or_else(|| RawError::Unsupported("Kodak raw without a usable response curve".into()))?
         .into_iter()
         .map(|v| v as u16)
@@ -93,10 +93,10 @@ pub(crate) fn decode(bytes: &[u8], mode: Mode) -> Result<RawImage> {
     } else {
         (BlackLevel::uniform(0.0), RawData::U16(Vec::new()))
     };
-    let wb = kodak_ifd(bytes, &tiff, ifd0)
-        .and_then(|k| k.f64s(NEUTRAL))
-        .filter(|v| v.len() == 3 && v.iter().all(|&x| x > 0.0))
-        .map(|v| [(v[1] / v[0]) as f32, 1.0, (v[1] / v[2]) as f32]);
+    let wb = kodak_ifd(bytes, &tiff, ifd0).and_then(|k| k.f64s(NEUTRAL)).and_then(|v| match *v {
+        [r, g, b] if r > 0.0 && g > 0.0 && b > 0.0 => Some([(g / r) as f32, 1.0, (g / b) as f32]),
+        _ => None,
+    });
     let mut metadata = lightcraft_meta::from_tiff(&tiff);
     metadata.width = Some(w as u32);
     metadata.height = Some(h as u32);
@@ -134,6 +134,7 @@ fn kodak_ifd(bytes: &[u8], tiff: &Tiff, ifd0: &Ifd) -> Option<Ifd> {
 
 /// Black level per CFA position (the mosaic's first sample is position 0): the value below which only 0.01% of that
 /// position's samples fall, see the module notes. Uniform 0 for an empty frame.
+#[expect(clippy::indexing_slicing, reason = "four CFA positions (2 × 2) each with a CURVE_LEN histogram, values clamped below CURVE_LEN")]
 fn measured_black(d: &[u16], w: usize) -> BlackLevel {
     let mut hist = vec![[0u32; CURVE_LEN]; 4];
     let mut count = [0u64; 4];

@@ -82,8 +82,8 @@ fn wb_from_levels(r: f32, g1: f32, g2: f32, b: f32) -> Option<[f32; 3]> {
 /// As-shot WB multipliers (R, G, B; G = 1) from the ColorBalance array.
 fn wb_from_color_balance(v: &[u64]) -> Option<[f32; 3]> {
     for off in [63usize, 25, 24, 34, 71, 85, 105, 69, 77] {
-        let q = v.get(off..off + 4)?;
-        if let Some(wb) = wb_from_levels(q[0] as f32, q[1] as f32, q[2] as f32, q[3] as f32) {
+        let &[a, b, c, d] = v.get(off..off + 4)? else { return None };
+        if let Some(wb) = wb_from_levels(a as f32, b as f32, c as f32, d as f32) {
             return Some(wb);
         }
     }
@@ -148,7 +148,7 @@ fn masked_columns(data: &[u16], width: usize, active: Rect, white: f32) -> Range
 
 pub(crate) fn decode(bytes: &[u8], mode: Mode) -> Result<RawImage> {
     let tiff = Tiff::parse(bytes)?;
-    let ifd0 = &tiff.ifds[0];
+    let ifd0 = super::ifd0(&tiff)?;
     let raw = raw_ifd(&tiff).ok_or_else(|| RawError::Corrupt("CR2 without raw IFD".into()))?;
     match raw.u32(SRAW_TYPE) {
         Some(SRAW_YCC) => return sraw::decode(bytes, &tiff, raw, mode),
@@ -186,12 +186,15 @@ pub(crate) fn decode(bytes: &[u8], mode: Mode) -> Result<RawImage> {
             total
         }
     };
-    let slices = raw.u64s(CR2_SLICE).filter(|s| s.len() == 3 && s[1] > 0 && s[2] > 0);
-    let widths: Vec<usize> = match &slices {
-        Some(s) => {
-            let n = s[0].min(64) as usize;
-            let mut v = vec![s[1] as usize; n];
-            v.push(s[2] as usize);
+    // (number of slices before the last, their width, the last one's width)
+    let slices = raw.u64s(CR2_SLICE).and_then(|s| match *s {
+        [n, sw, last] if sw > 0 && last > 0 => Some((n, sw, last)),
+        _ => None,
+    });
+    let widths: Vec<usize> = match slices {
+        Some((n, sw, last)) => {
+            let mut v = vec![sw as usize; n.min(64) as usize];
+            v.push(last as usize);
             v
         }
         None => {
@@ -211,7 +214,11 @@ pub(crate) fn decode(bytes: &[u8], mode: Mode) -> Result<RawImage> {
         let mut x0 = 0;
         for &sw in &widths {
             for y in 0..height {
-                data[y * width + x0..y * width + x0 + sw].copy_from_slice(&frame.data[i..i + sw]);
+                let at = y * width + x0;
+                let (Some(dst), Some(src)) = (data.get_mut(at..at + sw), frame.data.get(i..i + sw)) else {
+                    return Err(RawError::Corrupt("CR2 slice outside the frame".into()));
+                };
+                dst.copy_from_slice(src);
                 i += sw;
             }
             x0 += sw;
@@ -224,8 +231,8 @@ pub(crate) fn decode(bytes: &[u8], mode: Mode) -> Result<RawImage> {
     let mn =
         tiff.exif().and_then(|e| e.get(t::MAKER_NOTE)).and_then(|e| makernote::parse_makernote(bytes, e.offset, e.count() as u64, tiff.order, &make));
     let mut active = Rect::new(0, 0, width, height);
-    if let Some(si) = mn.as_ref().and_then(|m| m.ifd.u64s(SENSOR_INFO)).filter(|v| v.len() >= 9) {
-        let (l, tp, r, b) = (si[5] as usize, si[6] as usize, si[7] as usize, si[8] as usize);
+    if let Some(&[l, tp, r, b]) = mn.as_ref().and_then(|m| m.ifd.u64s(SENSOR_INFO)).as_deref().and_then(|si| si.get(5..9)) {
+        let (l, tp, r, b) = (l as usize, tp as usize, r as usize, b as usize);
         if r > l && b > tp && r < width && b < height {
             active = Rect::new(l, tp, r - l + 1, b - tp + 1);
         }

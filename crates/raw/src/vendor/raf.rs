@@ -43,7 +43,7 @@ pub(crate) struct Header<'a> {
 }
 
 fn be32(b: &[u8], at: usize) -> Option<usize> {
-    b.get(at..at + 4).map(|s| u32::from_be_bytes([s[0], s[1], s[2], s[3]]) as usize)
+    Some(u32::from_be_bytes(b.get(at..at.checked_add(4)?)?.try_into().ok()?) as usize)
 }
 
 fn slice(b: &[u8], off: Option<usize>, len: Option<usize>) -> Option<&[u8]> {
@@ -65,8 +65,8 @@ pub(crate) fn header(b: &[u8]) -> Result<Header<'_>> {
         let n = be32(dir, 0).unwrap_or(0).min(4096);
         let mut p = 4;
         for _ in 0..n {
-            let Some(h) = dir.get(p..p + 4) else { break };
-            let (tag, size) = (u16::from_be_bytes([h[0], h[1]]), u16::from_be_bytes([h[2], h[3]]) as usize);
+            let Some(&[t0, t1, s0, s1]) = dir.get(p..p + 4) else { break };
+            let (tag, size) = (u16::from_be_bytes([t0, t1]), u16::from_be_bytes([s0, s1]) as usize);
             let Some(d) = dir.get(p + 4..p + 4 + size) else { break };
             records.push((tag, d));
             p += 4 + size;
@@ -81,8 +81,8 @@ fn record<'a>(h: &Header<'a>, tag: u16) -> Option<&'a [u8]> {
 
 /// A record holding two big-endian `u16`s.
 fn pair(h: &Header, tag: u16) -> Option<(usize, usize)> {
-    let d = record(h, tag).filter(|d| d.len() >= 4)?;
-    Some((u16::from_be_bytes([d[0], d[1]]) as usize, u16::from_be_bytes([d[2], d[3]]) as usize))
+    let &[a0, a1, b0, b1] = record(h, tag)?.first_chunk::<4>()?;
+    Some((u16::from_be_bytes([a0, a1]) as usize, u16::from_be_bytes([b0, b1]) as usize))
 }
 
 pub(crate) fn raw_ifd(raw: &[u8]) -> Result<Ifd> {
@@ -181,16 +181,20 @@ pub(crate) fn decode(bytes: &[u8], mode: Mode) -> Result<RawImage> {
     let active = if active.width == 0 || active.height == 0 { Rect::new(0, 0, w, hgt) } else { active };
     // black levels: one per CFA position, anchored at (0, 0) of the raw data; re-anchor at the active area
     let black = match ifd.f64s(0xf00a) {
-        Some(v) if v.len() == cfa.pattern.len() && v.iter().any(|b| *b != v[0]) => {
-            let (cw, chh) = (cfa.width, cfa.height);
-            let values = (0..chh * cw).map(|i| v[((i / cw + active.y) % chh) * cw + (i % cw + active.x) % cw] as f32).collect();
+        Some(v) if v.len() == cfa.pattern.len() && v.iter().any(|b| Some(b) != v.first()) => {
+            let (cw, chh) = (cfa.width.max(1), cfa.height.max(1));
+            let at = |i: usize| v.get(((i / cw + active.y) % chh) * cw + (i % cw + active.x) % cw).copied().unwrap_or(0.0);
+            let values = (0..chh * cw).map(|i| at(i) as f32).collect();
             BlackLevel { repeat_rows: chh, repeat_cols: cw, values, ..Default::default() }
         }
-        Some(v) if !v.is_empty() => BlackLevel::uniform(v[0] as f32),
+        Some(v) if let Some(&b) = v.first() => BlackLevel::uniform(b as f32),
         _ => BlackLevel::uniform(0.0),
     };
-    let wb =
-        ifd.f64s(0xf00e).filter(|v| v.len() >= 3 && v.iter().take(3).all(|x| *x > 0.0)).map(|v| [(v[1] / v[0]) as f32, 1.0, (v[2] / v[0]) as f32]);
+    // the levels are G, R, B
+    let wb = ifd.f64s(0xf00e).and_then(|v| match *v {
+        [g, r, b, ..] if g > 0.0 && r > 0.0 && b > 0.0 => Some([(r / g) as f32, 1.0, (b / g) as f32]),
+        _ => None,
+    });
     let white = white_from_data(&data, bits);
 
     let mut metadata = h.jpeg.map(lightcraft_meta::extract).unwrap_or_default();

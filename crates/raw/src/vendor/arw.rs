@@ -97,6 +97,7 @@ pub(crate) fn dynamic_range_optimizer(note: &makernote::MakerNote) -> Option<boo
 /// Verified on 15 files from 13 bodies covering seven `Tag2010` layouts: the deciphered `SonyISO` field encodes
 /// the Exif ISO (`100 · 2^(16 − v/256)`), the green level is 255–256 throughout, and on the ILCE-7M3 the deciphered
 /// `WB_RGBLevels` equal the plain raw-IFD `0x7313` levels.
+#[expect(clippy::indexing_slicing, reason = "built at compile time: every index is below 256")]
 const DECIPHER: [u8; 256] = {
     let mut inv = [0u8; 256];
     let mut p = 0usize;
@@ -223,13 +224,18 @@ fn sony_body<'a>(make: &str, model: &'a str, mn: Option<&makernote::MakerNote>) 
     SONY_MODEL_IDS.iter().find(|(i, _)| Some(*i) == id).map_or(model, |(_, name)| name)
 }
 
+/// The plain value of an enciphered `Tag2010` byte ([`DECIPHER`]).
+fn decipher(b: u8) -> u8 {
+    DECIPHER.get(b as usize).copied().unwrap_or(b)
+}
+
 /// White balance from the maker note's enciphered `Tag2010` block, the fallback described at [`TAG2010_WB`].
 /// `model` is the Sony body ([`sony_body`]); Sony appends a regional "V" to some names (SLT-A77V), which the
 /// documented lists omit.
 fn tag2010_wb(model: &str, block: &[u8], order: lightcraft_tiff::ByteOrder) -> Option<[f32; 3]> {
     let model = model.trim();
     let &(_, offset) = TAG2010_WB.iter().find(|(models, _)| models.iter().any(|m| model == *m || model.strip_suffix('V') == Some(*m)))?;
-    let bytes: Vec<u8> = block.get(offset..offset + 6)?.iter().map(|&b| DECIPHER[b as usize]).collect();
+    let bytes: Vec<u8> = block.get(offset..offset + 6)?.iter().map(|&b| decipher(b)).collect();
     let level = |i: usize| order.read_u16(&bytes, 2 * i).map(f32::from);
     let (r, g, b) = (level(0)?, level(1)?, level(2)?);
     // levels are fixed-point gains (green 255–256 on every sample seen); reject implausible values from an unknown layout
@@ -254,10 +260,8 @@ fn is_packed12(info: &ImageInfo, strip_count: usize, strip_len: u64) -> bool {
 /// `b0 | (b1 & 0xf) << 8` and the second `b1 >> 4 | b2 << 4` (measured: same-colour neighbours differ by ~16 codes
 /// in this order against ~200 in the most-significant-first order). `row` is `1.5 · out.len()` bytes.
 pub(crate) fn unpack_row12(row: &[u8], out: &mut [u16]) {
-    for (i, b) in row.windows(3).step_by(3).enumerate() {
-        let Some(px) = out.get_mut(2 * i..2 * i + 2) else { break };
-        px[0] = u16::from(b[0]) | (u16::from(b[1] & 0xf) << 8);
-        px[1] = u16::from(b[1] >> 4) | (u16::from(b[2]) << 4);
+    for (&[b0, b1, b2], px) in row.as_chunks::<3>().0.iter().zip(out.as_chunks_mut::<2>().0) {
+        *px = [u16::from(b0) | (u16::from(b1 & 0xf) << 8), u16::from(b1 >> 4) | (u16::from(b2) << 4)];
     }
 }
 
@@ -274,6 +278,7 @@ fn rggb_gains(levels: &[f64]) -> Option<[f32; 3]> {
 }
 
 /// The inverse tone curve: 11-bit code → 14-bit sensor value.
+#[expect(clippy::indexing_slicing, reason = "fixed tables: six breakpoints below 4096 and a 4096-entry curve")]
 pub(crate) fn code_curve(thresholds: &[u64]) -> Vec<u16> {
     let mut bp = [0usize, 4095, 4095, 4095, 4095, 4095];
     for (i, &v) in thresholds.iter().take(4).enumerate() {
@@ -324,7 +329,9 @@ pub(crate) fn decode_row(row: &[u8], out: &mut [u16]) {
                     bit += 7;
                     (min + (d << sh)).min(0x7ff)
                 };
-                out[x0 + half + 2 * i] = v;
+                if let Some(o) = out.get_mut(x0 + half + 2 * i) {
+                    *o = v;
+                }
             }
         }
         x0 += 32;
@@ -391,8 +398,10 @@ fn read_quad_tiles(bytes: &[u8], info: &ImageInfo) -> Result<Vec<u16>> {
                 }
                 for fx in 0..f.width {
                     let x = x0 + 2 * fx + (k & 1);
-                    if x < w {
-                        out[y * w + x] = f.data[(fy * f.width + fx) * 4 + k];
+                    if x < w
+                        && let (Some(o), Some(&v)) = (out.get_mut(y * w + x), f.data.get((fy * f.width + fx) * 4 + k))
+                    {
+                        *o = v;
                     }
                 }
             }
@@ -464,16 +473,16 @@ fn read_ycbcr_tiles(bytes: &[u8], info: &ImageInfo, raw: &Ifd, mode: Mode) -> Re
     for (c, f) in decoded {
         for y in 0..f.height.min(h.saturating_sub(c.y as usize)) {
             for x in 0..f.width.min(w.saturating_sub(c.x as usize)) {
-                let luma = f.planes[0][y * f.width + x] as f64;
-                let ci = (y / f.vertical_subsampling) * (f.width / 2) + x / 2;
-                let cb = f.planes[1][ci] as f64 - cbzero;
-                let cr = f.planes[2][ci] as f64 - crzero;
+                let ci = (y / f.vertical_subsampling.max(1)) * (f.width / 2) + x / 2;
+                let [luma, cb, cr] =
+                    [(0, y * f.width + x), (1, ci), (2, ci)].map(|(p, i)| f.planes.get(p).and_then(|p| p.get(i)).map_or(0.0, |&v| v as f64));
+                let (cb, cr) = (cb - cbzero, cr - crzero);
                 let r = luma + (2.0 - 2.0 * kr) * cr;
                 let b = luma + (2.0 - 2.0 * kb) * cb;
                 let g = (luma - kr * r - kb * b) / kg;
                 let dst = (((c.y as usize + y) * w) + c.x as usize + x) * 3;
-                for (s, value) in [r, g, b].into_iter().enumerate() {
-                    out[dst + s] = value.round().clamp(0.0, 65535.0) as u16;
+                for (o, value) in out.iter_mut().skip(dst).take(3).zip([r, g, b]) {
+                    *o = value.round().clamp(0.0, 65535.0) as u16;
                 }
             }
         }
@@ -498,8 +507,9 @@ fn sr2_black(sr2: &super::sr2::SubIfd) -> Option<f32> {
 /// The DSC-R1's as-shot gains `[R/G, 1, B/G]` from `0x7303` (G, R, B, G), when plausible.
 fn sr2_old_wb(sr2: &super::sr2::SubIfd) -> Option<[f32; 3]> {
     let v = sr2.shorts(SR2_OLD_WB).filter(|v| v.len() == 4 && v.iter().all(|&x| x > 0.0))?;
-    let g = (v[0] + v[3]) / 2.0;
-    let (r, b) = ((v[1] / g) as f32, (v[2] / g) as f32);
+    let &[g1, r, b, g2] = v.as_slice() else { return None };
+    let g = (g1 + g2) / 2.0;
+    let (r, b) = ((r / g) as f32, (b / g) as f32);
     ((0.25..=16.0).contains(&r) && (0.25..=16.0).contains(&b)).then_some([r, 1.0, b])
 }
 
@@ -508,15 +518,15 @@ fn sr2_old_wb(sr2: &super::sr2::SubIfd) -> Option<[f32; 3]> {
 fn sr2_kelvin_presets(sr2: &super::sr2::SubIfd) -> Option<crate::kelvin_presets::KelvinPresets> {
     let mut points = [(0.0f32, [0.0f32; 3]); 5];
     for (p, (k, tag)) in points.iter_mut().zip(SR2_KELVIN_PRESETS) {
-        let v = sr2.shorts(tag).filter(|v| v.len() == 3)?;
-        *p = (k, [v[0] as f32, v[1] as f32, v[2] as f32]);
+        let &[r, g, b] = sr2.shorts(tag)?.as_slice() else { return None };
+        *p = (k, [r as f32, g as f32, b as f32]);
     }
     crate::kelvin_presets::KelvinPresets::new(points)
 }
 
 fn sr2_old_crop(sr2: &super::sr2::SubIfd, w: usize, h: usize) -> Option<Rect> {
-    let v = sr2.shorts(SR2_OLD_CROP).filter(|v| v.len() == 4)?;
-    let [x0, y0, x1, y1] = [v[0] as usize, v[1] as usize, v[2] as usize, v[3] as usize];
+    let &[x0, y0, x1, y1] = sr2.shorts(SR2_OLD_CROP)?.as_slice() else { return None };
+    let [x0, y0, x1, y1] = [x0, y0, x1, y1].map(|v| v as usize);
     (x0 % 2 == 0 && y0 % 2 == 0 && x1 > x0 && y1 > y0 && x1 <= w && y1 <= h).then(|| Rect::new(x0, y0, x1 - x0, y1 - y0))
 }
 
@@ -619,7 +629,7 @@ fn raw_ifd(tiff: &Tiff) -> Option<&Ifd> {
 
 pub(crate) fn decode(bytes: &[u8], mode: Mode) -> Result<RawImage> {
     let tiff = Tiff::parse(bytes)?;
-    let ifd0 = &tiff.ifds[0];
+    let ifd0 = tiff.ifds.first().ok_or_else(|| RawError::Corrupt("TIFF without an IFD".into()))?;
     let raw = raw_ifd(&tiff).ok_or_else(|| RawError::Unsupported("ARW without a CFA image IFD (old ARW or SR2)".into()))?;
     let info = raw.image()?;
     let (w, h) = (info.width as usize, info.height as usize);
@@ -629,6 +639,7 @@ pub(crate) fn decode(bytes: &[u8], mode: Mode) -> Result<RawImage> {
     let linear_rgb = info.compression == 7 && info.photometric == photometric::YCBCR;
     let chunks = info.chunks(bytes.len() as u64);
     let strip_len: u64 = chunks.iter().map(|c| c.len).sum();
+    let first_strip = || chunks.first().and_then(|c| chunk_bytes(bytes, c)).ok_or_else(|| RawError::Corrupt("raw strip outside file".into()));
     // The row-per-w-bytes (ARW2) layout stores exactly one byte per pixel in a single strip; all 108 such files in the test
     // archive measure exactly width x height. A200/A230/A350 files carry a strip 4-23 % larger than that (and A290/A390 one
     // smaller), which is a different packing, so they are refused rather than read with the wrong layout.
@@ -637,11 +648,11 @@ pub(crate) fn decode(bytes: &[u8], mode: Mode) -> Result<RawImage> {
     let (data, out_bits) = match info.compression {
         7 if linear_rgb => (RawData::U16(read_ycbcr_tiles(bytes, &info, raw, mode)?), 14),
         32767 if one_byte_per_sample && mode == Mode::Header => {
-            chunk_bytes(bytes, &chunks[0]).ok_or_else(|| RawError::Corrupt("raw strip outside file".into()))?;
+            first_strip()?;
             (RawData::U16(Vec::new()), 14)
         }
         32767 if one_byte_per_sample => {
-            let src = chunk_bytes(bytes, &chunks[0]).ok_or_else(|| RawError::Corrupt("raw strip outside file".into()))?;
+            let src = first_strip()?;
             crate::check_dimensions(w as u64, h as u64)?;
             crate::check_stored(src.len(), samples, 8)?;
             let curve = code_curve(&raw.u64s(TONE_CURVE).unwrap_or_else(|| vec![8000, 10400, 12900, 14100]));
@@ -650,17 +661,17 @@ pub(crate) fn decode(bytes: &[u8], mode: Mode) -> Result<RawImage> {
                 let row = src.get(y * w..((y + 1) * w).min(src.len())).unwrap_or(&[]);
                 if row.len() == w {
                     decode_row(row, out);
-                    out.iter_mut().for_each(|v| *v = curve[*v as usize]);
+                    out.iter_mut().for_each(|v| *v = curve.get(*v as usize).copied().unwrap_or(0));
                 }
             });
             (RawData::U16(data), 14)
         }
         32767 if packed12 && mode == Mode::Header => {
-            chunk_bytes(bytes, &chunks[0]).ok_or_else(|| RawError::Corrupt("raw strip outside file".into()))?;
+            first_strip()?;
             (RawData::U16(Vec::new()), 12)
         }
         32767 if packed12 => {
-            let src = chunk_bytes(bytes, &chunks[0]).ok_or_else(|| RawError::Corrupt("raw strip outside file".into()))?;
+            let src = first_strip()?;
             crate::check_dimensions(w as u64, h as u64)?;
             crate::check_stored(src.len(), samples, 12)?;
             let row_bytes = w / 2 * 3;
@@ -684,7 +695,7 @@ pub(crate) fn decode(bytes: &[u8], mode: Mode) -> Result<RawImage> {
             if bits != 14 {
                 return Err(RawError::Unsupported("ARW6 12-bit mode (no sample to verify)".into()));
             }
-            let src = chunk_bytes(bytes, &chunks[0]).ok_or_else(|| RawError::Corrupt("raw strip outside file".into()))?;
+            let src = first_strip()?;
             (RawData::U16(arw6::decode(src, w, h, mode)?), 16)
         }
         32766 => return Err(RawError::Unsupported("ARW6 without exactly one strip".into())),
