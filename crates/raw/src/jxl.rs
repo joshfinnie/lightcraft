@@ -45,6 +45,7 @@ const SRGB: [[f64; 2]; 3] = [[0.640, 0.330], [0.300, 0.600], [0.150, 0.060]];
 const BT2100: [[f64; 2]; 3] = [[0.708, 0.292], [0.170, 0.797], [0.131, 0.046]];
 const P3: [[f64; 2]; 3] = [[0.680, 0.320], [0.265, 0.690], [0.150, 0.060]];
 
+#[expect(clippy::indexing_slicing, reason = "3 × 3 matrix arithmetic, indices below 3")]
 fn inverse(m: Matrix) -> Matrix {
     let c =
         |i: usize, j: usize| m[(i + 1) % 3][(j + 1) % 3] * m[(i + 2) % 3][(j + 2) % 3] - m[(i + 1) % 3][(j + 2) % 3] * m[(i + 2) % 3][(j + 1) % 3];
@@ -58,6 +59,7 @@ fn inverse(m: Matrix) -> Matrix {
     out
 }
 
+#[expect(clippy::indexing_slicing, reason = "3 × 3 matrix arithmetic, indices below 3")]
 fn mul(a: Matrix, b: Matrix) -> Matrix {
     let mut out = [[0.0; 3]; 3];
     for (i, row) in out.iter_mut().enumerate() {
@@ -69,6 +71,7 @@ fn mul(a: Matrix, b: Matrix) -> Matrix {
 }
 
 /// Linear RGB → XYZ for primaries `p` (xy) and the D65 white point.
+#[expect(clippy::indexing_slicing, reason = "3 × 3 matrix arithmetic, indices below 3")]
 fn rgb_to_xyz(p: [[f64; 2]; 3]) -> Matrix {
     let xyz = |[x, y]: [f64; 2]| [x / y, 1.0, (1.0 - x - y) / y];
     let cols = [xyz(p[0]), xyz(p[1]), xyz(p[2])];
@@ -200,7 +203,7 @@ pub(crate) fn decode(src: &[u8], cw: usize, ch: usize, vw: usize, vh: usize, cpp
     let render = img.render_frame(0).map_err(corrupt)?;
     let fb = render.image_all_channels();
     let (jw, jh, fc) = (fb.width(), fb.height(), fb.channels());
-    if jw == 0 || jh == 0 || jw > cw || jh > ch || fc < cpp {
+    if jw == 0 || jh == 0 || jw > cw || jh > ch || cpp == 0 || cpp > 4 || fc < cpp {
         return Err(corrupt(format!("rendered {jw}×{jh}×{fc}, expected {cw}×{ch}×{cpp}")));
     }
     let n = cw.saturating_mul(ch).saturating_mul(cpp);
@@ -210,13 +213,13 @@ pub(crate) fn decode(src: &[u8], cw: usize, ch: usize, vw: usize, vh: usize, cpp
         Output::FromXyb(m) => m,
         Output::AsCoded => None,
     };
-    let restore = |s: &[f32], d: &mut [f32]| match matrix {
-        Some(m) => {
-            for (d, row) in d.iter_mut().zip(&m) {
-                *d = row[0] * s[0] + row[1] * s[1] + row[2] * s[2];
+    let restore = |s: &[f32], d: &mut [f32]| match (matrix, s) {
+        (Some(m), &[r, g, b, ..]) => {
+            for (d, &[mr, mg, mb]) in d.iter_mut().zip(&m) {
+                *d = mr * r + mg * g + mb * b;
             }
         }
-        None => d.copy_from_slice(&s[..cpp]),
+        _ => d.iter_mut().zip(s).for_each(|(d, &s)| *d = s),
     };
     Ok(if float {
         let mut out = vec![0f32; n];
@@ -228,10 +231,10 @@ pub(crate) fn decode(src: &[u8], cw: usize, ch: usize, vw: usize, vh: usize, cpp
         ChunkPx::F32(out)
     } else {
         let mut out = vec![0u16; n];
-        let mut px = [0f32; 3];
+        let mut px = [0f32; 4];
         for (dst, src) in out.chunks_exact_mut(cw * cpp).zip(rows) {
             for (d, s) in dst.chunks_exact_mut(cpp).zip(src.chunks_exact(fc)) {
-                restore(s, &mut px[..cpp]);
+                restore(s, px.get_mut(..cpp).unwrap_or_default());
                 // `as` saturates (NaN → 0): lossy overshoot clips to the integer range
                 d.iter_mut().zip(&px).for_each(|(d, s)| *d = (s * max).round() as u16);
             }

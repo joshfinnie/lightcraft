@@ -234,7 +234,7 @@ mod tests {
     }
 
     fn stream() -> Vec<u8> {
-        ljpeg::encode(&stored(), W / 2, H, 2, 12, 1, 0)
+        ljpeg::encode(&stored(), W / 2, H, 2, 12, 1, 0).unwrap()
     }
 
     /// Known answer: two interleaved components are the even and odd columns, the response curve linearises them,
@@ -266,7 +266,7 @@ mod tests {
         assert_ne!(probe(&file("Canon", stream(), W as u32, true, None)), Some(RawFormat::KodakDcs));
         assert_ne!(probe(&file("Kodak", stream(), W as u32 + 2, true, None)), Some(RawFormat::KodakDcs));
         assert_ne!(probe(&file("Kodak", stream(), W as u32, false, None)), Some(RawFormat::KodakDcs));
-        let one = ljpeg::encode(&stored()[..W * H / 2], W, H / 2, 1, 12, 1, 0);
+        let one = ljpeg::encode(&stored()[..W * H / 2], W, H / 2, 1, 12, 1, 0).unwrap();
         assert_ne!(probe(&file("Kodak", one, W as u32, true, None)), Some(RawFormat::KodakDcs));
     }
 

@@ -6,6 +6,10 @@
 //! (not near black, not near clipping, no clipped sensor sample under them) the median green-over-red and
 //! green-over-blue ratios are the gains. A colour matrix maps neutral to neutral, so its absence doesn't bias the
 //! result. Without enough neutral pixels the mean of the unclipped mosaic is used instead (grey world).
+#![expect(
+    clippy::indexing_slicing,
+    reason = "per-colour sums in fixed three-element arrays indexed by a CFA colour clamped to 0..=2; samples and cells are read with `get`"
+)]
 use crate::{BlackLevel, Cfa, Rect};
 
 /// Preview pixels whose largest and smallest channel differ by less than this (8-bit codes) count as neutral.

@@ -1568,7 +1568,7 @@ mod tests {
                         frame.extend([at(x, y), at(x + 1, y), at(x, y + 1), at(x + 1, y + 1)]);
                     }
                 }
-                let enc = ljpeg::encode(&frame, tw / 2, tw / 2, 4, 14, 1, 0);
+                let enc = ljpeg::encode(&frame, tw / 2, tw / 2, 4, 14, 1, 0).unwrap();
                 offsets[ty * 2 + tx] = file.len() as u64;
                 counts[ty * 2 + tx] = enc.len() as u64;
                 file.extend(enc);

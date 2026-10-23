@@ -20,6 +20,10 @@
 //! camera's white-balanced neutral as neutral (a look fitted to the camera's JPEG, a camera profile); and, in a
 //! pale partly clipped sky, the colour of another reliable surface (bright foliage) and the sky's own faint
 //! colour, which darkening and a camera profile turned teal.
+#![expect(
+    clippy::indexing_slicing,
+    reason = "per-channel `[f32; 3]` pixels indexed by channel, and pyramid levels sized from an image `rebuild_clipped` has checked against width × height"
+)]
 
 use lightcraft_raster::Rgb32f;
 use rayon::prelude::*;
@@ -383,7 +387,7 @@ fn by_value(p: &[f32; 3], clip: f32) -> [bool; 3] {
 fn rebuild_clipped(img: &mut Rgb32f, wb: [f32; 3], clip: f32, white: [f32; 3], clipped: &impl Clipped) -> usize {
     let (w, h) = (img.width, img.height);
     let count = img.data.par_iter().enumerate().filter(|(i, p)| clipped(*i, p).iter().any(|&c| c)).count();
-    if count == 0 || w == 0 || h == 0 {
+    if count == 0 || w == 0 || h == 0 || w.checked_mul(h) != Some(img.data.len()) {
         return 0;
     }
     // a white far from the camera's neutral (or not a number) is a broken colour model: keep the camera's

@@ -47,7 +47,7 @@ pub fn unpack_lsb(src: &[u8], bits: u32, out: &mut [u16]) {
 pub fn unpack_words32_msb(src: &[u8], order: ByteOrder, bits: u32, out: &mut [u16]) {
     let words = src.chunks(4).flat_map(|c| {
         let mut w = [0u8; 4];
-        w[..c.len()].copy_from_slice(c);
+        w.iter_mut().zip(c).for_each(|(o, &b)| *o = b);
         order.u32(w).to_be_bytes()
     });
     unpack_msb(&words.collect::<Vec<u8>>(), bits, out);
@@ -111,14 +111,25 @@ pub fn inflate(src: &[u8], limit: usize) -> Result<Vec<u8>> {
 
 /// Undo horizontal differencing on one row of integer samples with a sample `stride` (cpp × factor).
 pub fn undo_diff_u16(row: &mut [u16], stride: usize) {
-    for i in stride..row.len() {
-        row[i] = row[i].wrapping_add(row[i - stride]);
-    }
+    undo_diff_by(row, stride, u16::wrapping_add);
 }
 
 pub fn undo_diff_u8(row: &mut [u8], stride: usize) {
+    undo_diff_by(row, stride, u8::wrapping_add);
+}
+
+/// Undo a horizontal difference predictor: each sample becomes `add(sample, the sample stride before it)`, left to
+/// right. A stride of 0 or past the row leaves it as it is.
+pub fn undo_diff_by<T: Copy>(row: &mut [T], stride: usize, add: impl Fn(T, T) -> T) {
+    if stride == 0 {
+        return;
+    }
     for i in stride..row.len() {
-        row[i] = row[i].wrapping_add(row[i - stride]);
+        if let (Some(&prev), Some(&cur)) = (row.get(i - stride), row.get(i))
+            && let Some(o) = row.get_mut(i)
+        {
+            *o = add(cur, prev);
+        }
     }
 }
 

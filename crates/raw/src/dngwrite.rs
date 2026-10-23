@@ -1,5 +1,9 @@
 //! Writing DNG files from a [`RawImage`] (uncompressed or lossless-JPEG tiles), used for DNG export and for
 //! bit-exact decoder round-trip tests. The raw image is stored in IFD0 (allowed by DNG 1.7 §"File Structure").
+#![expect(
+    clippy::indexing_slicing,
+    reason = "writes a `RawImage` that `write_dng` has validated (samples = width × height × cpp), with planes and tiles sized from it"
+)]
 
 use crate::{RawData, RawError, RawImage, Result, ljpeg, opcodes};
 use lightcraft_color::Mat3;
@@ -475,7 +479,7 @@ pub fn write_dng(raw: &RawImage, opts: &DngWriteOptions) -> Result<Vec<u8>> {
                                 ljpeg::encode(&buf, tile, tile, cpp, bits, 1, 0)
                             }
                         })
-                        .collect();
+                        .collect::<Result<_>>()?;
                     ifd.set_image(ImageData::Tiles { tile_width: tile as u32, tile_height: tile as u32, tiles });
                 }
             }

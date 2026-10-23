@@ -195,10 +195,11 @@ fn decode_chunk(data: &[u8], info: &ImageInfo, c: &Chunk, order: ByteOrder, pack
             // lossy DNG: each chunk is a baseline (DCT) JPEG of 8-bit samples
             let (px, jw, jh, jc) = lossy_jpeg(src, cpp)?;
             let mut v = vec![0u16; n];
-            for y in 0..ch.min(jh) {
-                for x in 0..cw.min(jw) {
-                    for k in 0..cpp {
-                        v[(y * cw + x) * cpp + k] = px[(y * jw + x) * jc + k.min(jc - 1)] as u16;
+            // the JPEG's rows (jw pixels of jc samples) into the chunk's (cw pixels of cpp samples), gray repeated
+            for (row, src) in v.chunks_exact_mut((cw * cpp).max(1)).zip(px.chunks_exact(jw * jc)).take(ch.min(jh)) {
+                for (o, p) in row.chunks_exact_mut(cpp.max(1)).zip(src.chunks_exact(jc)).take(cw.min(jw)) {
+                    for (k, o) in o.iter_mut().enumerate() {
+                        *o = p.get(k).or(p.last()).map_or(0, |&s| s as u16);
                     }
                 }
             }
@@ -273,6 +274,9 @@ fn unpack_chunk(
     predictor: u16,
 ) -> Result<ChunkPx> {
     let row_n = cw * cpp;
+    if row_n == 0 {
+        return Ok(if float { ChunkPx::F32(Vec::new()) } else { ChunkPx::U16(Vec::new()) });
+    }
     let (factor, fp) = match predictor {
         1 => (0, false),
         2 => (1, false),
@@ -287,12 +291,14 @@ fn unpack_chunk(
         let bp = bits.div_ceil(8) as usize;
         let row_bytes = row_n * bp;
         let mut out = vec![0f32; row_n * ch];
+        if !(2..=4).contains(&bp) {
+            return Err(RawError::Unsupported(format!("{bits}-bit floating point samples")));
+        }
         let mut rowbuf = vec![0u8; row_bytes];
-        for y in 0..ch {
+        for (y, out_row) in out.chunks_exact_mut(row_n).enumerate() {
             let s = src.get(y * row_bytes..).unwrap_or(&[]);
-            let len = s.len().min(row_bytes);
-            rowbuf[..len].copy_from_slice(&s[..len]);
-            rowbuf[len..].fill(0);
+            rowbuf.fill(0);
+            rowbuf.iter_mut().zip(s).for_each(|(o, &b)| *o = b);
             let big = if fp {
                 undo_float_predictor(&mut rowbuf, row_n, bp, cpp * factor);
                 true
@@ -302,15 +308,15 @@ fn unpack_chunk(
                 }
                 order == ByteOrder::Big
             };
-            for (i, o) in out[y * row_n..(y + 1) * row_n].iter_mut().enumerate() {
-                let b = &rowbuf[i * bp..(i + 1) * bp];
-                *o = match (bp, big) {
-                    (2, true) => f16_to_f32(u16::from_be_bytes([b[0], b[1]])),
-                    (2, false) => f16_to_f32(u16::from_le_bytes([b[0], b[1]])),
-                    (3, true) => f24_to_f32(u32::from_be_bytes([0, b[0], b[1], b[2]])),
-                    (3, false) => f24_to_f32(u32::from_le_bytes([b[0], b[1], b[2], 0])),
-                    (4, true) => f32::from_be_bytes([b[0], b[1], b[2], b[3]]),
-                    _ => f32::from_le_bytes([b[0], b[1], b[2], b[3]]),
+            for (o, b) in out_row.iter_mut().zip(rowbuf.chunks_exact(bp)) {
+                *o = match (big, b) {
+                    (true, &[b0, b1]) => f16_to_f32(u16::from_be_bytes([b0, b1])),
+                    (false, &[b0, b1]) => f16_to_f32(u16::from_le_bytes([b0, b1])),
+                    (true, &[b0, b1, b2]) => f24_to_f32(u32::from_be_bytes([0, b0, b1, b2])),
+                    (false, &[b0, b1, b2]) => f24_to_f32(u32::from_le_bytes([b0, b1, b2, 0])),
+                    (true, &[b0, b1, b2, b3]) => f32::from_be_bytes([b0, b1, b2, b3]),
+                    (false, &[b0, b1, b2, b3]) => f32::from_le_bytes([b0, b1, b2, b3]),
+                    _ => 0.0,
                 };
             }
         }
@@ -327,10 +333,9 @@ fn unpack_chunk(
         (_, Packing::Lsb) => ((row_n * bits as usize).div_ceil(8), 3),
         (_, Packing::Words32Msb) => ((row_n * bits as usize).div_ceil(32) * 4, 4),
     };
-    for y in 0..ch {
+    for (y, row) in out.chunks_exact_mut(row_n).enumerate() {
         let s = src.get(y * row_bytes..).unwrap_or(&[]);
-        let s = &s[..s.len().min(row_bytes)];
-        let row = &mut out[y * row_n..(y + 1) * row_n];
+        let s = s.get(..row_bytes).unwrap_or(s);
         match kind {
             0 => row.iter_mut().zip(s).for_each(|(o, &b)| *o = b as u16),
             1 => read_u16s(s, order, row),
@@ -340,9 +345,7 @@ fn unpack_chunk(
         }
         if factor > 0 {
             if bits == 8 {
-                for i in cpp * factor..row.len() {
-                    row[i] = (row[i] as u8).wrapping_add(row[i - cpp * factor] as u8) as u16;
-                }
+                undo_diff_by(row, cpp * factor, |a, b| (a as u8).wrapping_add(b as u8) as u16);
             } else {
                 undo_diff_u16(row, cpp * factor);
             }
@@ -459,7 +462,7 @@ mod lossy_tests {
     /// A lossless-JPEG tile may be coded only as tall as the part inside the image, never shorter.
     #[test]
     fn short_lossless_jpeg_tiles_are_errors() {
-        let tile = |rows: usize| ljpeg::encode(&vec![300u16; 8 * rows], 8, rows, 1, 12, 1, 0);
+        let tile = |rows: usize| ljpeg::encode(&vec![300u16; 8 * rows], 8, rows, 1, 12, 1, 0).unwrap();
         let decode = |height: u32, rows: usize| {
             let t = tile(rows);
             let info = ImageInfo {

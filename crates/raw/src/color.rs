@@ -10,6 +10,7 @@
 //!
 //! Cameras without a colour matrix (non-DNG files until our own calibration DB exists) use a generic
 //! "camera RGB ≈ linear sRGB" model and are flagged with `matrix_is_fallback`.
+#![expect(clippy::indexing_slicing, reason = "fixed 3 × 3 matrices and three-channel white balances indexed by row, column and channel")]
 
 use crate::{ColorData, Mat3, RawImage};
 use lightcraft_color::{D50, D65, REC2020, SRGB, Xy, bradford, cct};

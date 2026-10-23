@@ -130,8 +130,8 @@ fn candidates<'a>(data: &'a [u8], ifd: &Ifd, base: u64, out: &mut Vec<&'a [u8]>)
         && let Ok(info) = ifd.image()
     {
         let chunks = info.chunks(data.len() as u64);
-        if chunks.len() == 1
-            && let Some(s) = chunk_bytes(data, &chunks[0])
+        if let [chunk] = chunks.as_slice()
+            && let Some(s) = chunk_bytes(data, chunk)
         {
             out.push(s);
         }
@@ -404,13 +404,11 @@ fn cr3_preview_boxes(bytes: &[u8]) -> Option<&[u8]> {
         while let Some(i) = bytes.get(from..).and_then(|s| s.windows(4).position(|w| w == tag)).map(|p| p + from) {
             from = i + 4;
             let Some(start) = i.checked_sub(4) else { continue };
-            let be32 = |at: usize| bytes.get(at..at + 4).map(|s| u32::from_be_bytes([s[0], s[1], s[2], s[3]]) as usize);
+            let be32 = |at: usize| -> Option<usize> { Some(u32::from_be_bytes(bytes.get(at..at.checked_add(4)?)?.try_into().ok()?) as usize) };
             let (Some(size), Some(len)) = (be32(start), be32(start + 20)) else { continue };
             let j = start + 24;
-            if len < 4 || j + len > start + size.max(24) || j + len > bytes.len() {
-                continue;
-            }
-            let jpeg = &bytes[j..j + len];
+            let Some(end) = j.checked_add(len).filter(|&e| len >= 4 && e <= start.saturating_add(size.max(24))) else { continue };
+            let Some(jpeg) = bytes.get(j..end) else { continue };
             if is_dct_jpeg(jpeg) {
                 if best.is_none_or(|b| b.len() < jpeg.len()) {
                     best = Some(jpeg);
@@ -424,8 +422,10 @@ fn cr3_preview_boxes(bytes: &[u8]) -> Option<&[u8]> {
 
 /// Trim trailing garbage after the last EOI when a stored length over-reports.
 fn trim_eoi(s: &[u8]) -> &[u8] {
-    let end = s.windows(2).rposition(|w| w == [0xff, 0xd9]).map(|p| p + 2).unwrap_or(s.len());
-    &s[..end]
+    match s.windows(2).rposition(|w| w == [0xff, 0xd9]) {
+        Some(p) => s.get(..p + 2).unwrap_or(s),
+        None => s,
+    }
 }
 
 #[cfg(test)]
@@ -550,7 +550,7 @@ mod tests {
     fn picks_largest_dct_jpeg() {
         let small = fake_jpeg(10);
         let big = fake_jpeg(500);
-        let lossless = crate::ljpeg::encode(&[1u16; 64], 8, 8, 1, 12, 1, 0);
+        let lossless = crate::ljpeg::encode(&[1u16; 64], 8, 8, 1, 12, 1, 0).unwrap();
         let mut ifd0 = IfdBuilder::new();
         ifd0.set(t::COMPRESSION, Value::Short(vec![6]));
         ifd0.set(t::IMAGE_WIDTH, Value::Long(vec![1]));

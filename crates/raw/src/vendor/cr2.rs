@@ -303,7 +303,7 @@ pub(crate) mod tests {
             }
             x0 += sw;
         }
-        let enc = crate::ljpeg::encode(&stream, w / 2, h, 2, 14, 1, 0);
+        let enc = crate::ljpeg::encode(&stream, w / 2, h, 2, 14, 1, 0).unwrap();
         let mut ifd0 = IfdBuilder::new();
         ifd0.set(t::MAKE, Value::Ascii("Canon".into()));
         ifd0.set(t::MODEL, Value::Ascii("Canon EOS Test".into()));

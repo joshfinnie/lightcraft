@@ -47,6 +47,10 @@ impl RawImage {
 
     /// The binned image and its clip mask; `keep_max`: a channel with a clipped sample takes the
     /// block's maximum sample of the colour instead of the mean.
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "a `validate`d image: samples fill width × height × cpp, the active area and crop lie inside it, and rows, layouts and blocks are sized from them"
+    )]
     fn bin(&self, k: usize, clip: f32, keep_max: bool) -> Result<Option<(Rgb32f, Vec<u8>)>> {
         self.validate()?;
         if !self.can_bin(k) || !self.opcodes.list3.is_empty() {
@@ -133,7 +137,9 @@ fn block_layout(cfa: &crate::Cfa, i: usize, j: usize, k: usize) -> (Vec<u8>, [u3
     let l: Vec<u8> = (0..k * k)
         .map(|t| {
             let c = cfa.color_at(i + t % k, j + t / k).min(2);
-            n[c as usize] += 1;
+            if let Some(count) = n.get_mut(c as usize) {
+                *count += 1;
+            }
             c
         })
         .collect();

@@ -1,5 +1,9 @@
 //! Bilinear demosaicing for any CFA pattern: each missing colour is the mean of the same-colour samples in the
 //! 3×3 neighbourhood (5×5 when the 3×3 has none, as happens in some non-Bayer layouts).
+#![expect(
+    clippy::indexing_slicing,
+    reason = "a kernel over a mosaic `demosaic` has checked against width × height: interior pixels and their neighbours index it directly, edge pixels go through `Mosaic`'s reflected coordinates, and its planes and windows are sized from the same dimensions"
+)]
 
 use super::Mosaic;
 use crate::Rgb32f;

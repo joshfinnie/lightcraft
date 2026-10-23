@@ -40,7 +40,7 @@ fn deinterleave(data: &mut RawData, w: usize, h: usize, cpp: usize, rows: usize,
         return Err(RawError::Unsupported(format!("interleave factors {rows} × {cols}")));
     }
     let (map_r, map_c) = (field_map(h, rows), field_map(w, cols));
-    let dest = |r: usize, c: usize| map_r[r] * w + map_c[c];
+    let dest = |r: usize, c: usize| Some(map_r.get(r)? * w + map_c.get(c)?);
     match data {
         RawData::U16(v) => permute(v, w, h, cpp, dest),
         RawData::F32(v) => permute(v, w, h, cpp, dest),
@@ -63,9 +63,10 @@ fn field_map(len: usize, n: usize) -> Vec<usize> {
         }
     }
     let mut map = vec![0usize; len];
-    for g in 0..n {
-        for (k, i) in (offs[g]..offs[g + 1]).enumerate() {
-            map[i] = g + n * k;
+    for (g, field) in offs.windows(2).enumerate() {
+        let &[start, end] = field else { continue };
+        for (k, m) in map.iter_mut().take(end).skip(start).enumerate() {
+            *m = g + n * k;
         }
     }
     map
@@ -73,16 +74,18 @@ fn field_map(len: usize, n: usize) -> Vec<usize> {
 
 /// Move every `cpp`-sample pixel of `v` from its stored position to `dest(r, c)`, the image
 /// position it belongs at. The permutation is not its own inverse, so it needs a destination.
-fn permute<T: Copy + Default, F: Fn(usize, usize) -> usize>(v: &mut Vec<T>, w: usize, h: usize, cpp: usize, dest: F) -> Result<()> {
+fn permute<T: Copy + Default, F: Fn(usize, usize) -> Option<usize>>(v: &mut Vec<T>, w: usize, h: usize, cpp: usize, dest: F) -> Result<()> {
     let n = w.checked_mul(h).and_then(|n| n.checked_mul(cpp)).ok_or_else(|| RawError::Corrupt("image too large".into()))?;
     if v.len() != n {
         return Err(RawError::Corrupt("mosaic size does not match the image".into()));
     }
     let mut out = vec![T::default(); n];
+    let corrupt = || RawError::Corrupt("interleaved field outside the image".into());
     for r in 0..h {
         for c in 0..w {
-            let (from, to) = ((r * w + c) * cpp, dest(r, c) * cpp);
-            out[to..to + cpp].copy_from_slice(&v[from..from + cpp]);
+            let (from, to) = ((r * w + c) * cpp, dest(r, c).ok_or_else(corrupt)? * cpp);
+            let src = v.get(from..from + cpp).ok_or_else(corrupt)?;
+            out.get_mut(to..to + cpp).ok_or_else(corrupt)?.copy_from_slice(src);
         }
     }
     *v = out;
@@ -94,13 +97,15 @@ fn mat3(v: Option<Vec<f64>>) -> Option<Mat3> {
     if v.len() != 9 || v.iter().any(|x| !x.is_finite()) {
         return None;
     }
-    let m = Mat3([[v[0], v[1], v[2]], [v[3], v[4], v[5]], [v[6], v[7], v[8]]]);
+    let &[a, b, c, d, e, f, g, h, i] = v.as_slice() else { return None };
+    let m = Mat3([[a, b, c], [d, e, f], [g, h, i]]);
     (m.determinant().abs() > 1e-12).then_some(m)
 }
 
 fn vec3(v: Option<Vec<f64>>) -> Option<[f64; 3]> {
     let v = v?;
-    (v.len() == 3 && v.iter().all(|x| x.is_finite() && *x > 0.0)).then(|| [v[0], v[1], v[2]])
+    let &[a, b, c] = v.as_slice() else { return None };
+    [a, b, c].iter().all(|x| x.is_finite() && *x > 0.0).then_some([a, b, c])
 }
 
 /// Colour tags: DNG puts them in IFD0, but some writers use the raw IFD; prefer the raw IFD.
@@ -115,7 +120,10 @@ pub(crate) fn color_data(ifd0: &Ifd, raw: &Ifd, order: ByteOrder) -> ColorData {
         camera_calibration: [mat3(get(t::CAMERA_CALIBRATION_1)), mat3(get(t::CAMERA_CALIBRATION_2))],
         analog_balance: vec3(get(t::ANALOG_BALANCE)),
         as_shot_neutral: vec3(get(t::AS_SHOT_NEUTRAL)),
-        as_shot_white_xy: get(t::AS_SHOT_WHITE_XY).filter(|v| v.len() == 2 && v[0] > 0.0 && v[1] > 0.0).map(|v| Xy::new(v[0], v[1])),
+        as_shot_white_xy: get(t::AS_SHOT_WHITE_XY).and_then(|v| match *v {
+            [x, y] if x > 0.0 && y > 0.0 => Some(Xy::new(x, y)),
+            _ => None,
+        }),
         baseline_exposure: get(t::BASELINE_EXPOSURE).and_then(|v| v.first().copied()).filter(|v| v.is_finite()).unwrap_or(0.0)
             + get(t::BASELINE_EXPOSURE_OFFSET).and_then(|v| v.first().copied()).filter(|v| v.is_finite()).unwrap_or(0.0),
         // DNG 1.7 BaselineSharpness (IFD 0 or the enhanced IFD); implausible values are ignored
@@ -194,7 +202,7 @@ pub(crate) fn is_plain_cfa_tiff(tiff: &Tiff, bytes: &[u8]) -> bool {
 /// anchored at the sensor origin.
 pub(crate) fn decode_as(bytes: &[u8], mode: Mode, format: RawFormat) -> Result<RawImage> {
     let tiff = Tiff::parse(bytes)?;
-    let ifd0 = &tiff.ifds[0];
+    let ifd0 = tiff.ifds.first().ok_or_else(|| RawError::Corrupt("TIFF without an IFD".into()))?;
     let raw = raw_ifd(&tiff).ok_or_else(|| RawError::Corrupt("DNG without a raw image IFD".into()))?;
     // GoPro's GPR: a DNG whose raw data is VC-5 coded, which is not decoded (yet). Named here, before
     // the generic "TIFF compression 9" of the chunk decoder. Header mode still describes the file
@@ -225,8 +233,8 @@ pub(crate) fn decode_as(bytes: &[u8], mode: Mode, format: RawFormat) -> Result<R
     let mut linearized = false;
     if let (RawData::U16(v), Some(table)) = (&mut data, raw.u64s(t::LINEARIZATION_TABLE).filter(|t| !t.is_empty())) {
         let table: Vec<u16> = table.iter().map(|&x| x.min(65535) as u16).collect();
-        let last = table.len() - 1;
-        v.iter_mut().for_each(|s| *s = table[(*s as usize).min(last)]);
+        let last = table.last().copied().unwrap_or_default();
+        v.iter_mut().for_each(|s| *s = table.get(*s as usize).copied().unwrap_or(last));
         linearized = true;
     }
 

@@ -462,7 +462,7 @@ fn lj92_strips_and_levels_and_linearization() {
     let px = pattern(w, h, 1, 12);
     let mut raw = base_ifd(w, h, 12, 1, true);
     raw.set(t::COMPRESSION, Value::Short(vec![compression::JPEG]));
-    let strips: Vec<Vec<u8>> = px.chunks(w * 5).map(|c| lightcraft_raw::ljpeg::encode(c, w, c.len() / w, 1, 12, 6, 0)).collect();
+    let strips: Vec<Vec<u8>> = px.chunks(w * 5).map(|c| lightcraft_raw::ljpeg::encode(c, w, c.len() / w, 1, 12, 6, 0).unwrap()).collect();
     raw.set_image(ImageData::Strips { rows_per_strip: 5, strips });
     let table: Vec<u16> = (0..4096u32).map(|i| (i * i / 4096) as u16).collect();
     raw.set(t::LINEARIZATION_TABLE, Value::Short(table.clone()));

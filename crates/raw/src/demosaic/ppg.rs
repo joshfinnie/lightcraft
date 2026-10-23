@@ -6,6 +6,10 @@
 //! 2. Red/blue at green sites: colour-difference (C − G) average of the two same-colour neighbours.
 //! 3. Blue at red sites (and red at blue): colour-difference average along the diagonal with the smaller
 //!    gradient (both diagonals when equal).
+#![expect(
+    clippy::indexing_slicing,
+    reason = "a kernel over a mosaic `demosaic` has checked against width × height: interior pixels and their neighbours index it directly, edge pixels go through `Mosaic`'s reflected coordinates, and its planes and windows are sized from the same dimensions"
+)]
 
 use super::Mosaic;
 use crate::Rgb32f;

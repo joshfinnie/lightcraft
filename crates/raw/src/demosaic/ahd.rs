@@ -12,6 +12,10 @@
 //! straight into the output. Each step runs only where the tile's output depends on it: the choice reads the
 //! homogeneity 1 pixel around the tile, which reads Lab 2 pixels around, the candidates read the greens 3
 //! pixels around, and those read the mosaic 5 pixels around, inside the `MARGIN`.
+#![expect(
+    clippy::indexing_slicing,
+    reason = "a kernel over a mosaic `demosaic` has checked against width × height: interior pixels and their neighbours index it directly, edge pixels go through `Mosaic`'s reflected coordinates, and its planes and windows are sized from the same dimensions"
+)]
 
 use super::Mosaic;
 use crate::Rgb32f;

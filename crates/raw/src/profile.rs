@@ -21,6 +21,10 @@
 //! The data is read from the user's own file at run time; nothing here ships profile data.
 //! Values above 1.0 (highlight headroom) keep their headroom: the table's value scale only ever
 //! lowers them, so a lookup can't clip what the scene-referred pipeline still needs.
+#![expect(
+    clippy::indexing_slicing,
+    reason = "lane-wise HSV math over fixed `[f32; LANES]` arrays indexed by lane and channel; table cells are read with `get`"
+)]
 
 use crate::gaintable::GainTableMap;
 use lightcraft_color::transfer::{linear_to_srgb, srgb_to_linear};

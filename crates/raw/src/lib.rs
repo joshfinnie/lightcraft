@@ -183,7 +183,7 @@ impl RawFormat {
 
 /// Recognise a raw file from its first bytes / TIFF structure.
 pub fn probe(bytes: &[u8]) -> Option<RawFormat> {
-    if bytes.len() >= 12 && &bytes[4..12] == b"ftypcrx " {
+    if bytes.get(4..12) == Some(b"ftypcrx ".as_slice()) {
         return Some(RawFormat::Cr3);
     }
     if bytes.starts_with(b"FUJIFILMCCD-RAW") {
@@ -201,10 +201,10 @@ pub fn probe(bytes: &[u8]) -> Option<RawFormat> {
     if bytes.starts_with(b"FOVb") {
         return Some(RawFormat::X3f);
     }
-    if bytes.len() >= 14 && bytes.starts_with(b"II") && &bytes[6..14] == b"HEAPCCDR" {
+    if bytes.starts_with(b"II") && bytes.get(6..14) == Some(b"HEAPCCDR".as_slice()) {
         return Some(RawFormat::Crw);
     }
-    if bytes.len() >= 10 && bytes.starts_with(b"II*\0") && &bytes[8..10] == b"CR" {
+    if bytes.starts_with(b"II*\0") && bytes.get(8..10) == Some(b"CR".as_slice()) {
         return Some(RawFormat::Cr2);
     }
     let (_, _) = Tiff::sniff(bytes)?;
@@ -229,7 +229,7 @@ pub fn probe(bytes: &[u8]) -> Option<RawFormat> {
     let sony_raw = has_cfa
         || ifd0.u64s(lightcraft_tiff::tags::BITS_PER_SAMPLE).is_some_and(|b| b.iter().any(|v| matches!(v, 12 | 14)))
         || (model == "DSLR-A100" && ifd0.u16(lightcraft_tiff::tags::COMPRESSION) == Some(6) && ifd0.contains(lightcraft_tiff::tags::SUB_IFDS));
-    if make.starts_with("CANON") && t.ifds.len() >= 4 && t.ifds[3].u16(lightcraft_tiff::tags::COMPRESSION) == Some(6) {
+    if make.starts_with("CANON") && t.ifds.get(3).is_some_and(|i| i.u16(lightcraft_tiff::tags::COMPRESSION) == Some(6)) {
         return Some(RawFormat::Cr2);
     }
     if make.starts_with("NIKON") && has_cfa {
@@ -513,11 +513,12 @@ impl RawData {
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
+    /// Sample `i`; 0 (black) past the end.
     #[inline]
     pub fn get(&self, i: usize) -> f32 {
         match self {
-            RawData::U16(v) => v[i] as f32,
-            RawData::F32(v) => v[i],
+            RawData::U16(v) => v.get(i).map_or(0.0, |&s| s as f32),
+            RawData::F32(v) => v.get(i).copied().unwrap_or(0.0),
         }
     }
 }
@@ -567,9 +568,11 @@ impl Cfa {
             .collect();
         Cfa { width: 6, height: 6, pattern }
     }
+    /// The colour at image pixel `(x, y)`; green (1) for a pattern that isn't [`Cfa::valid`].
     #[inline]
     pub fn color_at(&self, x: usize, y: usize) -> u8 {
-        self.pattern[(y % self.height) * self.width + (x % self.width)]
+        let (w, h) = (self.width.max(1), self.height.max(1));
+        self.pattern.get((y % h) * w + (x % w)).copied().unwrap_or(1)
     }
     /// The same pattern anchored at `(dx, dy)` of the current anchor (e.g. after cropping to an active area).
     pub fn shifted(&self, dx: usize, dy: usize) -> Cfa {
@@ -580,18 +583,20 @@ impl Cfa {
         if self.width != 2 || self.height != 2 {
             return false;
         }
-        let mut c = [0; 3];
-        for &p in &self.pattern {
-            if p > 2 {
-                return false;
-            }
-            c[p as usize] += 1;
-        }
-        c == [1, 2, 1]
+        let count = |c: u8| self.pattern.iter().filter(|&&p| p == c).count();
+        self.pattern.len() == 4 && (count(0), count(1), count(2)) == (1, 2, 1)
     }
     /// Pattern name like `"RGGB"` for 2×2 patterns.
     pub fn name(&self) -> String {
-        self.pattern.iter().map(|&c| ['R', 'G', 'B', '?'][c.min(3) as usize]).collect()
+        self.pattern
+            .iter()
+            .map(|&c| match c {
+                0 => 'R',
+                1 => 'G',
+                2 => 'B',
+                _ => '?',
+            })
+            .collect()
     }
     fn valid(&self) -> bool {
         self.width > 0 && self.height > 0 && self.width <= 16 && self.height <= 16 && self.pattern.len() == self.width * self.height
@@ -846,7 +851,7 @@ impl RawImage {
             Some(v)
         };
         let src = |i: usize| match &stage1 {
-            Some(v) => v[i],
+            Some(v) => v.get(i).copied().unwrap_or(0.0),
             None => self.data.get(i),
         };
         let scale: Vec<f32> = (0..cpp)
@@ -866,8 +871,10 @@ impl RawImage {
                     let b = self.black.at(x, y, s, cpp);
                     // a NaN or infinite sample (a float DNG's, or a black level a file got wrong)
                     // reads as black, so the demosaic and every stage after it see numbers
-                    let n = (v - b) * scale[s];
-                    row[x * cpp + s] = if n.is_finite() { n } else { 0.0 };
+                    let n = (v - b) * scale.get(s).copied().unwrap_or(1.0);
+                    if let Some(o) = row.get_mut(x * cpp + s) {
+                        *o = if n.is_finite() { n } else { 0.0 };
+                    }
                 }
             }
         });
@@ -1388,7 +1395,7 @@ mod tests {
     /// whole image, as the 3FR/FFF files have it).
     #[test]
     fn lossless_jpeg_cfa_tiff_decodes() {
-        let strip = ljpeg::encode(&cfa_samples(), 8, 6, 1, 16, 1, 0);
+        let strip = ljpeg::encode(&cfa_samples(), 8, 6, 1, 16, 1, 0).unwrap();
         let bytes = plain_cfa_tiff(7, strip, None);
         assert_eq!(probe(&bytes), Some(RawFormat::CfaTiff));
         let r = decode(&bytes).unwrap();
@@ -1415,7 +1422,7 @@ mod tests {
     /// stand-in preview an unsupported container gets.
     #[test]
     fn cfa_tiff_with_an_unknown_predictor_stays_undecodable() {
-        let mut strip = ljpeg::encode(&cfa_samples(), 8, 6, 1, 16, 1, 0);
+        let mut strip = ljpeg::encode(&cfa_samples(), 8, 6, 1, 16, 1, 0).unwrap();
         let sos = strip.windows(2).position(|w| w == [0xff, 0xda]).unwrap();
         let ss = sos + 2 + 2 + 1 + 2;
         assert_eq!(strip[ss], 1, "selection value byte");

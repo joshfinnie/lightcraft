@@ -23,6 +23,7 @@
 //! On 150 ILCE-7SM2 photos read both ways, the temperatures agree to ±4 mired around a constant offset (Sony's
 //! Kelvin is about 8 % above the matrices', as #730 found for the ILCE-7M3's dial) and the tint to −9 ± 4: the
 //! matrices put Sony's presets slightly off the locus, the presets themselves are tint 0 here.
+#![expect(clippy::indexing_slicing, reason = "fixed five-preset curves of three-channel multipliers, walked with `windows(2)`")]
 use crate::ColorData;
 use lightcraft_color::{Xy, cct};
 use serde::{Deserialize, Serialize};

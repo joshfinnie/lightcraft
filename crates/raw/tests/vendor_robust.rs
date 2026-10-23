@@ -146,7 +146,7 @@ fn pef(compression: u16) -> Vec<u8> {
 /// A Canon CR2: three placeholder IFDs and IFD3 with a 2-component lossless JPEG frame.
 fn cr2() -> Vec<u8> {
     let img: Vec<u16> = (0..(W * H) as usize).map(|i| 1024 + (i * 7919 % 12000) as u16).collect();
-    let enc = lightcraft_raw::ljpeg::encode(&img, W as usize / 2, H as usize, 2, 14, 1, 0);
+    let enc = lightcraft_raw::ljpeg::encode(&img, W as usize / 2, H as usize, 2, 14, 1, 0).unwrap();
     let mut ifd0 = IfdBuilder::new();
     ifd0.set(t::MAKE, Value::Ascii("Canon".into()));
     let mut ifd3 = IfdBuilder::new();

@@ -6,6 +6,10 @@
 //! 2. Red and blue everywhere: `G(p) + Σ w_q (C(q) − G(q)) / Σ w_q` over same-colour samples `q` in the 5×5
 //!    neighbourhood, with `w_q = 1 / (d²(p, q) · (ε + |G(q) − G(p)|))` — spatially close samples on the same
 //!    side of an edge dominate.
+#![expect(
+    clippy::indexing_slicing,
+    reason = "a kernel over a mosaic `demosaic` has checked against width × height: interior pixels and their neighbours index it directly, edge pixels go through `Mosaic`'s reflected coordinates, and its planes and windows are sized from the same dimensions"
+)]
 
 use super::Mosaic;
 use crate::Rgb32f;

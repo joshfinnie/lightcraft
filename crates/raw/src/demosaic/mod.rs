@@ -63,7 +63,7 @@ pub(crate) fn clamp_between(v: f32, a: f32, b: f32) -> f32 {
 impl Mosaic<'_> {
     #[inline]
     pub fn get(&self, x: isize, y: isize) -> f32 {
-        self.data[reflect(y, self.h) * self.w + reflect(x, self.w)]
+        self.data.get(reflect(y, self.h) * self.w + reflect(x, self.w)).copied().unwrap_or(0.0)
     }
     #[inline]
     pub fn color(&self, x: isize, y: isize) -> u8 {
@@ -71,14 +71,17 @@ impl Mosaic<'_> {
     }
 }
 
-/// Demosaic normalised raw data. `cpp == 3` data is returned as is; monochrome data is replicated to grey.
+/// Demosaic normalised raw data. `cpp == 3` data is returned as is; monochrome data is replicated to grey. Data
+/// shorter than `width × height × cpp` (never from [`crate::RawImage::normalize`]) comes back black, so the kernels
+/// below only ever read inside the buffer.
 pub fn demosaic(n: &Normalized, method: Method) -> Rgb32f {
     let (w, h) = (n.width, n.height);
-    if w == 0 || h == 0 {
+    let fits = w.checked_mul(h).and_then(|p| p.checked_mul(n.cpp.max(1))).is_some_and(|len| n.data.len() >= len);
+    if w == 0 || h == 0 || !fits {
         return Rgb32f::new(w, h);
     }
     match (&n.cfa, n.cpp) {
-        (_, 3) => Rgb32f { width: w, height: h, data: n.data.as_chunks::<3>().0.iter().map(|c| [c[0], c[1], c[2]]).collect() },
+        (_, 3) => Rgb32f { width: w, height: h, data: n.data.as_chunks::<3>().0.to_vec() },
         // four colours develop from their first three; narrower data (refused by `RawImage::validate`, issue #1511)
         // repeats its last sample instead of reading past the pixel
         (_, cpp) if cpp != 1 => Rgb32f {
@@ -116,7 +119,10 @@ pub fn demosaic(n: &Normalized, method: Method) -> Rgb32f {
 
 /// Build a mosaic from an RGB image by sampling each pixel's CFA colour (for tests and synthetic data).
 pub fn mosaic_from_rgb(img: &Rgb32f, cfa: &Cfa) -> Normalized {
-    let data = (0..img.height).flat_map(|y| (0..img.width).map(move |x| (x, y))).map(|(x, y)| img.get(x, y)[cfa.color_at(x, y) as usize]).collect();
+    let data = (0..img.height)
+        .flat_map(|y| (0..img.width).map(move |x| (x, y)))
+        .map(|(x, y)| img.get(x, y).get(cfa.color_at(x, y) as usize).copied().unwrap_or(0.0))
+        .collect();
     Normalized { width: img.width, height: img.height, cpp: 1, data, cfa: Some(cfa.clone()) }
 }
 
@@ -126,9 +132,8 @@ pub fn psnr(a: &Rgb32f, b: &Rgb32f, border: usize) -> f64 {
     let mut n = 0usize;
     for y in border..a.height.saturating_sub(border) {
         for x in border..a.width.saturating_sub(border) {
-            let (p, q) = (a.get(x, y), b.get(x, y));
-            for c in 0..3 {
-                se += ((p[c] - q[c]) as f64).powi(2);
+            for (p, q) in a.get(x, y).into_iter().zip(b.get(x, y)) {
+                se += ((p - q) as f64).powi(2);
                 n += 1;
             }
         }

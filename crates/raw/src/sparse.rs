@@ -383,12 +383,12 @@ fn unsigned(data: &[u8], order: ByteOrder, typ: FieldType, pos: u64) -> Option<u
 
 fn be32(bytes: &[u8], at: u64) -> Option<u64> {
     let at = usize::try_from(at).ok()?;
-    bytes.get(at..at.checked_add(4)?).map(|s| u64::from(u32::from_be_bytes([s[0], s[1], s[2], s[3]])))
+    Some(u64::from(u32::from_be_bytes(bytes.get(at..at.checked_add(4)?)?.try_into().ok()?)))
 }
 
 fn be64(bytes: &[u8], at: u64) -> Option<u64> {
     let at = usize::try_from(at).ok()?;
-    bytes.get(at..at.checked_add(8)?).map(|s| u64::from_be_bytes([s[0], s[1], s[2], s[3], s[4], s[5], s[6], s[7]]))
+    Some(u64::from_be_bytes(bytes.get(at..at.checked_add(8)?)?.try_into().ok()?))
 }
 
 /// A CR3 is read where `lightcraft_meta::cr3::parse_cr3` and the CR3 decoder look: the file type,

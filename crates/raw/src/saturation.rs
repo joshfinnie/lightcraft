@@ -10,6 +10,10 @@
 //! (a pile-up of identical values near the top of the range) and raises the samples at or above it to
 //! the stated white level. Nothing else changes: unclipped samples keep their values, and a file whose
 //! data really reaches its white level, or has no pile-up, is left alone.
+#![expect(
+    clippy::indexing_slicing,
+    reason = "a 65536-bin histogram indexed by 16-bit samples, over an active area checked to lie inside a mosaic of exactly width × height samples"
+)]
 
 use crate::{RawData, RawImage};
 

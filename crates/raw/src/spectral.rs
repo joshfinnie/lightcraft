@@ -8,6 +8,7 @@
 //! bodies built on a covered camera's sensor from [`SAME_SENSOR`]. No number
 //! comes from Adobe or from a GPL raw decoder. Which colour a raw starts from is the engine's choice
 //! (`docs/camera-preview-colour.md`).
+#![expect(clippy::indexing_slicing, reason = "splits a camera name's words at positions inside the list")]
 use crate::ColorData;
 use lightcraft_color::{Mat3, Xy};
 

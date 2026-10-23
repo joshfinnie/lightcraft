@@ -53,54 +53,59 @@ impl Huffman {
         let mut valptr = [0i32; 17];
         let mut mincode = [0i32; 17];
         let mut fast = vec![(0u8, 0u8); 1 << LOOKUP];
+        let values = values.get(..total).ok_or_else(|| err("bad Huffman table"))?;
+        let mut symbols = values.iter();
         let mut code = 0i32;
-        let mut k = 0usize;
-        for len in 1..=16usize {
-            let n = counts[len - 1] as i32;
-            valptr[len] = k as i32;
-            mincode[len] = code;
+        let mut k = 0i32;
+        // code lengths 1..=16: entry `len` of each table (entry 0 is unused)
+        for (len, &n) in (1..=16usize).zip(counts) {
+            let n = n as i32;
+            if let (Some(vp), Some(min)) = (valptr.get_mut(len), mincode.get_mut(len)) {
+                (*vp, *min) = (k, code);
+            }
             for _ in 0..n {
+                let sym = symbols.next().copied().unwrap_or(0);
                 if len as u32 <= LOOKUP {
                     let shift = LOOKUP - len as u32;
                     let base = (code as usize) << shift;
-                    for i in 0..(1usize << shift) {
-                        if let Some(slot) = fast.get_mut(base + i) {
-                            *slot = (len as u8, values[k]);
-                        }
-                    }
+                    fast.iter_mut().skip(base).take(1 << shift).for_each(|slot| *slot = (len as u8, sym));
                 }
                 code += 1;
                 k += 1;
             }
-            maxcode[len] = if n > 0 { code - 1 } else { -1 };
+            if let Some(max) = maxcode.get_mut(len) {
+                *max = if n > 0 { code - 1 } else { -1 };
+            }
             if code > (1 << len) {
                 return Err(err("over-subscribed Huffman table"));
             }
             code <<= 1;
         }
-        maxcode[17] = i32::MAX;
-        Ok(Huffman { fast, maxcode, valptr, mincode, values: values[..total].to_vec() })
+        if let Some(last) = maxcode.last_mut() {
+            *last = i32::MAX;
+        }
+        Ok(Huffman { fast, maxcode, valptr, mincode, values: values.to_vec() })
     }
 
     #[inline]
     pub fn decode<B: Bits>(&self, br: &mut B) -> Result<u8, RawError> {
         let peek = br.peek(LOOKUP);
-        let (len, sym) = self.fast[peek as usize];
+        let (len, sym) = self.fast.get(peek as usize).copied().unwrap_or((0, 0));
         if len > 0 {
             br.consume(len as u32);
             return Ok(sym);
         }
         let mut code = br.peek(LOOKUP + 1) as i32;
         let mut len = LOOKUP as usize + 1;
-        while len <= 16 && code > self.maxcode[len] {
+        while len <= 16 && self.maxcode.get(len).is_some_and(|&max| code > max) {
             len += 1;
             code = br.peek(len as u32) as i32;
         }
-        if len > 16 {
+        let (Some(&vp), Some(&min)) = (self.valptr.get(len), self.mincode.get(len)) else {
             return Err(err("invalid Huffman code"));
-        }
+        };
         br.consume(len as u32);
-        let idx = self.valptr[len] + code - self.mincode[len];
+        let idx = vp + code - min;
         self.values.get(idx as usize).copied().ok_or_else(|| err("invalid Huffman code"))
     }
 }
@@ -151,11 +156,8 @@ impl<'a> BitReader<'a> {
     #[inline]
     fn fill(&mut self) {
         while self.bits <= 56 {
-            let byte = if self.marker.is_some() || self.pos >= self.data.len() {
-                self.overrun += 8;
-                0
-            } else {
-                let b = self.data[self.pos];
+            let next_byte = if self.marker.is_some() { None } else { self.data.get(self.pos).copied() };
+            let byte = if let Some(b) = next_byte {
                 if b == 0xff {
                     let next = self.data.get(self.pos + 1).copied().unwrap_or(0);
                     if next == 0 {
@@ -170,6 +172,9 @@ impl<'a> BitReader<'a> {
                     self.pos += 1;
                     b
                 }
+            } else {
+                self.overrun += 8;
+                0
             };
             self.buf |= (byte as u64) << (56 - self.bits);
             self.bits += 8;
@@ -202,14 +207,17 @@ impl<'a> BitReader<'a> {
         self.bits = 0;
         self.marker = None;
         self.overrun = 0;
-        while self.pos + 1 < self.data.len() {
-            if self.data[self.pos] == 0xff && (0xd0..=0xd7).contains(&self.data[self.pos + 1]) {
-                self.pos += 2;
-                return true;
+        let rst = self.data.get(self.pos..).and_then(|rest| rest.windows(2).position(|w| matches!(w, [0xff, 0xd0..=0xd7])));
+        match rst {
+            Some(at) => {
+                self.pos += at + 2;
+                true
             }
-            self.pos += 1;
+            None => {
+                self.pos = self.pos.max(self.data.len().saturating_sub(1));
+                false
+            }
         }
-        false
     }
     /// Bytes consumed so far (approximate while bits are buffered).
     pub fn position(&self) -> usize {
@@ -246,11 +254,14 @@ struct Header {
 }
 
 fn be16(d: &[u8], i: usize) -> Result<usize, RawError> {
-    d.get(i..i + 2).map(|s| u16::from_be_bytes([s[0], s[1]]) as usize).ok_or_else(|| err("truncated header"))
+    match d.get(i..i.saturating_add(2)) {
+        Some(&[a, b]) => Ok(u16::from_be_bytes([a, b]) as usize),
+        _ => Err(err("truncated header")),
+    }
 }
 
 fn parse_header(d: &[u8]) -> Result<Header, RawError> {
-    if d.len() < 4 || d[0] != 0xff || d[1] != 0xd8 {
+    if d.len() < 4 || !d.starts_with(&[0xff, 0xd8]) {
         return Err(err("missing SOI"));
     }
     let mut h = Header {
@@ -270,12 +281,8 @@ fn parse_header(d: &[u8]) -> Result<Header, RawError> {
     let mut have_sof = false;
     loop {
         // skip fill bytes / stray data up to the next marker
-        while i < d.len() && d[i] != 0xff {
-            i += 1;
-        }
-        while i < d.len() && d[i] == 0xff {
-            i += 1;
-        }
+        i += d.get(i..).map_or(0, |rest| rest.iter().take_while(|&&b| b != 0xff).count());
+        i += d.get(i..).map_or(0, |rest| rest.iter().take_while(|&&b| b == 0xff).count());
         let Some(&m) = d.get(i) else { return Err(err("no scan")) };
         i += 1;
         if m == 0xd8 || (0xd0..=0xd7).contains(&m) {
@@ -288,21 +295,22 @@ fn parse_header(d: &[u8]) -> Result<Header, RawError> {
         if len < 2 || i + len > d.len() {
             return Err(err("truncated segment"));
         }
-        let seg = &d[i + 2..i + len];
+        let seg = d.get(i + 2..i + len).ok_or_else(|| err("truncated segment"))?;
         match m {
             0xc3 => {
-                if seg.len() < 6 {
+                let &[precision, h0, h1, w0, w1, n, ref specs @ ..] = seg else {
                     return Err(err("short SOF3"));
-                }
-                h.precision = seg[0];
-                h.height = u16::from_be_bytes([seg[1], seg[2]]) as usize;
-                h.width = u16::from_be_bytes([seg[3], seg[4]]) as usize;
-                let n = seg[5] as usize;
-                if n == 0 || n > 4 || seg.len() < 6 + 3 * n {
+                };
+                h.precision = precision;
+                h.height = u16::from_be_bytes([h0, h1]) as usize;
+                h.width = u16::from_be_bytes([w0, w1]) as usize;
+                let n = n as usize;
+                if n == 0 || n > 4 || specs.len() < 3 * n {
                     return Err(err("bad component count"));
                 }
-                for c in 0..n {
-                    let (id, samp) = (seg[6 + 3 * c], seg[7 + 3 * c]);
+                // (component id, sampling factors, quantization table) per component
+                for spec in specs.as_chunks::<3>().0.iter().take(n) {
+                    let &[id, samp, _] = spec;
                     if !(1..=4).contains(&(samp >> 4)) || !(1..=4).contains(&(samp & 15)) {
                         return Err(err("invalid sampling factors"));
                     }
@@ -318,17 +326,18 @@ fn parse_header(d: &[u8]) -> Result<Header, RawError> {
                 return Err(RawError::Unsupported(format!("JPEG process SOF{:X} (not lossless Huffman)", m - 0xc0)));
             }
             0xc4 => {
-                let mut j = 0;
-                while j + 17 <= seg.len() {
-                    let (class, id) = (seg[j] >> 4, (seg[j] & 15) as usize);
-                    let mut counts = [0u8; 16];
-                    counts.copy_from_slice(&seg[j + 1..j + 17]);
+                // tables: class and id, 16 code-length counts, the symbols
+                let mut rest = seg;
+                while let Some((&[tc, ref counts @ ..], after)) = rest.split_first_chunk::<17>() {
+                    let (class, id) = (tc >> 4, (tc & 15) as usize);
                     let n: usize = counts.iter().map(|&c| c as usize).sum();
-                    let vals = seg.get(j + 17..j + 17 + n).ok_or_else(|| err("truncated DHT"))?;
-                    if class == 0 && id < 4 {
-                        h.tables[id] = Some(Huffman::new(&counts, vals)?);
+                    let vals = after.get(..n).ok_or_else(|| err("truncated DHT"))?;
+                    if class == 0
+                        && let Some(table) = h.tables.get_mut(id)
+                    {
+                        *table = Some(Huffman::new(counts, vals)?);
                     }
-                    j += 17 + n;
+                    rest = after.get(n..).unwrap_or_default();
                 }
             }
             0xdd => h.restart = be16(seg, 0)?,
@@ -336,24 +345,26 @@ fn parse_header(d: &[u8]) -> Result<Header, RawError> {
                 if !have_sof {
                     return Err(err("SOS before SOF3"));
                 }
-                let ns = *seg.first().ok_or_else(|| err("short SOS"))? as usize;
-                if ns != h.comps.len() || seg.len() < 1 + 2 * ns + 3 {
+                let &[ns, ref rest @ ..] = seg else { return Err(err("short SOS")) };
+                let ns = ns as usize;
+                // (component id, table selectors) per component, then Ss, Se and Ah/Al
+                let (specs, tail) = rest.split_at_checked(2 * ns).unwrap_or_default();
+                let (true, Some(&[ss, _se, ahal])) = (ns == h.comps.len() && specs.len() == 2 * ns, tail.first_chunk::<3>()) else {
                     return Err(RawError::Unsupported("lossless JPEG with multiple scans".into()));
-                }
-                for c in 0..ns {
-                    let cid = seg[1 + 2 * c];
+                };
+                for (c, &[cid, tables]) in specs.as_chunks::<2>().0.iter().enumerate() {
                     let pos = h.comps.iter().position(|&x| x == cid).ok_or_else(|| err("unknown scan component"))?;
                     if pos != c {
                         return Err(err("scan component order"));
                     }
-                    let td = (seg[2 + 2 * c] >> 4) as usize;
-                    if td > 3 || h.tables[td].is_none() {
+                    let td = (tables >> 4) as usize;
+                    if !h.tables.get(td).is_some_and(Option::is_some) {
                         return Err(err("missing Huffman table"));
                     }
                     h.table_for.push(td);
                 }
-                h.predictor = seg[1 + 2 * ns];
-                h.pt = seg[3 + 2 * ns] & 15;
+                h.predictor = ss;
+                h.pt = ahal & 15;
                 if h.predictor > 8 {
                     return Err(RawError::Unsupported(format!(
                         "lossless JPEG scan with predictor selection value {} (T.81 defines 0 to 7, Hasselblad uses 8)",
@@ -424,11 +435,11 @@ impl<'a> WordBits<'a> {
     fn fill(&mut self) {
         while self.bits <= 32 {
             let word = match self.data.get(self.pos..self.pos + 4) {
-                Some(w) => {
+                Some(&[a, b, c, d]) => {
                     self.pos += 4;
-                    u32::from_le_bytes([w[0], w[1], w[2], w[3]])
+                    u32::from_le_bytes([a, b, c, d])
                 }
-                None => {
+                _ => {
                     self.overrun = self.overrun.saturating_add(32);
                     0
                 }
@@ -486,7 +497,7 @@ fn hasselblad_frame(d: &[u8], h: &Header, max_samples: usize) -> Result<Frame, R
     if total > max_samples {
         return Err(RawError::Limit("lossless JPEG frame larger than expected"));
     }
-    let entropy = &d[h.scan_start..];
+    let entropy = d.get(h.scan_start..).unwrap_or_default();
     if (entropy.len() as u64 + 64) * 8 < total as u64 {
         return Err(err("entropy data too short for frame"));
     }
@@ -500,7 +511,7 @@ fn hasselblad_frame(d: &[u8], h: &Header, max_samples: usize) -> Result<Frame, R
         // the width is even (checked), so every sample is in a pair
         for pair in row.as_chunks_mut::<2>().0 {
             let ssss = [table.decode(&mut br)?, table.decode(&mut br)?];
-            for (k, s) in ssss.into_iter().enumerate() {
+            for ((o, last), s) in pair.iter_mut().zip(&mut last).zip(ssss) {
                 let diff = match s {
                     0..=15 => diff_value(&mut br, s),
                     16 => {
@@ -509,9 +520,9 @@ fn hasselblad_frame(d: &[u8], h: &Header, max_samples: usize) -> Result<Frame, R
                     }
                     _ => return Err(err("invalid difference category")),
                 };
-                let v = (last[k] as i32 + diff) as u32 & 0xffff;
-                last[k] = v;
-                pair[k] = v as u16;
+                let v = (*last as i32 + diff) as u32 & 0xffff;
+                *last = v;
+                *o = v as u16;
             }
         }
         // bits consumed beyond the last whole word
@@ -581,7 +592,7 @@ pub(crate) fn decode_subsampled(d: &[u8], max_samples: usize, prediction: Predic
     if total > max_samples {
         return Err(RawError::Limit("lossless JPEG frame larger than expected"));
     }
-    let entropy = &d[h.scan_start..];
+    let entropy = d.get(h.scan_start..).unwrap_or_default();
     if (entropy.len() as u64 + 64) * 8 < total as u64 {
         return Err(err("entropy data too short for frame"));
     }
@@ -598,7 +609,7 @@ pub(crate) fn decode_subsampled(d: &[u8], max_samples: usize, prediction: Predic
     let mut row_first = [init; 3];
     for my in 0..h.height / vertical {
         for mx in 0..h.width / 2 {
-            for (c, plane) in planes.iter_mut().enumerate() {
+            for (c, (plane, table)) in planes.iter_mut().zip(&tables).enumerate() {
                 let horizontal_factor = if c == 0 { 2 } else { 1 };
                 let vertical_factor = if c == 0 { vertical } else { 1 };
                 let width = h.width * horizontal_factor / 2;
@@ -606,23 +617,28 @@ pub(crate) fn decode_subsampled(d: &[u8], max_samples: usize, prediction: Predic
                     for dx in 0..horizontal_factor {
                         let (x, y) = (mx * horizontal_factor + dx, my * vertical_factor + dy);
                         let i = y * width + x;
+                        let sample = |j: Option<usize>| j.and_then(|j| plane.get(j)).map_or(init, |&v| i32::from(v));
+                        let (last, row_first) = (
+                            last.get_mut(c).ok_or_else(|| err("too many components"))?,
+                            row_first.get_mut(c).ok_or_else(|| err("too many components"))?,
+                        );
                         let pred = match prediction {
-                            Prediction::Geometric if x > 0 => plane[i - 1] as i32,
-                            Prediction::Geometric if c == 0 && dy == 0 && y >= vertical => plane[i - vertical * width] as i32,
-                            Prediction::Geometric if y > 0 => plane[i - width] as i32,
+                            Prediction::Geometric if x > 0 => sample(i.checked_sub(1)),
+                            Prediction::Geometric if c == 0 && dy == 0 && y >= vertical => sample(i.checked_sub(vertical * width)),
+                            Prediction::Geometric if y > 0 => sample(i.checked_sub(width)),
                             Prediction::Geometric => init,
-                            Prediction::Sequential if mx == 0 && dx == 0 && dy == 0 => row_first[c],
-                            Prediction::Sequential => last[c],
+                            Prediction::Sequential if mx == 0 && dx == 0 && dy == 0 => *row_first,
+                            Prediction::Sequential => *last,
                         };
-                        let ssss = tables[c].decode(&mut br)?;
+                        let ssss = table.decode(&mut br)?;
                         if ssss > 16 {
                             return Err(err("invalid difference category"));
                         }
                         let value = ((pred + diff_value(&mut br, ssss)) & 0xffff) as u16;
-                        plane[i] = value;
-                        last[c] = i32::from(value);
+                        *plane.get_mut(i).ok_or_else(|| err("sample outside the frame"))? = value;
+                        *last = i32::from(value);
                         if mx == 0 && dx == 0 && dy == 0 {
-                            row_first[c] = i32::from(value);
+                            *row_first = i32::from(value);
                         }
                     }
                 }
@@ -658,7 +674,7 @@ pub fn decode(d: &[u8], max_samples: usize) -> Result<Frame, RawError> {
         return Err(RawError::Limit("lossless JPEG frame larger than expected"));
     }
     // The entropy data must hold at least ~1 bit per sample; reject absurd headers early.
-    let entropy = &d[h.scan_start..];
+    let entropy = d.get(h.scan_start..).unwrap_or_default();
     if (entropy.len() as u64 + 64) * 8 < total as u64 {
         return Err(err("entropy data too short for frame"));
     }
@@ -667,6 +683,9 @@ pub fn decode(d: &[u8], max_samples: usize) -> Result<Frame, RawError> {
         .iter()
         .map(|&t| h.tables.get(t).and_then(Option::as_ref).ok_or_else(|| err("scan uses an undefined Huffman table")))
         .collect::<Result<_, RawError>>()?;
+    if tables.len() != nc {
+        return Err(err("scan and frame components differ"));
+    }
     let mut out = vec![0u16; total];
     let mut br = BitReader::new(entropy);
     let init = 1i32 << (h.precision - h.pt - 1);
@@ -677,9 +696,9 @@ pub fn decode(d: &[u8], max_samples: usize) -> Result<Frame, RawError> {
     let mut first_line = true; // first line of image or restart interval
     let mut reset_pending = true;
     for y in 0..ht {
-        let (prev_rows, cur_rows) = out.split_at_mut(y * row_len);
-        let cur = &mut cur_rows[..row_len];
-        let prev = if y > 0 { &prev_rows[(y - 1) * row_len..] } else { &[][..] };
+        let Some((prev_rows, cur_rows)) = out.split_at_mut_checked(y * row_len) else { break };
+        let cur = cur_rows.get_mut(..row_len).unwrap_or_default();
+        let prev = prev_rows.get((y.saturating_sub(1)) * row_len..).filter(|_| y > 0).unwrap_or_default();
         for x in 0..w {
             if h.restart > 0 {
                 if restart_left == 0 {
@@ -692,18 +711,19 @@ pub fn decode(d: &[u8], max_samples: usize) -> Result<Frame, RawError> {
                 }
                 restart_left -= 1;
             }
-            for c in 0..nc {
+            for (c, table) in tables.iter().enumerate().take(nc) {
                 let i = x * nc + c;
+                // Ra (left), Rb (above) and Rc (above left) of T.81 H.1.2.1
+                let at = |row: &[u16], j: usize| row.get(j).map_or(0, |&v| v as i32);
+                let left = || at(cur, i - nc);
                 let p = if reset_pending {
                     init
                 } else if first_line {
-                    if x == 0 { prev.get(i).map_or(init, |&v| v as i32) } else { cur[i - nc] as i32 }
+                    if x == 0 { prev.get(i).map_or(init, |&v| v as i32) } else { left() }
                 } else if x == 0 || pred == 0 {
-                    if pred == 0 { 0 } else { prev[i] as i32 }
+                    if pred == 0 { 0 } else { at(prev, i) }
                 } else {
-                    let ra = cur[i - nc] as i32;
-                    let rb = prev[i] as i32;
-                    let rc = prev[i - nc] as i32;
+                    let (ra, rb, rc) = (left(), at(prev, i), at(prev, i - nc));
                     match pred {
                         1 => ra,
                         2 => rb,
@@ -714,9 +734,11 @@ pub fn decode(d: &[u8], max_samples: usize) -> Result<Frame, RawError> {
                         _ => (ra + rb) >> 1,
                     }
                 };
-                let ssss = tables[c].decode(&mut br)?;
+                let ssss = table.decode(&mut br)?;
                 let diff = diff_value(&mut br, ssss);
-                cur[i] = ((p + diff) & mask) as u16;
+                if let Some(o) = cur.get_mut(i) {
+                    *o = ((p + diff) & mask) as u16;
+                }
             }
             reset_pending = false;
         }
@@ -736,6 +758,7 @@ pub fn decode(d: &[u8], max_samples: usize) -> Result<Frame, RawError> {
 // ------------------------------------------------------------------------------------------------ encoder
 
 /// Build Huffman code lengths from frequencies (T.81 Annex K.2, Figures K.1–K.3), limited to 16 bits.
+#[expect(clippy::indexing_slicing, reason = "T.81 Annex K.2 over fixed tables of the 17 categories and 33 code lengths")]
 fn code_lengths(freq_in: &[u32; 17]) -> ([u8; 16], Vec<u8>) {
     let mut freq = [0i64; 18];
     for (i, &f) in freq_in.iter().enumerate() {
@@ -820,6 +843,7 @@ fn code_lengths(freq_in: &[u32; 17]) -> ([u8; 16], Vec<u8>) {
 }
 
 /// Canonical codes for a table: symbol → (code, length).
+#[expect(clippy::indexing_slicing, reason = "fixed tables of the 16 code lengths and 17 categories")]
 fn canonical_codes(counts: &[u8; 16], values: &[u8]) -> [(u32, u8); 17] {
     let mut table = [(0u32, 0u8); 17];
     let mut code = 0u32;
@@ -880,10 +904,32 @@ fn ssss_of(diff: i32) -> u8 {
 }
 
 /// Encode samples (`width × height × components`, interleaved) as a lossless JPEG with `predictor` (1–7) and
-/// `precision` bits. `restart` > 0 inserts restart markers every `restart` MCUs (pixels).
-pub fn encode(data: &[u16], width: usize, height: usize, components: usize, precision: u8, predictor: u8, restart: usize) -> Vec<u8> {
-    assert!((1..=4).contains(&components) && (2..=16).contains(&precision) && (1..=7).contains(&predictor));
-    assert_eq!(data.len(), width * height * components);
+/// `precision` bits. `restart` > 0 inserts restart markers every `restart` MCUs (pixels). An error for another
+/// component count, precision or predictor, a frame past 65535 on a side, or samples that don't fill the frame.
+pub fn encode(
+    data: &[u16],
+    width: usize,
+    height: usize,
+    components: usize,
+    precision: u8,
+    predictor: u8,
+    restart: usize,
+) -> Result<Vec<u8>, RawError> {
+    if !(1..=4).contains(&components) || !(2..=16).contains(&precision) || !(1..=7).contains(&predictor) {
+        return Err(RawError::Unsupported(format!("lossless JPEG with {components} components, {precision} bits, predictor {predictor}")));
+    }
+    if width > u16::MAX as usize
+        || height > u16::MAX as usize
+        || width.checked_mul(height).and_then(|n| n.checked_mul(components)) != Some(data.len())
+    {
+        return Err(RawError::Corrupt(format!("lossless JPEG: {} samples for a {width} × {height} × {components} frame", data.len())));
+    }
+    Ok(encode_checked(data, width, height, components, precision, predictor, restart))
+}
+
+/// [`encode`] of arguments it has checked.
+#[expect(clippy::indexing_slicing, reason = "samples checked to fill width × height × components; Huffman tables indexed by 4-bit categories")]
+fn encode_checked(data: &[u16], width: usize, height: usize, components: usize, precision: u8, predictor: u8, restart: usize) -> Vec<u8> {
     let init = 1i32 << (precision - 1);
     let row_len = width * components;
     // compute differences in the same order as the decoder
@@ -1108,7 +1154,7 @@ pub(crate) mod tests {
                 for bits in [8u8, 12, 14, 16] {
                     let (w, h) = (13, 7);
                     let data = noise(w * h * comps, bits as u32, (pred as u64) * 31 + comps as u64);
-                    let enc = encode(&data, w, h, comps, bits, pred, 0);
+                    let enc = encode(&data, w, h, comps, bits, pred, 0).unwrap();
                     let f = decode(&enc, usize::MAX).unwrap();
                     assert_eq!((f.width, f.height, f.components, f.precision, f.predictor), (w, h, comps, bits, pred));
                     assert_eq!(f.data, data, "pred {pred} comps {comps} bits {bits}");
@@ -1122,12 +1168,12 @@ pub(crate) mod tests {
         // alternating 0 / 65535 forces SSSS = 16 differences
         let data: Vec<u16> = (0..64).map(|i| if i % 2 == 0 { 0 } else { 65535 }).collect();
         for pred in 1..=7 {
-            let enc = encode(&data, 8, 8, 1, 16, pred, 0);
+            let enc = encode(&data, 8, 8, 1, 16, pred, 0).unwrap();
             assert_eq!(decode(&enc, usize::MAX).unwrap().data, data);
         }
         let data = noise(20 * 9 * 2, 12, 5);
         for rst in [1usize, 7, 20, 40] {
-            let enc = encode(&data, 20, 9, 2, 12, 6, rst);
+            let enc = encode(&data, 20, 9, 2, 12, 6, rst).unwrap();
             assert_eq!(decode(&enc, usize::MAX).unwrap().data, data, "restart {rst}");
         }
     }
@@ -1135,7 +1181,7 @@ pub(crate) mod tests {
     #[test]
     fn constant_image_single_symbol_table() {
         let data = vec![1234u16; 16 * 4];
-        let enc = encode(&data, 16, 4, 1, 14, 1, 0);
+        let enc = encode(&data, 16, 4, 1, 14, 1, 0).unwrap();
         assert_eq!(decode(&enc, usize::MAX).unwrap().data, data);
     }
 
@@ -1144,7 +1190,7 @@ pub(crate) mod tests {
         assert!(decode(&[], 100).is_err());
         assert!(decode(&[0xff, 0xd8, 0xff, 0xd9], 100).is_err());
         let data = noise(64, 12, 1);
-        let enc = encode(&data, 8, 8, 1, 12, 1, 0);
+        let enc = encode(&data, 8, 8, 1, 12, 1, 0).unwrap();
         assert!(matches!(decode(&enc, 10), Err(RawError::Limit(_))));
         for n in 0..enc.len() {
             let _ = decode(&enc[..n], usize::MAX);

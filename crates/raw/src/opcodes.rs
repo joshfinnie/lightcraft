@@ -511,13 +511,16 @@ fn area_iter(a: &Area, w: usize, h: usize, cpp: usize) -> impl Iterator<Item = (
 fn gain_at(points_v: u32, points_h: u32, spacing: [f64; 2], origin: [f64; 2], map_planes: u32, gains: &[f32], rv: f64, rh: f64, plane: usize) -> f32 {
     let (pv, ph) = (points_v as usize, points_h as usize);
     let mp = map_planes as usize;
+    if pv == 0 || ph == 0 || mp == 0 {
+        return 1.0;
+    }
     let p = plane.min(mp - 1);
     let fy = if spacing[0] > 0.0 { ((rv - origin[0]) / spacing[0]).clamp(0.0, (pv - 1) as f64) } else { 0.0 };
     let fx = if spacing[1] > 0.0 { ((rh - origin[1]) / spacing[1]).clamp(0.0, (ph - 1) as f64) } else { 0.0 };
     let (y0, x0) = (fy.floor() as usize, fx.floor() as usize);
     let (y1, x1) = ((y0 + 1).min(pv - 1), (x0 + 1).min(ph - 1));
     let (ty, tx) = ((fy - y0 as f64) as f32, (fx - x0 as f64) as f32);
-    let g = |y: usize, x: usize| gains[(y * ph + x) * mp + p];
+    let g = |y: usize, x: usize| gains.get((y * ph + x) * mp + p).copied().unwrap_or(1.0);
     let top = g(y0, x0) + (g(y0, x1) - g(y0, x0)) * tx;
     let bot = g(y1, x0) + (g(y1, x1) - g(y1, x0)) * tx;
     top + (bot - top) * ty
@@ -535,21 +538,24 @@ const MAX_BAD_PIXELS: usize = 1 << 22;
 
 /// Apply a list to an interleaved `w × h × cpp` buffer. `cfa` (when the data is a mosaic) is used by the
 /// bad-pixel opcodes. `scale` is the value of 1.0 in the buffer: 65535 for list 1 (raw 16-bit values), 1 for
-/// lists 2 and 3 (normalised values).
+/// lists 2 and 3 (normalised values). A buffer of another size is left as it is.
 pub fn apply_list(list: &[Opcode], buf: &mut [f32], w: usize, h: usize, cpp: usize, cfa: Option<&Cfa>, scale: f32) {
+    if w.checked_mul(h).and_then(|n| n.checked_mul(cpp)) != Some(buf.len()) {
+        return;
+    }
     for op in list {
         match op {
             Opcode::MapTable { area, table } => {
-                let n = table.len();
+                let Some(&top) = table.last() else { continue };
                 for (x, y, p) in area_iter(area, w, h, cpp) {
-                    let v = &mut buf[(y * w + x) * cpp + p];
-                    let idx = ((*v / scale * 65535.0).round().max(0.0) as usize).min(n - 1);
-                    *v = table[idx] as f32 / 65535.0 * scale;
+                    let Some(v) = buf.get_mut((y * w + x) * cpp + p) else { continue };
+                    let idx = (*v / scale * 65535.0).round().max(0.0) as usize;
+                    *v = table.get(idx).copied().unwrap_or(top) as f32 / 65535.0 * scale;
                 }
             }
             Opcode::MapPolynomial { area, coefficients } => {
                 for (x, y, p) in area_iter(area, w, h, cpp) {
-                    let v = &mut buf[(y * w + x) * cpp + p];
+                    let Some(v) = buf.get_mut((y * w + x) * cpp + p) else { continue };
                     let t = (*v / scale) as f64;
                     let r = coefficients.iter().rev().fold(0.0, |acc, &c| acc * t + c);
                     *v = r as f32 * scale;
@@ -560,26 +566,34 @@ pub fn apply_list(list: &[Opcode], buf: &mut [f32], w: usize, h: usize, cpp: usi
                     let rv = y as f64 / h as f64;
                     let rh = x as f64 / w as f64;
                     let g = gain_at(*points_v, *points_h, *spacing, *origin, *map_planes, gains, rv, rh, p - area.plane as usize);
-                    buf[(y * w + x) * cpp + p] *= g;
+                    if let Some(v) = buf.get_mut((y * w + x) * cpp + p) {
+                        *v *= g;
+                    }
                 }
             }
             Opcode::DeltaPerRow { area, deltas } | Opcode::DeltaPerColumn { area, deltas } => {
                 let per_row = matches!(op, Opcode::DeltaPerRow { .. });
                 for (x, y, p) in area_iter(area, w, h, cpp) {
-                    let i =
-                        if per_row { (y - area.top as usize) / area.row_pitch as usize } else { (x - area.left as usize) / area.col_pitch as usize };
-                    if let Some(d) = deltas.get(i) {
-                        buf[(y * w + x) * cpp + p] += d * scale;
+                    let i = if per_row {
+                        (y - area.top as usize) / area.row_pitch.max(1) as usize
+                    } else {
+                        (x - area.left as usize) / area.col_pitch.max(1) as usize
+                    };
+                    if let (Some(d), Some(v)) = (deltas.get(i), buf.get_mut((y * w + x) * cpp + p)) {
+                        *v += d * scale;
                     }
                 }
             }
             Opcode::ScalePerRow { area, scales } | Opcode::ScalePerColumn { area, scales } => {
                 let per_row = matches!(op, Opcode::ScalePerRow { .. });
                 for (x, y, p) in area_iter(area, w, h, cpp) {
-                    let i =
-                        if per_row { (y - area.top as usize) / area.row_pitch as usize } else { (x - area.left as usize) / area.col_pitch as usize };
-                    if let Some(s) = scales.get(i) {
-                        buf[(y * w + x) * cpp + p] *= s;
+                    let i = if per_row {
+                        (y - area.top as usize) / area.row_pitch.max(1) as usize
+                    } else {
+                        (x - area.left as usize) / area.col_pitch.max(1) as usize
+                    };
+                    if let (Some(s), Some(v)) = (scales.get(i), buf.get_mut((y * w + x) * cpp + p)) {
+                        *v *= s;
                     }
                 }
             }
@@ -590,16 +604,18 @@ pub fn apply_list(list: &[Opcode], buf: &mut [f32], w: usize, h: usize, cpp: usi
                     for x in 0..w {
                         let r2 = ((x as f64 + 0.5 - cx).powi(2) + (y as f64 + 0.5 - cy).powi(2)) / (m * m);
                         let g = 1.0 + r2 * (k[0] + r2 * (k[1] + r2 * (k[2] + r2 * (k[3] + r2 * k[4]))));
-                        for p in 0..cpp {
-                            buf[(y * w + x) * cpp + p] *= g as f32;
-                        }
+                        let at = (y * w + x) * cpp;
+                        buf.iter_mut().skip(at).take(cpp).for_each(|v| *v *= g as f32);
                     }
                 }
             }
             Opcode::FixBadPixelsConstant { constant, .. } => {
                 let c = (*constant as f64 / 65535.0 * scale as f64) as f32;
-                let bad: Vec<(usize, usize)> =
-                    (0..h).flat_map(|y| (0..w).map(move |x| (x, y))).filter(|&(x, y)| cpp == 1 && buf[y * w + x] == c).take(MAX_BAD_PIXELS).collect();
+                let bad: Vec<(usize, usize)> = (0..h)
+                    .flat_map(|y| (0..w).map(move |x| (x, y)))
+                    .filter(|&(x, y)| cpp == 1 && buf.get(y * w + x) == Some(&c))
+                    .take(MAX_BAD_PIXELS)
+                    .collect();
                 fix_pixels(buf, w, h, cpp, cfa, &bad);
             }
             Opcode::FixBadPixelsList { points, rects, .. } => {
@@ -646,11 +662,15 @@ fn fix_pixels(buf: &mut [f32], w: usize, h: usize, cpp: usize, cfa: Option<&Cfa>
                 if nx < 0 || ny < 0 || nx >= w as isize || ny >= h as isize || is_bad.contains(&(nx as usize, ny as usize)) {
                     continue;
                 }
-                sum += buf[(ny as usize * w + nx as usize) * cpp + p];
-                n += 1;
+                if let Some(&v) = buf.get((ny as usize * w + nx as usize) * cpp + p) {
+                    sum += v;
+                    n += 1;
+                }
             }
-            if n > 0 {
-                buf[(y * w + x) * cpp + p] = sum / n as f32;
+            if n > 0
+                && let Some(v) = buf.get_mut((y * w + x) * cpp + p)
+            {
+                *v = sum / n as f32;
             }
         }
     }
@@ -682,10 +702,11 @@ pub fn apply_list3(list: &[Opcode], img: &mut Rgb32f) {
 /// optical centre, with coordinates normalised by the distance to the farthest corner.
 pub fn warp_rectilinear(img: &Rgb32f, planes: &[[f64; 6]], center: [f64; 2]) -> Rgb32f {
     let (w, h) = (img.width, img.height);
+    let Some(&last) = planes.last() else { return img.clone() };
     let (cx, cy) = (center[0] * (w as f64 - 1.0), center[1] * (h as f64 - 1.0));
     let m = max_radius(cx, cy, w as f64 - 1.0, h as f64 - 1.0);
     let mut out = Rgb32f::new(w, h);
-    let coef = |p: usize| planes[p.min(planes.len() - 1)];
+    let coef = |p: usize| planes.get(p).copied().unwrap_or(last);
     lightcraft_raster::par_rows(&mut out.data, w, |y, row| {
         for (x, px) in row.iter_mut().enumerate() {
             for (c, v) in px.iter_mut().enumerate() {
@@ -697,7 +718,7 @@ pub fn warp_rectilinear(img: &Rgb32f, planes: &[[f64; 6]], center: [f64; 2]) -> 
                 let sx = dx * f + kt0 * 2.0 * dx * dy + kt1 * (r2 + 2.0 * dx * dx);
                 let sy = dy * f + kt1 * 2.0 * dx * dy + kt0 * (r2 + 2.0 * dy * dy);
                 let (fx, fy) = (cx + m * sx, cy + m * sy);
-                *v = img.sample_bilinear(fx as f32 + 0.5, fy as f32 + 0.5)[c];
+                *v = img.sample_bilinear(fx as f32 + 0.5, fy as f32 + 0.5).get(c).copied().unwrap_or(0.0);
             }
         }
     });
@@ -726,7 +747,7 @@ pub fn warp_rectilinear2(img: &Rgb32f, planes: &[[f64; WR2_LEN]], center: [f64; 
                     None => (dx, dy),
                 };
                 let (fx, fy) = (cx + m * sx, cy + m * sy);
-                *v = img.sample_bilinear(fx as f32 + 0.5, fy as f32 + 0.5)[c];
+                *v = img.sample_bilinear(fx as f32 + 0.5, fy as f32 + 0.5).get(c).copied().unwrap_or(0.0);
             }
         }
     });
@@ -890,6 +911,28 @@ pub(crate) mod tests {
         let out = warp_rectilinear(&img, &[[1.0, -0.6, 0.0, 0.0, 0.0, 0.0]], [0.5, 0.5]);
         let (bx, _) = (0..31).map(|x| (x, out.get(x, 15)[0])).fold((0, 0.0), |a, b| if b.1 > a.1 { b } else { a });
         assert!(bx >= 25, "{bx}");
+    }
+
+    /// Opcodes built in code (the fields are public) that the parser never makes: an empty table, a gain map
+    /// without points or planes, a zero pitch, no warp planes, or a buffer of another size. Each underflowed,
+    /// divided by zero or indexed past the end before; now each leaves the pixels alone.
+    #[test]
+    fn opcodes_the_parser_never_makes_leave_the_pixels_alone() {
+        let area = Area { top: 0, left: 0, bottom: 4, right: 4, plane: 0, planes: 1, row_pitch: 0, col_pitch: 0 };
+        let list = [
+            Opcode::MapTable { area, table: vec![] },
+            Opcode::GainMap { area, points_v: 0, points_h: 0, spacing: [1.0, 1.0], origin: [0.0, 0.0], map_planes: 0, gains: vec![] },
+            Opcode::DeltaPerRow { area, deltas: vec![0.0; 4] },
+            Opcode::ScalePerColumn { area, scales: vec![1.0; 4] },
+        ];
+        let mut buf = vec![0.25f32; 16];
+        apply_list(&list, &mut buf, 4, 4, 1, None, 1.0);
+        assert!(buf.iter().all(|&v| v == 0.25), "{buf:?}");
+        let mut short = vec![0.25f32; 15];
+        apply_list(&[Opcode::FixVignetteRadial { k: [1.0; 5], center: [0.5, 0.5] }], &mut short, 4, 4, 1, None, 1.0);
+        assert!(short.iter().all(|&v| v == 0.25), "a buffer of another size is left as it is");
+        let img = Rgb32f::from_fn(4, 4, |x, _| [x as f32; 3]);
+        assert_eq!(warp_rectilinear(&img, &[], [0.5, 0.5]).data, img.data);
     }
 
     #[test]
