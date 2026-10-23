@@ -137,9 +137,7 @@ pub(crate) fn scene_pixels(scene: &lightcraft_scenes::Scene, max_edge: usize) ->
             }
         }
     };
-    let (w, h) = scene.fit(max_edge);
-    let how = if w.saturating_mul(h) <= ALONE_PIXELS { Render::Serial } else { Render::Parallel };
-    let pixels = slot.get_or_generate(how, |how| match how {
+    let pixels = slot.get_or_generate(render_for(scene, max_edge), |how| match how {
         Render::Parallel => scene.render_fit(max_edge),
         Render::Serial => scene.render_fit_serial(max_edge),
     });
@@ -160,6 +158,12 @@ enum Render {
 /// on [`render_pool`] they would wait behind the full-size originals rendering there, minutes each
 /// on a small machine, and so would every export and thumbnail waiting for them.
 const ALONE_PIXELS: usize = 512 * 1024;
+
+/// How `scene` at `max_edge` renders when no rayon worker asks for it.
+fn render_for(scene: &lightcraft_scenes::Scene, max_edge: usize) -> Render {
+    let (w, h) = scene.fit(max_edge);
+    if w.saturating_mul(h) <= ALONE_PIXELS { Render::Serial } else { Render::Parallel }
+}
 
 const FAILED: &str = "the demo scene could not be generated";
 
@@ -474,31 +478,26 @@ mod tests {
         assert_eq!((renders, peak), (1, 1));
     }
 
-    /// A thumbnail-sized scene never waits for the scene pool: with every pool thread busy (full-size originals
-    /// rendering, minutes each on a small machine) it renders on the caller's thread. It queued behind them before,
-    /// and so did every export and thumbnail waiting for it.
+    /// A thumbnail-sized scene never waits for the scene pool, where it queued behind the full-size originals
+    /// rendering there (minutes each on a small machine), and so did every export and thumbnail waiting for it: it
+    /// renders on the caller's thread. Larger ones still render in parallel on the pool.
     #[test]
-    fn a_small_scene_does_not_wait_for_the_busy_scene_pool() {
-        let pool = render_pool().expect("the scene pool starts here");
-        let (release, held) = std::sync::mpsc::channel::<()>();
-        let held = Arc::new(std::sync::Mutex::new(held));
-        let (busy_tx, busy) = std::sync::mpsc::channel();
-        for _ in 0..pool.current_num_threads() {
-            let (held, busy_tx) = (held.clone(), busy_tx.clone());
-            pool.spawn(move || {
-                let _ = busy_tx.send(());
-                // until the test ends (`release` dropped) or at most a minute
-                let _ = held.lock().unwrap_or_else(std::sync::PoisonError::into_inner).recv_timeout(std::time::Duration::from_secs(60));
-            });
-        }
-        for _ in 0..pool.current_num_threads() {
-            busy.recv().unwrap();
-        }
+    fn a_small_scene_renders_on_the_callers_thread() {
         let s = small_scene();
-        let edge = 509; // a size no other test asks for
-        let got = within(30, move || scene_pixels(&s, edge).unwrap());
-        assert_eq!(got.width.max(got.height), edge);
-        drop(release);
+        assert_eq!(render_for(&s, crate::media::SourceLevel::Thumb.max_edge()), Render::Serial);
+        assert_eq!(render_for(&s, crate::media::SourceLevel::Preview.max_edge()), Render::Parallel);
+        assert_eq!(render_for(&s, usize::MAX), Render::Parallel);
+        let ((how, renderer), caller) = within(120, || {
+            let mut seen = None;
+            SceneSlot::default()
+                .get_or_generate(Render::Serial, |how| {
+                    seen = Some((how, std::thread::current().id()));
+                    pixels(1)
+                })
+                .unwrap();
+            (seen.unwrap(), std::thread::current().id())
+        });
+        assert_eq!((how, renderer), (Render::Serial, caller), "rendered alone, on the caller's thread");
     }
 
     /// A rayon worker (the faces scan's) renders a scene on its own thread alone, so the work stays within its pool
