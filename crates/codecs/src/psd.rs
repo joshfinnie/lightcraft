@@ -22,21 +22,21 @@ struct Rd<'a> {
 impl<'a> Rd<'a> {
     fn take(&mut self, n: usize) -> Result<&'a [u8]> {
         let end = self.p.checked_add(n).filter(|&e| e <= self.b.len()).ok_or_else(|| err("truncated"))?;
-        let s = &self.b[self.p..end];
+        let s = self.b.get(self.p..end).ok_or_else(|| err("truncated"))?;
         self.p = end;
         Ok(s)
     }
+    fn array<const N: usize>(&mut self) -> Result<[u8; N]> {
+        self.take(N)?.try_into().map_err(|_| err("truncated"))
+    }
     fn u16(&mut self) -> Result<u16> {
-        let s = self.take(2)?;
-        Ok(u16::from_be_bytes([s[0], s[1]]))
+        self.array().map(u16::from_be_bytes)
     }
     fn u32(&mut self) -> Result<u32> {
-        let s = self.take(4)?;
-        Ok(u32::from_be_bytes([s[0], s[1], s[2], s[3]]))
+        self.array().map(u32::from_be_bytes)
     }
     fn u64(&mut self) -> Result<u64> {
-        let s = self.take(8)?;
-        Ok(u64::from_be_bytes([s[0], s[1], s[2], s[3], s[4], s[5], s[6], s[7]]))
+        self.array().map(u64::from_be_bytes)
     }
 }
 
@@ -74,13 +74,9 @@ pub(crate) fn decode(bytes: &[u8], opts: &DecodeOptions) -> Result<Decoded> {
     // Layer and mask information: only the layer count sign matters (merged transparency).
     let lm_len = if psb { r.u64()? } else { u64::from(r.u32()?) };
     let lm = r.take(usize::try_from(lm_len).map_err(|_| err("truncated"))?)?;
-    let merged_transparency = if lm.len() >= if psb { 10 } else { 6 } {
-        let off = if psb { 8 } else { 4 };
-        let count = i16::from_be_bytes([lm[off], lm[off + 1]]);
-        count < 0
-    } else {
-        false
-    };
+    // after the layer info's length (4 or 8 bytes), its layer count
+    let count = lm.get(if psb { 8..10 } else { 4..6 }).and_then(|c| c.try_into().ok()).map(i16::from_be_bytes);
+    let merged_transparency = count.is_some_and(|c| c < 0);
 
     // Image data.
     let compression = r.u16()?;
@@ -170,9 +166,14 @@ pub(crate) fn decode(bytes: &[u8], opts: &DecodeOptions) -> Result<Decoded> {
         };
         let idx = planes.first().ok_or_else(|| err("missing plane"))?;
         let mut v = zeroed::<u8>(n.checked_mul(3).ok_or_else(too_large)?, too_large)?;
+        // the red, green and blue tables, 256 entries each
+        let (reds, rest) = pal.split_at(256);
+        let (greens, blues) = rest.split_at(256);
         for (o, &i) in v.as_chunks_mut::<3>().0.iter_mut().zip(idx) {
             let i = i as usize;
-            *o = [pal[i], pal[256 + i], pal[512 + i]];
+            if let (Some(&r), Some(&g), Some(&b)) = (reds.get(i), greens.get(i), blues.get(i)) {
+                *o = [r, g, b];
+            }
         }
         Buf::U8(v)
     } else {
@@ -446,24 +447,23 @@ fn unpackbits(mut src: &[u8], row: &mut [u8]) -> Result<()> {
 
 fn resources(mut b: &[u8]) -> (Option<Vec<u8>>, Option<Vec<u8>>, Option<String>) {
     let (mut icc, mut exif, mut xmp) = (None, None, None);
-    while b.len() >= 12 && &b[0..4] == b"8BIM" {
-        let id = u16::from_be_bytes([b[4], b[5]]);
-        let name_len = b[6] as usize;
-        let name_total = (1 + name_len + 1) & !1;
-        let p = 6 + name_total;
-        if p + 4 > b.len() {
-            break;
-        }
-        let size = u32::from_be_bytes([b[p], b[p + 1], b[p + 2], b[p + 3]]) as usize;
+    while b.len() >= 12
+        && let Some(&[b'8', b'B', b'I', b'M', i0, i1, name_len, ..]) = b.get(..12)
+    {
+        let id = u16::from_be_bytes([i0, i1]);
+        // a Pascal string padded to an even length
+        let p = 6 + ((1 + name_len as usize + 1) & !1);
+        let Some(size) = b.get(p..p + 4).and_then(|s| s.try_into().ok()).map(u32::from_be_bytes) else { break };
+        let size = size as usize;
         let start = p + 4;
         let Some(data) = start.checked_add(size).and_then(|end| b.get(start..end)) else { break };
         match id {
             1039 => icc = Some(data.to_vec()),
-            1058 => exif = Some(if data.starts_with(b"Exif\0\0") { data[6..].to_vec() } else { data.to_vec() }),
+            1058 => exif = Some(data.strip_prefix(b"Exif\0\0").unwrap_or(data).to_vec()),
             1060 => xmp = Some(String::from_utf8_lossy(data).trim_end_matches('\0').to_string()),
             _ => {}
         }
-        let next = start + ((size + 1) & !1);
+        let next = start.saturating_add(size.saturating_add(1) & !1);
         b = b.get(next..).unwrap_or(&[]);
     }
     (icc, exif, xmp)

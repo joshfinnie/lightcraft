@@ -96,7 +96,7 @@ impl Trc {
         match self {
             Trc::Linear => true,
             Trc::Gamma(g) => (*g - 1.0).abs() < 1e-4,
-            Trc::Parametric(p) => p.len() == 1 && (p[0] - 1.0).abs() < 1e-4,
+            Trc::Parametric(p) => matches!(p.as_slice(), [g] if (g - 1.0).abs() < 1e-4),
             Trc::Table(t) => t.is_empty(),
             _ => false,
         }
@@ -126,38 +126,51 @@ impl Trc {
 
 fn eval_parametric(p: &[f32], x: f32) -> f32 {
     let pw = |b: f32, g: f32| if b > 0.0 { b.powf(g) } else { 0.0 };
-    match p.len() {
-        1 => pw(x, p[0]),
-        3 => {
-            let (g, a, b) = (p[0], p[1], p[2]);
-            if a != 0.0 && x >= -b / a { pw(a * x + b, g) } else { 0.0 }
+    match *p {
+        [g] => pw(x, g),
+        [g, a, b] => {
+            if a != 0.0 && x >= -b / a {
+                pw(a * x + b, g)
+            } else {
+                0.0
+            }
         }
-        4 => {
-            let (g, a, b, c) = (p[0], p[1], p[2], p[3]);
-            if a != 0.0 && x >= -b / a { pw(a * x + b, g) + c } else { c }
+        [g, a, b, c] => {
+            if a != 0.0 && x >= -b / a {
+                pw(a * x + b, g) + c
+            } else {
+                c
+            }
         }
-        5 => {
-            let (g, a, b, c, d) = (p[0], p[1], p[2], p[3], p[4]);
-            if x >= d { pw(a * x + b, g) } else { c * x }
+        [g, a, b, c, d] => {
+            if x >= d {
+                pw(a * x + b, g)
+            } else {
+                c * x
+            }
         }
-        7 => {
-            let (g, a, b, c, d, e, f) = (p[0], p[1], p[2], p[3], p[4], p[5], p[6]);
-            if x >= d { pw(a * x + b, g) + e } else { c * x + f }
+        [g, a, b, c, d, e, f] => {
+            if x >= d {
+                pw(a * x + b, g) + e
+            } else {
+                c * x + f
+            }
         }
         _ => x,
     }
 }
 
 fn eval_table(t: &[u16], x: f32) -> f32 {
-    match t.len() {
-        0 => x,
-        1 => x.powf(t[0] as f32 / 256.0),
-        n => {
+    match *t {
+        [] => x,
+        [g] => x.powf(g as f32 / 256.0),
+        _ => {
+            let n = t.len();
             let pos = x * (n - 1) as f32;
             let i = (pos.floor() as usize).min(n - 2);
             let f = pos - i as f32;
-            let a = t[i] as f32 / 65535.0;
-            let b = t[i + 1] as f32 / 65535.0;
+            let Some(&[a, b]) = t.get(i..i + 2) else { return x };
+            let (a, b) = (a as f32 / 65535.0, b as f32 / 65535.0);
             a + (b - a) * f
         }
     }
@@ -210,7 +223,7 @@ impl NamedSpace {
     pub fn recognize(to_xyz_d50: &Mat3) -> Option<NamedSpace> {
         NamedSpace::ALL.into_iter().find(|n| {
             let m = n.to_xyz_d50();
-            (0..3).all(|r| (0..3).all(|c| (m.0[r][c] - to_xyz_d50.0[r][c]).abs() < 0.004))
+            m.0.iter().flatten().zip(to_xyz_d50.0.iter().flatten()).all(|(a, b)| (a - b).abs() < 0.004)
         })
     }
 }

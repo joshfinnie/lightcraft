@@ -98,9 +98,11 @@ fn text_of(t: &ProfileText) -> Option<String> {
 
 fn trc_from_icc(t: &ToneReprCurve) -> Trc {
     match t {
-        ToneReprCurve::Lut(v) if v.is_empty() => Trc::Linear,
-        ToneReprCurve::Lut(v) if v.len() == 1 => Trc::Gamma(v[0] as f32 / 256.0),
-        ToneReprCurve::Lut(v) => Trc::Table(v.clone()),
+        ToneReprCurve::Lut(v) => match v.as_slice() {
+            [] => Trc::Linear,
+            &[g] => Trc::Gamma(g as f32 / 256.0),
+            _ => Trc::Table(v.clone()),
+        },
         ToneReprCurve::Parametric(p) => Trc::Parametric(p.clone()),
     }
 }
@@ -165,14 +167,19 @@ fn fixed_date(mut b: Vec<u8>) -> Vec<u8> {
 /// back, so a tag of odd length (e.g. a `mluc` description with an odd number of characters)
 /// misaligns every following tag — which some readers (macOS ImageIO for PNG `iCCP`) reject.
 fn align_tags(b: &[u8]) -> Vec<u8> {
-    let be = |i: usize| b.get(i..i + 4).map(|s| u32::from_be_bytes([s[0], s[1], s[2], s[3]]) as usize);
+    let be = |i: usize| -> Option<usize> { Some(u32::from_be_bytes(b.get(i..i.checked_add(4)?)?.try_into().ok()?) as usize) };
+    // the tag table: a count, then (signature, offset, size) per tag
+    let entry = |t: usize, field: usize| t.checked_mul(12)?.checked_add(132 + field);
     let Some(n) = be(128) else { return b.to_vec() };
-    let table_end = 132 + 12 * n;
-    let tags: Option<Vec<(usize, usize)>> = (0..n).map(|t| Some((be(132 + 12 * t + 4)?, be(132 + 12 * t + 8)?))).collect();
-    let Some(tags) = tags.filter(|t| table_end <= b.len() && t.iter().all(|&(o, l)| o >= table_end && o + l <= b.len())) else {
-        return b.to_vec();
-    };
-    let mut out = b[..table_end].to_vec();
+    let Some(table) = entry(n, 0).and_then(|end| b.get(..end)) else { return b.to_vec() };
+    let tags: Option<Vec<(usize, usize)>> = (0..n)
+        .map(|t| {
+            let (off, len) = (be(entry(t, 4)?)?, be(entry(t, 8)?)?);
+            (off >= table.len() && off.checked_add(len)? <= b.len()).then_some((off, len))
+        })
+        .collect();
+    let Some(tags) = tags else { return b.to_vec() };
+    let mut out = table.to_vec();
     let mut placed: Vec<((usize, usize), usize)> = Vec::new();
     for (t, &(off, len)) in tags.iter().enumerate() {
         let new_off = match placed.iter().find(|(k, _)| *k == (off, len)) {
@@ -183,20 +190,26 @@ fn align_tags(b: &[u8]) -> Vec<u8> {
                     out.push(0);
                 }
                 let o = out.len();
-                out.extend_from_slice(&b[off..off + len]);
+                out.extend_from_slice(b.get(off..off + len).unwrap_or_default());
                 placed.push(((off, len), o));
                 o
             }
         };
-        out[132 + 12 * t + 4..132 + 12 * t + 8].copy_from_slice(&(new_off as u32).to_be_bytes());
+        if let Some(at) = entry(t, 4).and_then(|i| out.get_mut(i..i + 4)) {
+            at.copy_from_slice(&(new_off as u32).to_be_bytes());
+        }
     }
     while !out.len().is_multiple_of(4) {
         out.push(0);
     }
     let size = out.len() as u32;
-    out[0..4].copy_from_slice(&size.to_be_bytes());
+    if let Some(at) = out.get_mut(0..4) {
+        at.copy_from_slice(&size.to_be_bytes());
+    }
     // the profile ID (MD5) would no longer match: clear it (= "not computed")
-    out[84..100].fill(0);
+    if let Some(id) = out.get_mut(84..100) {
+        id.fill(0);
+    }
     out
 }
 
@@ -257,6 +270,22 @@ pub(crate) fn cms_to_linear_rec2020(icc: &[u8], samples: &[f32], channels: usize
 mod tests {
     use super::*;
     use lightcraft_color::{DISPLAY_P3, PROPHOTO, SRGB};
+
+    /// A tag table whose count, offsets or sizes run past the profile (or past `usize` on wasm32) leaves the
+    /// profile as it was.
+    #[test]
+    fn a_tag_table_past_the_profile_is_left_alone() {
+        let good = write_named(NamedSpace::Srgb);
+        let mut huge_count = good.clone();
+        huge_count[128..132].copy_from_slice(&u32::MAX.to_be_bytes());
+        assert_eq!(align_tags(&huge_count), huge_count);
+        let mut past_end = good.clone();
+        past_end[136..140].copy_from_slice(&u32::MAX.to_be_bytes());
+        past_end[140..144].copy_from_slice(&u32::MAX.to_be_bytes());
+        assert_eq!(align_tags(&past_end), past_end);
+        assert_eq!(align_tags(&good[..130]), &good[..130]);
+        assert_eq!(align_tags(&good), good, "already aligned");
+    }
 
     #[test]
     fn write_then_parse_recognises() {

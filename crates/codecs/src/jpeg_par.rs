@@ -8,6 +8,10 @@
 //! interleaved baseline with the tables in its `DHT` segments, readable by every decoder, and is
 //! smaller than with the Annex K example tables at the same pixels. Supports grayscale and YCbCr
 //! 4:4:4 / 4:2:0.
+#![expect(
+    clippy::indexing_slicing,
+    reason = "encodes buffers `encode` has checked: fixed tables indexed by masked symbols and zig-zag positions, planes and blocks sized from the checked dimensions"
+)]
 
 use crate::encode::ChromaSubsampling;
 
@@ -365,7 +369,8 @@ fn dht(out: &mut Vec<u8>, class_id: u8, bits: &[u8; 16], vals: &[u8]) {
 }
 
 /// Encode interleaved 8-bit samples (`channels` 1, 3 or 4; alpha is dropped), with Huffman
-/// tables made for the image.
+/// tables made for the image. An error for no pixels, more than 65535 on a side, another channel
+/// count, or fewer samples than `width × height × channels`.
 pub fn encode(
     data: &[u8],
     width: usize,
@@ -374,8 +379,18 @@ pub fn encode(
     quality: u8,
     sub: ChromaSubsampling,
     app_segments: &[(u8, Vec<u8>)],
-) -> Vec<u8> {
-    encode_with(data, width, height, channels, quality, sub, app_segments, true)
+) -> crate::Result<Vec<u8>> {
+    let bad = |why: &str| Err(crate::Error::Encode(format!("JPEG: {why}")));
+    if width == 0 || height == 0 || width > u16::MAX as usize || height > u16::MAX as usize {
+        return bad("dimensions must be 1 to 65535");
+    }
+    if !matches!(channels, 1 | 3 | 4) {
+        return bad("1, 3 or 4 channels");
+    }
+    if width.checked_mul(height).and_then(|n| n.checked_mul(channels)).is_none_or(|n| data.len() < n) {
+        return bad("fewer samples than the dimensions need");
+    }
+    Ok(encode_with(data, width, height, channels, quality, sub, app_segments, true))
 }
 
 /// [`encode`], with optimized Huffman tables or (`optimize` false) the Annex K example tables.
@@ -583,6 +598,20 @@ fn encode_with(
 mod tests {
     use super::*;
 
+    /// Buffers that don't match their dimensions, no pixels, or an unsupported channel count are refused instead of
+    /// panicking in the band loops.
+    #[test]
+    fn mismatched_buffers_are_refused() {
+        let s444 = ChromaSubsampling::S444;
+        assert!(encode(&[0; 12], 2, 2, 3, 90, s444, &[]).is_ok());
+        assert!(encode(&[0; 11], 2, 2, 3, 90, s444, &[]).is_err(), "short buffer");
+        assert!(encode(&[], 0, 2, 3, 90, s444, &[]).is_err(), "no width");
+        assert!(encode(&[0; 8], 2, 2, 2, 90, s444, &[]).is_err(), "two channels");
+        assert!(encode(&[0; 4], 2, 2, 0, 90, s444, &[]).is_err(), "no channels");
+        assert!(encode(&[0; 3], 70_000, 1, 1, 90, s444, &[]).is_err(), "too wide");
+        assert!(encode(&[0; 3], usize::MAX, 2, 3, 90, s444, &[]).is_err(), "size overflow");
+    }
+
     fn test_rgb(w: usize, h: usize) -> Vec<u8> {
         let mut v = Vec::with_capacity(w * h * 3);
         for y in 0..h {
@@ -639,7 +668,7 @@ mod tests {
             (803, 600, ChromaSubsampling::S444),
         ] {
             let src = test_rgb(w, h);
-            let jpg = encode(&src, w, h, 3, 92, sub, &[]);
+            let jpg = encode(&src, w, h, 3, 92, sub, &[]).unwrap();
             let mut d = jpeg_decoder::Decoder::new(&jpg[..]);
             let px = d.decode().expect("jpeg-decoder");
             let info = d.info().unwrap();
@@ -730,7 +759,7 @@ mod tests {
         for (q, sub) in [(100, ChromaSubsampling::S444), (92, ChromaSubsampling::S444), (75, ChromaSubsampling::S420), (30, ChromaSubsampling::S420)]
         {
             let std = encode_with(&src, w, h, 3, q, sub, &[], false);
-            let opt = encode(&src, w, h, 3, q, sub, &[]);
+            let opt = encode(&src, w, h, 3, q, sub, &[]).unwrap();
             assert!(opt.len() < std.len(), "q{q} {sub:?}: {} ≥ {}", opt.len(), std.len());
             let a = jpeg_decoder::Decoder::new(&std[..]).decode().expect("standard tables");
             let b = jpeg_decoder::Decoder::new(&opt[..]).decode().expect("optimized tables");
@@ -741,7 +770,7 @@ mod tests {
         // grayscale too
         let gray: Vec<u8> = src.iter().step_by(3).copied().collect();
         let std = encode_with(&gray, w, h, 1, 90, ChromaSubsampling::S444, &[], false);
-        let opt = encode(&gray, w, h, 1, 90, ChromaSubsampling::S444, &[]);
+        let opt = encode(&gray, w, h, 1, 90, ChromaSubsampling::S444, &[]).unwrap();
         assert!(opt.len() < std.len());
         assert_eq!(jpeg_decoder::Decoder::new(&std[..]).decode().unwrap(), jpeg_decoder::Decoder::new(&opt[..]).decode().unwrap());
     }
@@ -750,8 +779,8 @@ mod tests {
     fn grayscale_and_quality_monotone() {
         let (w, h) = (300, 200);
         let src: Vec<u8> = (0..w * h).map(|i| ((i % w) * 255 / w) as u8 ^ ((i / w) as u8 & 0x10)).collect();
-        let lo = encode(&src, w, h, 1, 30, ChromaSubsampling::S444, &[]);
-        let hi = encode(&src, w, h, 1, 95, ChromaSubsampling::S444, &[]);
+        let lo = encode(&src, w, h, 1, 30, ChromaSubsampling::S444, &[]).unwrap();
+        let hi = encode(&src, w, h, 1, 95, ChromaSubsampling::S444, &[]).unwrap();
         assert!(lo.len() < hi.len());
         let px = jpeg_decoder::Decoder::new(&hi[..]).decode().unwrap();
         assert!(psnr(&src, &px) > 35.0);

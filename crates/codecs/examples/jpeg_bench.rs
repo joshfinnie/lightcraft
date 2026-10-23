@@ -41,7 +41,7 @@ fn main() {
     for (sub, js) in
         [(ChromaSubsampling::S444, jpeg_encoder::SamplingFactor::R_4_4_4), (ChromaSubsampling::S420, jpeg_encoder::SamplingFactor::R_4_2_0)]
     {
-        let (ours, t_ours) = best(5, || lightcraft_codecs::jpeg_par::encode(&rgb, w, h, 3, 90, sub, &[]));
+        let (ours, t_ours) = best(5, || lightcraft_codecs::jpeg_par::encode(&rgb, w, h, 3, 90, sub, &[]).unwrap());
         let (theirs, t_theirs) = best(3, || {
             let mut out = Vec::new();
             let mut e = jpeg_encoder::Encoder::new(&mut out, 90);

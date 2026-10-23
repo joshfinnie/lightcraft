@@ -340,7 +340,9 @@ impl<W: Write + Seek> Mp4Writer<W> {
         let mut name = [0u8; 32];
         let label = b"AOM Coding";
         name[0] = label.len() as u8;
-        name[1..=label.len()].copy_from_slice(label);
+        for (n, &c) in name.iter_mut().skip(1).zip(label) {
+            *n = c;
+        }
         av01.extend_from_slice(&name);
         av01.extend_from_slice(&0x0018u16.to_be_bytes()); // depth
         av01.extend_from_slice(&(-1i16).to_be_bytes());
@@ -420,7 +422,7 @@ impl<W: Write + Seek> Mp4Writer<W> {
 fn ebml_id(id: u32) -> Vec<u8> {
     let b = id.to_be_bytes();
     let skip = b.iter().take_while(|x| **x == 0).count().min(3);
-    b[skip..].to_vec()
+    b.iter().skip(skip).copied().collect()
 }
 
 /// An EBML size, in the fewest bytes (all-ones values are reserved for "unknown").
@@ -430,7 +432,7 @@ fn ebml_size(n: u64) -> Vec<u8> {
             let mut v = Vec::with_capacity(len as usize);
             let marked = n | (1u64 << (7 * len));
             let bytes = marked.to_be_bytes();
-            v.extend_from_slice(&bytes[(8 - len as usize)..]);
+            v.extend(bytes.iter().skip(8 - len as usize));
             return v;
         }
     }
@@ -454,7 +456,7 @@ fn el(id: u32, body: &[u8]) -> Vec<u8> {
 fn el_uint(id: u32, n: u64) -> Vec<u8> {
     let b = n.to_be_bytes();
     let skip = b.iter().take_while(|x| **x == 0).count().min(7);
-    el(id, &b[skip..])
+    el(id, b.get(skip..).unwrap_or_default())
 }
 
 fn el_float(id: u32, f: f64) -> Vec<u8> {
@@ -705,11 +707,8 @@ impl<W: Write + Seek> WebmWriter<W> {
 fn el_int_into(out: &mut Vec<u8>, id: u32, v: i64) {
     let b = v.to_be_bytes();
     // the fewest bytes that keep the sign
-    let mut skip = 0;
-    while skip < 7 && ((b[skip] == 0 && b[skip + 1] & 0x80 == 0) || (b[skip] == 0xff && b[skip + 1] & 0x80 != 0)) {
-        skip += 1;
-    }
-    out.extend_from_slice(&el(id, &b[skip..]));
+    let skip = b.windows(2).take(7).take_while(|w| matches!(w, [0, n] if n & 0x80 == 0) || matches!(w, [0xff, n] if n & 0x80 != 0)).count();
+    out.extend_from_slice(&el(id, b.get(skip..).unwrap_or_default()));
 }
 
 // ---------------------------------------------------------------- either container

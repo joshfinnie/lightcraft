@@ -15,6 +15,10 @@
 //! All gains are log2. A decoder recovers `log2(hdr + offset_hdr) − log2(sdr + offset_sdr)` as
 //! `min + (max − min) · (code / 255)^(1 / gamma)`, scaled by a weight in 0..1 that depends on how
 //! much headroom the display has between `base_headroom` and `alternate_headroom`.
+#![expect(
+    clippy::indexing_slicing,
+    reason = "per-channel values are fixed three-element arrays indexed below `channels()`, and the gain buffers are sized from the dimensions just checked"
+)]
 
 use crate::encode::{EncodeImage, EncodeMeta, Samples, jpeg_app_segments, xmp_segment};
 use crate::{ChromaSubsampling, Error, Format, Result, jpeg, jpeg_par};
@@ -592,7 +596,7 @@ pub fn encode_jpeg(base: &EncodeImage, gain: &GainImage, m: &GainMapMeta, qualit
     let sub = if sub == ChromaSubsampling::S422 { ChromaSubsampling::S420 } else { sub };
 
     let gain_segs = vec![(0xE1, xmp_segment(&m.to_gain_map_xmp())?), (0xE2, m.to_iso())];
-    let gain_jpeg = jpeg_par::encode(&gain.data, gain.width, gain.height, gain.channels, quality, ChromaSubsampling::S444, &gain_segs);
+    let gain_jpeg = jpeg_par::encode(&gain.data, gain.width, gain.height, gain.channels, quality, ChromaSubsampling::S444, &gain_segs)?;
 
     let xmp = merge_xmp(meta.xmp, &primary_description(gain_jpeg.len()));
     let mut segs = jpeg_app_segments(&EncodeMeta { xmp: Some(&xmp), ..*meta })?;
@@ -600,7 +604,7 @@ pub fn encode_jpeg(base: &EncodeImage, gain: &GainImage, m: &GainMapMeta, qualit
     iso_marker.extend_from_slice(&[0, 0, 0, 0]); // versions only: "this image has a gain map"
     segs.push((0xE2, iso_marker));
     segs.push((0xE2, mpf_placeholder()));
-    let mut primary = jpeg_par::encode(data, w, h, base.channels as usize, quality, sub, &segs);
+    let mut primary = jpeg_par::encode(data, w, h, base.channels as usize, quality, sub, &segs)?;
 
     // patch the MPF index: sizes, and the gain map's offset from the MPF endian field
     let markers = jpeg::parse_markers(&primary).ok_or_else(|| Error::Encode("gain map JPEG: primary image unreadable".into()))?;

@@ -108,9 +108,15 @@ impl Pixels {
             for c in px {
                 match c {
                     [g] => v.extend_from_slice(&[*g, *g, *g]),
-                    [g, a] => v.extend_from_slice(&[*g, *g, *g, *a][..out_ch]),
+                    [g, a] => {
+                        v.extend_from_slice(&[*g, *g, *g]);
+                        v.extend(alpha.then_some(*a));
+                    }
                     [r, g, b] => v.extend_from_slice(&[*r, *g, *b]),
-                    [r, g, b, a, ..] => v.extend_from_slice(&[*r, *g, *b, *a][..out_ch]),
+                    [r, g, b, a, ..] => {
+                        v.extend_from_slice(&[*r, *g, *b]);
+                        v.extend(alpha.then_some(*a));
+                    }
                     [] => {}
                 }
             }

@@ -8,6 +8,10 @@
 //! cached previews, embedded camera JPEGs) go through [`DisplayProfile::from_srgb`] instead.
 //!
 //! All conversions are relative colorimetric: the display's white is the image's white.
+#![expect(
+    clippy::indexing_slicing,
+    reason = "three fixed 256-entry curve tables indexed by 8-bit samples, and the fixed 3 × 3 primaries measured from them"
+)]
 
 use std::sync::Arc;
 

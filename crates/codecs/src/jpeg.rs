@@ -46,14 +46,13 @@ pub(crate) fn parse_markers(b: &[u8]) -> Option<Markers> {
     }
     let mut m = Markers::default();
     let mut icc_chunks: Vec<(u8, &[u8])> = Vec::new();
-    let mut p = 2;
-    while p + 4 <= b.len() {
-        if b[p] != 0xFF {
+    let mut p = 2usize;
+    while let Some(&[lead, marker, l0, l1]) = b.get(p..p.saturating_add(4)) {
+        if lead != 0xFF {
             // Tolerate garbage between segments: resync on the next 0xFF.
             p += 1;
             continue;
         }
-        let marker = b[p + 1];
         if marker == 0xFF {
             p += 1;
             continue;
@@ -70,24 +69,28 @@ pub(crate) fn parse_markers(b: &[u8]) -> Option<Markers> {
             m.scan_offset = p;
             break;
         }
-        let len = u16::from_be_bytes([b[p + 2], b[p + 3]]) as usize;
+        let len = u16::from_be_bytes([l0, l1]) as usize;
         if len < 2 {
             return None;
         }
         let start = p + 4;
         let end = (p + 2 + len).min(b.len());
-        let seg = &b[start..end];
+        let seg = b.get(start..end).unwrap_or_default();
         match marker {
-            0xC0..=0xCF if marker != 0xC4 && marker != 0xC8 && marker != 0xCC && seg.len() >= 6 && m.components == 0 => {
-                m.precision = seg[0];
-                m.sof = marker;
-                m.height = u16::from_be_bytes([seg[1], seg[2]]) as u32;
-                m.width = u16::from_be_bytes([seg[3], seg[4]]) as u32;
-                m.components = seg[5];
+            0xC0..=0xCF if marker != 0xC4 && marker != 0xC8 && marker != 0xCC && m.components == 0 => {
+                if let [precision, h0, h1, w0, w1, components, ..] = *seg {
+                    m.precision = precision;
+                    m.sof = marker;
+                    m.height = u16::from_be_bytes([h0, h1]) as u32;
+                    m.width = u16::from_be_bytes([w0, w1]) as u32;
+                    m.components = components;
+                }
             }
             0xE1 => {
-                if seg.starts_with(b"Exif\0\0") && m.exif.is_none() {
-                    m.exif = Some(seg[6..].to_vec());
+                if let Some(exif) = seg.strip_prefix(b"Exif\0\0")
+                    && m.exif.is_none()
+                {
+                    m.exif = Some(exif.to_vec());
                     m.exif_offset = start + 6;
                 } else if let Some(x) = seg.strip_prefix(b"http://ns.adobe.com/xap/1.0/\0")
                     && m.xmp.is_none()
@@ -96,18 +99,22 @@ pub(crate) fn parse_markers(b: &[u8]) -> Option<Markers> {
                 }
             }
             0xE2 => {
-                if seg.starts_with(b"ICC_PROFILE\0") && seg.len() >= 14 {
-                    icc_chunks.push((seg[12], &seg[14..]));
-                } else if seg.starts_with(b"MPF\0") && m.mpf.is_none() {
-                    m.mpf = Some((start + 4, seg[4..].to_vec()));
+                if let Some(&[seq, _count, ref chunk @ ..]) = seg.strip_prefix(b"ICC_PROFILE\0") {
+                    icc_chunks.push((seq, chunk));
+                } else if let Some(mpf) = seg.strip_prefix(b"MPF\0")
+                    && m.mpf.is_none()
+                {
+                    m.mpf = Some((start + 4, mpf.to_vec()));
                 } else if let Some(p) = seg.strip_prefix(crate::gainmap::ISO_URN)
                     && m.iso_gainmap.is_none()
                 {
                     m.iso_gainmap = Some(p.to_vec());
                 }
             }
-            0xEE if seg.starts_with(b"Adobe") && seg.len() >= 12 => {
-                m.adobe_transform = Some(seg[11]);
+            0xEE if seg.starts_with(b"Adobe") => {
+                if let Some(&transform) = seg.get(11) {
+                    m.adobe_transform = Some(transform);
+                }
             }
             _ => {}
         }
@@ -163,7 +170,9 @@ fn reaches_eoi(b: &[u8]) -> bool {
             0xFF => p.saturating_add(1),
             0x00 | 0x01 | 0xD0..=0xD8 => p.saturating_add(2),
             _ => {
-                let Some(len) = b.get(p.saturating_add(2)..p.saturating_add(4)).map(|l| u16::from_be_bytes([l[0], l[1]]) as usize) else {
+                let Some(len) =
+                    b.get(p.saturating_add(2)..p.saturating_add(4)).and_then(|l| l.try_into().ok()).map(|l| u16::from_be_bytes(l) as usize)
+                else {
                     return false;
                 };
                 if len < 2 {
@@ -305,8 +314,10 @@ pub(crate) fn embedded_thumbnail(bytes: &[u8], max_edge: u32, min_edge: u32) -> 
     let summary = m.exif.as_deref().map(exif::summarize).unwrap_or_default();
     let orientation = summary.orientation.unwrap_or(1);
     let mut candidates: Vec<(&[u8], ThumbnailSource)> = Vec::new();
-    if let (Some(ex), Some((o, l))) = (m.exif.as_deref(), summary.thumbnail) {
-        candidates.push((&ex[o..o + l], ThumbnailSource::ExifThumbnail));
+    if let (Some(ex), Some((o, l))) = (m.exif.as_deref(), summary.thumbnail)
+        && let Some(thumb) = ex.get(o..o.saturating_add(l))
+    {
+        candidates.push((thumb, ThumbnailSource::ExifThumbnail));
     }
     for e in mpf_images(&m) {
         if e.kind == MPF_GAIN_MAP {
@@ -371,11 +382,10 @@ pub(crate) fn mpf_images(m: &Markers) -> Vec<MpfEntry> {
         if i == 0 {
             continue;
         }
-        let rd = |o: usize| {
-            let a = [rec[o], rec[o + 1], rec[o + 2], rec[o + 3]];
-            if data.starts_with(b"II") { u32::from_le_bytes(a) } else { u32::from_be_bytes(a) }
-        };
-        let (attr, size, off) = (rd(0), rd(4) as usize, rd(8) as usize);
+        let rd = |a: [u8; 4]| if data.starts_with(b"II") { u32::from_le_bytes(a) } else { u32::from_be_bytes(a) };
+        // attribute, size, offset, dependent images
+        let &[attr, size, off, _] = rec.as_chunks::<4>().0 else { continue };
+        let (attr, size, off) = (rd(attr), rd(size) as usize, rd(off) as usize);
         if size > 0 && off > 0 {
             out.push(MpfEntry { offset: base.saturating_add(off), len: size, kind: attr & 0x00FF_FFFF });
         }

@@ -51,7 +51,10 @@ pub(crate) fn decode(bytes: &[u8], opts: &DecodeOptions) -> Result<Decoded> {
     let exif = info.exif_metadata.as_ref().map(|e| {
         let e = e.to_vec();
         // Some writers keep the JPEG "Exif\0\0" prefix.
-        if e.starts_with(b"Exif\0\0") { e[6..].to_vec() } else { e }
+        match e.strip_prefix(b"Exif\0\0") {
+            Some(tiff) => tiff.to_vec(),
+            None => e,
+        }
     });
     let meta = Meta { icc: info.icc_profile.as_ref().map(|c| c.to_vec()), exif, xmp, hint: container_hint(info), ..Default::default() };
     finish(F, raw, meta, (w, h), opts)
@@ -65,13 +68,14 @@ pub(crate) fn header(b: &[u8]) -> Result<(u32, u32, u16)> {
     if !b.starts_with(b"\x89PNG\r\n\x1a\n") {
         return Err(err("bad signature"));
     }
-    let be32 = |p: usize| b.get(p..p.checked_add(4)?).map(|v| u32::from_be_bytes([v[0], v[1], v[2], v[3]]));
+    let be32 = |p: usize| -> Option<u32> { Some(u32::from_be_bytes(b.get(p..p.checked_add(4)?)?.try_into().ok()?)) };
     if be32(8) != Some(13) || b.get(12..16) != Some(b"IHDR") {
         return Err(err("missing IHDR"));
     }
-    let ihdr = b.get(16..29).ok_or_else(|| err("truncated IHDR"))?;
-    let (w, h) = (u32::from_be_bytes([ihdr[0], ihdr[1], ihdr[2], ihdr[3]]), u32::from_be_bytes([ihdr[4], ihdr[5], ihdr[6], ihdr[7]]));
-    let (depth, color, compression, filter, interlace) = (ihdr[8], ihdr[9], ihdr[10], ihdr[11], ihdr[12]);
+    let Some(&[w0, w1, w2, w3, h0, h1, h2, h3, depth, color, compression, filter, interlace]) = b.get(16..29) else {
+        return Err(err("truncated IHDR"));
+    };
+    let (w, h) = (u32::from_be_bytes([w0, w1, w2, w3]), u32::from_be_bytes([h0, h1, h2, h3]));
     if w > i32::MAX as u32 || h > i32::MAX as u32 {
         return Err(err("dimensions out of range"));
     }

@@ -27,12 +27,11 @@ impl<'a> Tiff<'a> {
         Some(Tiff { data, le })
     }
     pub fn u16_at(&self, pos: usize) -> Option<u16> {
-        let b = self.data.get(pos..pos.checked_add(2)?)?;
-        Some(if self.le { u16::from_le_bytes([b[0], b[1]]) } else { u16::from_be_bytes([b[0], b[1]]) })
+        let b: [u8; 2] = self.data.get(pos..pos.checked_add(2)?)?.try_into().ok()?;
+        Some(if self.le { u16::from_le_bytes(b) } else { u16::from_be_bytes(b) })
     }
     pub fn u32_at(&self, pos: usize) -> Option<u32> {
-        let b = self.data.get(pos..pos.checked_add(4)?)?;
-        let a = [b[0], b[1], b[2], b[3]];
+        let a: [u8; 4] = self.data.get(pos..pos.checked_add(4)?)?.try_into().ok()?;
         Some(if self.le { u32::from_le_bytes(a) } else { u32::from_be_bytes(a) })
     }
     pub fn first_ifd(&self) -> Option<usize> {
@@ -111,7 +110,7 @@ pub(crate) fn summarize(blob: &[u8]) -> ExifSummary {
         let len = e1.iter().find(|e| e.tag == 0x0202).and_then(|e| t.uint(e));
         if let (Some(o), Some(l)) = (off, len) {
             let (o, l) = (o as usize, l as usize);
-            if l > 4 && o.checked_add(l).is_some_and(|end| end <= blob.len()) && blob[o..o + 2] == [0xFF, 0xD8] {
+            if l > 4 && o.checked_add(l).is_some_and(|end| end <= blob.len()) && blob.get(o..).is_some_and(|j| j.starts_with(&[0xFF, 0xD8])) {
                 s.thumbnail = Some((o, l));
             }
         }

@@ -18,6 +18,7 @@
 #![forbid(unsafe_code)]
 #![cfg_attr(test, allow(clippy::disallowed_methods))]
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
+#![deny(clippy::indexing_slicing)]
 
 mod convert;
 pub mod display;
@@ -144,7 +145,7 @@ impl Decoded {
             let a = alpha.map(|a| a.row(y));
             for (x, (o, p)) in row.iter_mut().zip(src).enumerate() {
                 let q = if ident { *p } else { mat_apply(&m, *p) };
-                let al = a.map(|a| (a[x].clamp(0.0, 1.0) * 255.0 + 0.5) as u8).unwrap_or(255);
+                let al = a.and_then(|a| a.get(x)).map_or(255, |a| (a.clamp(0.0, 1.0) * 255.0 + 0.5) as u8);
                 *o = [enc(q[0]), enc(q[1]), enc(q[2]), al];
             }
         });

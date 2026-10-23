@@ -1,5 +1,9 @@
 //! Shared tail of every decoder: interpret device samples (with ICC / container hints), linearize,
 //! split alpha, and optionally downscale in linear light.
+#![expect(
+    clippy::indexing_slicing,
+    reason = "converts buffers `finish` has checked against width × height × samples; the 8- and 16-bit lookup tables have an entry for every sample value"
+)]
 
 use crate::icc::{self, IccColorModel, IccKind};
 use crate::space::{NamedSpace, SourceSpace, SpaceOrigin, Trc};

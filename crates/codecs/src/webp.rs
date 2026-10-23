@@ -22,7 +22,10 @@ pub(crate) fn decode(bytes: &[u8], opts: &DecodeOptions) -> Result<Decoded> {
     let mut buf = vec![0u8; size];
     d.read_image(&mut buf).map_err(err)?;
     let icc = d.icc_profile().ok().flatten();
-    let exif = d.exif_metadata().ok().flatten().map(|e| if e.starts_with(b"Exif\0\0") { e[6..].to_vec() } else { e });
+    let exif = d.exif_metadata().ok().flatten().map(|e| match e.strip_prefix(b"Exif\0\0") {
+        Some(tiff) => tiff.to_vec(),
+        None => e,
+    });
     let xmp = d.xmp_metadata().ok().flatten().map(|x| String::from_utf8_lossy(&x).trim_end_matches('\0').to_string());
     let raw = Raw { width: w as usize, height: h as usize, model: Model::Rgb, alpha, premultiplied: false, buf: Buf::U8(buf), bit_depth: 8 };
     finish(F, raw, Meta { icc, exif, xmp, ..Default::default() }, (w, h), opts)
@@ -36,9 +39,10 @@ pub(crate) fn header(bytes: &[u8]) -> Result<(u32, u32, u16)> {
     let mut p = 12usize;
     loop {
         let Some(h) = bytes.get(p..p.saturating_add(8)) else { return Err(err("no image data")) };
-        let size = u32::from_le_bytes([h[4], h[5], h[6], h[7]]) as usize;
+        let Ok([a, b, c, d, s0, s1, s2, s3]) = <[u8; 8]>::try_from(h) else { return Err(err("no image data")) };
+        let size = u32::from_le_bytes([s0, s1, s2, s3]) as usize;
         let end = p.saturating_add(8).saturating_add(size);
-        if matches!(&h[0..4], b"VP8 " | b"VP8L" | b"ANMF") {
+        if matches!(&[a, b, c, d], b"VP8 " | b"VP8L" | b"ANMF") {
             if end > bytes.len() {
                 return Err(err("truncated image data"));
             }

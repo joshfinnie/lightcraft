@@ -112,12 +112,14 @@ pub(crate) fn decode(bytes: &[u8], opts: &DecodeOptions) -> Result<Decoded> {
     let to_2020 = lightcraft_color::SRGB.to_space(&lightcraft_color::REC2020).to_f32();
     for px in src.chunks_exact(ch) {
         let start = v.len();
-        v.extend_from_slice(&px[..keep.min(ch)]);
+        v.extend_from_slice(px.get(..keep).unwrap_or(px));
         if keep > ch {
             v.push(1.0);
         }
-        if via_srgb && let Some(rgb) = v.get_mut(start..start + 3) {
-            let [r, g, b] = [rgb[0], rgb[1], rgb[2]];
+        if via_srgb
+            && let Some(rgb) = v.get_mut(start..start + 3)
+            && let Ok([r, g, b]) = <[f32; 3]>::try_from(&*rgb)
+        {
             for (o, m) in rgb.iter_mut().zip(&to_2020) {
                 *o = m[0] * r + m[1] * g + m[2] * b;
             }

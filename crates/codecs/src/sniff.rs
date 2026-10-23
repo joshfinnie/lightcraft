@@ -102,22 +102,22 @@ pub fn sniff(b: &[u8]) -> Option<Format> {
     if b.starts_with(b"GIF87a") || b.starts_with(b"GIF89a") {
         return Some(Format::Gif);
     }
-    if b.len() >= 12 && &b[0..4] == b"RIFF" && &b[8..12] == b"WEBP" {
+    if b.starts_with(b"RIFF") && b.get(8..12) == Some(b"WEBP".as_slice()) {
         return Some(Format::WebP);
     }
     if b.starts_with(&[0xFF, 0x0A]) || b.starts_with(&[0, 0, 0, 0x0C, b'J', b'X', b'L', b' ', 0x0D, 0x0A, 0x87, 0x0A]) {
         return Some(Format::Jxl);
     }
-    if b.starts_with(b"8BPS") && b.len() >= 6 && matches!(u16::from_be_bytes([b[4], b[5]]), 1 | 2) {
+    if b.starts_with(b"8BPS") && matches!(b.get(4..6), Some([0, 1 | 2])) {
         return Some(Format::Psd);
     }
     if b.starts_with(b"FUJIFILMCCD-RAW") || b.starts_with(b"\0MRM") || b.starts_with(b"FOVb") {
         return Some(Format::RawOther);
     }
-    if b.len() >= 14 && &b[0..2] == b"II" && &b[6..14] == b"HEAPCCDR" {
+    if b.starts_with(b"II") && b.get(6..14) == Some(b"HEAPCCDR".as_slice()) {
         return Some(Format::RawOther);
     }
-    if b.len() >= 12 && &b[4..8] == b"ftyp" {
+    if b.len() >= 12 && b.get(4..8) == Some(b"ftyp".as_slice()) {
         return sniff_bmff(b);
     }
     if b.starts_with(b"IIRO") || b.starts_with(b"IIRS") || b.starts_with(b"MMOR") || b.starts_with(b"IIU\0") {
@@ -131,8 +131,8 @@ pub fn sniff(b: &[u8]) -> Option<Format> {
         return Some(Format::Tiff);
     }
     if b.len() >= 26 && b.starts_with(b"BM") {
-        let dib = u32::from_le_bytes([b[14], b[15], b[16], b[17]]);
-        if matches!(dib, 12 | 16 | 40 | 52 | 56 | 64 | 108 | 124) {
+        let dib = b.get(14..18).and_then(|d| <[u8; 4]>::try_from(d).ok()).map(u32::from_le_bytes);
+        if matches!(dib, Some(12 | 16 | 40 | 52 | 56 | 64 | 108 | 124)) {
             return Some(Format::Bmp);
         }
     }
@@ -140,14 +140,11 @@ pub fn sniff(b: &[u8]) -> Option<Format> {
 }
 
 fn sniff_bmff(b: &[u8]) -> Option<Format> {
-    let size = u32::from_be_bytes([b[0], b[1], b[2], b[3]]) as usize;
-    let end = size.clamp(12, b.len().min(4096));
-    let mut brands: Vec<&[u8]> = vec![&b[8..12]];
-    let mut p = 16;
-    while p + 4 <= end {
-        brands.push(&b[p..p + 4]);
-        p += 4;
-    }
+    let size = b.get(..4).and_then(|s| <[u8; 4]>::try_from(s).ok()).map_or(0, u32::from_be_bytes) as usize;
+    let end = size.max(12).min(b.len()).min(4096);
+    // the major brand, then the compatible brands after the minor version
+    let compatible = b.get(16..end).unwrap_or_default().as_chunks::<4>().0.iter().map(|c| c.as_slice());
+    let brands: Vec<&[u8]> = b.get(8..12).into_iter().chain(compatible).collect();
     let has = |x: &[u8]| brands.contains(&x);
     if has(b"crx ") {
         return Some(Format::RawOther);
@@ -168,7 +165,7 @@ fn sniff_bmff(b: &[u8]) -> Option<Format> {
 /// photometric or raw-only compressions in IFD0 or its SubIFDs, or a camera Make with 10–16-bit data
 /// and no ordinary photometric.
 fn tiff_is_raw(b: &[u8]) -> bool {
-    if b.len() >= 10 && &b[8..10] == b"CR" {
+    if b.get(8..10) == Some(b"CR".as_slice()) {
         return true;
     }
     let Some(t) = Tiff::new(b) else { return false };

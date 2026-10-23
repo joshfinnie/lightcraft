@@ -1,6 +1,7 @@
 //! Encoders: JPEG (`jpeg-encoder`), PNG (`png`), TIFF (`tiff`), flat PSD (our own), lossless WebP (`image-webp`) and,
 //! on native targets with the `avif` feature, AVIF (`ravif`/`rav1e`); JPEG XL is in `jxl_encode`.
 //! Metadata (ICC/EXIF/XMP) is embedded where the format allows.
+#![expect(clippy::indexing_slicing, reason = "encodes images `EncodeImage::validate` has checked against width × height × channels")]
 
 use crate::{Error, Result};
 use lightcraft_raster::Rgba8;
@@ -140,7 +141,7 @@ pub fn encode_jpeg(img: &EncodeImage, quality: u8, subsampling: ChromaSubsamplin
         let segs = jpeg_app_segments(meta)?;
         let ch = if img.channels == 2 { 1 } else { img.channels as usize };
         // `data` is already gray for 2-channel input (see above)
-        return Ok(crate::jpeg_par::encode(&data, img.width as usize, img.height as usize, ch, quality, subsampling, &segs));
+        return crate::jpeg_par::encode(&data, img.width as usize, img.height as usize, ch, quality, subsampling, &segs);
     }
     let mut out = Vec::new();
     let mut enc = jpeg_encoder::Encoder::new(&mut out, quality.clamp(1, 100));

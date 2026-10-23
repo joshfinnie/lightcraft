@@ -68,10 +68,15 @@ pub(crate) fn decode(bytes: &[u8], opts: &DecodeOptions) -> Result<Decoded> {
             Buf::U16(v) => v.iter().map(|&i| i as usize).collect(),
             Buf::F32(_) => return Err(err("float palette")),
         };
+        // the red, green and blue tables, one after the other
+        let (reds, rest) = map.split_at(entries);
+        let (greens, blues) = rest.split_at(entries);
         let mut out = Vec::with_capacity(n * 3);
         for &i in idx.iter().take(n) {
             let i = i.min(entries - 1);
-            out.extend_from_slice(&[map[i], map[entries + i], map[2 * entries + i]]);
+            if let (Some(&r), Some(&g), Some(&b)) = (reds.get(i), greens.get(i), blues.get(i)) {
+                out.extend_from_slice(&[r, g, b]);
+            }
         }
         buf = Buf::U16(out);
         let raw = Raw { width: wu, height: hu, model: Model::Rgb, alpha: false, premultiplied: false, buf, bit_depth };
@@ -210,13 +215,13 @@ fn unpack(packed: &[u8], width: usize, height: usize, samples: usize, bits: u8) 
 
 fn interleave(buf: Buf, n: usize, s: usize) -> Buf {
     fn go<T: Copy + Default>(v: Vec<T>, n: usize, s: usize) -> Vec<T> {
-        if v.len() < n * s {
+        if n == 0 || s == 0 || v.len() < n * s {
             return v;
         }
         let mut out = vec![T::default(); n * s];
-        for c in 0..s {
-            for i in 0..n {
-                out[i * s + c] = v[c * n + i];
+        for (c, plane) in v.chunks_exact(n).take(s).enumerate() {
+            for (o, &x) in out.iter_mut().skip(c).step_by(s).zip(plane) {
+                *o = x;
             }
         }
         out
@@ -230,12 +235,12 @@ fn interleave(buf: Buf, n: usize, s: usize) -> Buf {
 
 fn select_channels(buf: Buf, n: usize, s: usize, keep: usize) -> Buf {
     fn go<T: Copy>(v: Vec<T>, n: usize, s: usize, keep: usize) -> Vec<T> {
-        if v.len() < n * s {
+        if s == 0 || v.len() < n * s {
             return v;
         }
         let mut out = Vec::with_capacity(n * keep);
         for px in v.chunks_exact(s).take(n) {
-            out.extend_from_slice(&px[..keep]);
+            out.extend_from_slice(px.get(..keep).unwrap_or(px));
         }
         out
     }
@@ -243,5 +248,33 @@ fn select_channels(buf: Buf, n: usize, s: usize, keep: usize) -> Buf {
         Buf::U8(v) => Buf::U8(go(v, n, s, keep)),
         Buf::U16(v) => Buf::U16(go(v, n, s, keep)),
         Buf::F32(v) => Buf::F32(go(v, n, s, keep)),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn bytes(b: Buf) -> Vec<u8> {
+        match b {
+            Buf::U8(v) => v,
+            _ => panic!("not 8-bit"),
+        }
+    }
+
+    #[test]
+    fn planes_interleave_and_extra_channels_drop() {
+        // two pixels, three planes
+        assert_eq!(bytes(interleave(Buf::U8(vec![1, 2, 10, 20, 30, 40]), 2, 3)), [1, 10, 30, 2, 20, 40]);
+        assert_eq!(bytes(select_channels(Buf::U8(vec![1, 2, 3, 4, 5, 6, 7, 8]), 2, 4, 3)), [1, 2, 3, 5, 6, 7]);
+    }
+
+    /// A header claiming no samples per pixel, or no pixels, leaves the samples as they are instead of panicking.
+    #[test]
+    fn no_samples_or_no_pixels_leave_the_buffer_alone() {
+        assert_eq!(bytes(select_channels(Buf::U8(vec![1, 2, 3]), 3, 0, 1)), [1, 2, 3]);
+        assert_eq!(bytes(interleave(Buf::U8(vec![1, 2, 3]), 3, 0)), [1, 2, 3]);
+        assert_eq!(bytes(interleave(Buf::U8(vec![1, 2, 3]), 0, 3)), [1, 2, 3]);
+        assert_eq!(bytes(select_channels(Buf::U8(vec![1, 2]), 2, 3, 1)), [1, 2], "too short for the layout");
     }
 }
