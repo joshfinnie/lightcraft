@@ -138,6 +138,23 @@ pub fn entry_span(data: &[u8], pos: usize, order: ByteOrder, bigtiff: bool, base
     (end <= data.len() as u64).then_some(EntrySpan { tag, field_type, count, start, len })
 }
 
+/// Whether every entry of the first IFD has its values inside `data`: `count × size` bytes for a known field type, at
+/// least `count` bytes for another. A decoder that reserves memory for an entry's values before it reads them (the
+/// `tiff` crate does, sized by the count alone) then reserves no more than the data can hold. `false` for data that
+/// isn't TIFF or whose first IFD can't be read.
+pub fn first_ifd_values_fit(data: &[u8]) -> bool {
+    let Ok((order, bigtiff, first)) = header(data) else { return false };
+    let Ok(dir) = directory_entries(data, first, order, bigtiff, usize::MAX) else { return false };
+    dir.positions().all(|pos| match pos.checked_add(2).and_then(|at| order.read_u16(data, at)).map(FieldType::from_u16) {
+        Some(Some(_)) => entry_span(data, pos, order, bigtiff, 0).is_some(),
+        Some(None) => {
+            let count = pos.checked_add(4).and_then(|at| if bigtiff { order.read_u64(data, at) } else { order.read_u32(data, at).map(u64::from) });
+            count.is_some_and(|n| n <= data.len() as u64)
+        }
+        None => false,
+    })
+}
+
 /// Whether a directory declaring `declared` entries was read whole (`read` entries), so that its next-IFD pointer
 /// follows them. The counts compare as 64-bit numbers: narrowing the declared count to `usize` instead would, on a
 /// 32-bit target, let a BigTIFF declaring 4,294,967,297 entries but holding one pass for a whole directory.
@@ -396,6 +413,39 @@ mod tests {
             assert_eq!(whole.ifds.len(), 2, "{order:?}");
             assert_eq!(whole.ifds[1].u64(0x0101), Some(8));
         }
+    }
+
+    /// A classic little-endian TIFF with one IFD at 8 holding `entries` (tag, type, count, value field).
+    fn one_ifd(entries: &[(u16, u16, u32, u32)], tail: usize) -> Vec<u8> {
+        let o = ByteOrder::Little;
+        let mut d = b"II*\0".to_vec();
+        o.put_u32(&mut d, 8);
+        o.put_u16(&mut d, entries.len() as u16);
+        for &(tag, typ, count, value) in entries {
+            o.put_u16(&mut d, tag);
+            o.put_u16(&mut d, typ);
+            o.put_u32(&mut d, count);
+            o.put_u32(&mut d, value);
+        }
+        o.put_u32(&mut d, 0);
+        d.resize(d.len() + tail, 0);
+        d
+    }
+
+    /// The fuzzers' 686-byte TIFF had a ColorMap declaring 252 million SHORTs, and the `tiff` crate reserved 8 GB for
+    /// them before reading any: an entry whose values can't be in the file is caught first.
+    #[test]
+    fn entries_whose_values_run_past_the_data_are_caught() {
+        let fits = one_ifd(&[(0x0100, 3, 1, 8), (0x0140, 3, 6, 26)], 12);
+        assert!(first_ifd_values_fit(&fits));
+        assert!(!first_ifd_values_fit(&one_ifd(&[(0x0100, 3, 1, 8), (0x0140, 3, 0x0F11_1201, 26)], 12)), "ColorMap past the end");
+        assert!(!first_ifd_values_fit(&one_ifd(&[(0x0140, 3, 6, u32::MAX)], 12)), "offset past the end");
+        assert!(!first_ifd_values_fit(&one_ifd(&[(0x0140, 4, u32::MAX, 26)], 12)), "count × size overflows");
+        // a field type this reader doesn't know: at least a byte per value
+        assert!(first_ifd_values_fit(&one_ifd(&[(0x9999, 99, 4, 0)], 0)));
+        assert!(!first_ifd_values_fit(&one_ifd(&[(0x9999, 99, 1 << 30, 0)], 0)));
+        assert!(!first_ifd_values_fit(b"not a tiff"));
+        assert!(!first_ifd_values_fit(&fits[..10]), "no first IFD");
     }
 
     #[test]

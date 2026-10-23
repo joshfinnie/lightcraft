@@ -14,8 +14,17 @@ fn err(e: impl std::fmt::Display) -> Error {
     Error::Malformed(F, e.to_string())
 }
 
+/// The `tiff` decoder, refusing first a file whose first IFD has a tag with more values than the file holds: the
+/// decoder reserves memory for a tag's values by its count alone (8 GB for a 686-byte file the fuzzers made).
+fn decoder<'a>(bytes: &'a [u8], opts: &DecodeOptions) -> Result<Decoder<std::io::Cursor<&'a [u8]>>> {
+    if !lightcraft_tiff::first_ifd_values_fit(bytes) {
+        return Err(err("a tag's values run past the end of the file"));
+    }
+    Ok(Decoder::new(std::io::Cursor::new(bytes)).map_err(err)?.with_limits(limits(opts)))
+}
+
 pub(crate) fn decode(bytes: &[u8], opts: &DecodeOptions) -> Result<Decoded> {
-    let mut d = Decoder::new(std::io::Cursor::new(bytes)).map_err(err)?.with_limits(limits(opts));
+    let mut d = decoder(bytes, opts)?;
     let (w, h) = d.dimensions().map_err(err)?;
     check_size(F, w as u64, h as u64, opts)?;
     let ct = d.colortype().map_err(err)?;
@@ -136,7 +145,7 @@ fn layout(ct: ColorType, compression: Option<u32>, planar: bool) -> Result<(Mode
 /// as a decode would refuse it: a layout or compression we can't decode, or strips/tiles that
 /// start past the end of the file (truncated). The compressed data itself is not checked.
 pub(crate) fn header(bytes: &[u8]) -> Result<(u32, u32, u16)> {
-    let mut d = Decoder::new(std::io::Cursor::new(bytes)).map_err(err)?.with_limits(limits(&DecodeOptions::default()));
+    let mut d = decoder(bytes, &DecodeOptions::default())?;
     let (w, h) = d.dimensions().map_err(err)?;
     check_size(F, w as u64, h as u64, &DecodeOptions::default())?;
     let ct = d.colortype().map_err(err)?;
@@ -267,6 +276,30 @@ mod tests {
         // two pixels, three planes
         assert_eq!(bytes(interleave(Buf::U8(vec![1, 2, 10, 20, 30, 40]), 2, 3)), [1, 10, 30, 2, 20, 40]);
         assert_eq!(bytes(select_channels(Buf::U8(vec![1, 2, 3, 4, 5, 6, 7, 8]), 2, 4, 3)), [1, 2, 3, 5, 6, 7]);
+    }
+
+    /// A 686-byte TIFF from the fuzzers declared a ColorMap of 252 million values, and the `tiff` decoder reserved 8 GB
+    /// for them before reading any (an out-of-memory abort, not an error): such a file is refused first.
+    #[test]
+    fn a_tag_with_more_values_than_the_file_is_refused() {
+        let o = lightcraft_tiff::ByteOrder::Little;
+        let mut d = b"II*\0".to_vec();
+        o.put_u32(&mut d, 8);
+        let entries: [(u16, u16, u32, u32); 5] =
+            [(0x0100, 3, 1, 4), (0x0101, 3, 1, 4), (0x0102, 3, 1, 8), (0x0106, 3, 1, 3), (0x0140, 3, 0x0F11_1201, 80)];
+        o.put_u16(&mut d, entries.len() as u16);
+        for (tag, typ, count, value) in entries {
+            o.put_u16(&mut d, tag);
+            o.put_u16(&mut d, typ);
+            o.put_u32(&mut d, count);
+            o.put_u32(&mut d, value);
+        }
+        o.put_u32(&mut d, 0);
+        d.resize(128, 0);
+        let e = crate::decode(&d, DecodeOptions::default()).unwrap_err().to_string();
+        assert!(e.contains("a tag's values run past the end of the file"), "{e}");
+        let e = header(&d).unwrap_err().to_string();
+        assert!(e.contains("a tag's values run past the end of the file"), "{e}");
     }
 
     /// A header claiming no samples per pixel, or no pixels, leaves the samples as they are instead of panicking.
