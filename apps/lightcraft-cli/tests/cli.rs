@@ -509,6 +509,43 @@ fn a_failed_run_step_names_its_error_code() {
     assert_eq!(codes, [(Some("no.such"), Some(false), Some("unknownCommand")), (Some("photo.rate"), Some(false), Some("badParams"))], "{lines:?}");
 }
 
+/// A file that can't be imported or written says what went wrong in its `code`: an agent tells a
+/// damaged file from an unsupported one, or a folder it may not write to, without reading the message.
+#[test]
+fn file_failures_name_their_problem() {
+    let dir = tmp("file-codes");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let notes = dir.join("notes.jpg");
+    std::fs::write(&notes, b"shopping list, not a photo").unwrap();
+    let cut = dir.join("cut.png");
+    gradient_png(&cut);
+    let png = std::fs::read(&cut).unwrap();
+    std::fs::write(&cut, &png[..20]).unwrap();
+    let paths = json!([notes.to_str().unwrap(), cut.to_str().unwrap()]).to_string();
+    let (ok, lines, err) = run_cli(&["--demo", "library.import", &format!("paths={paths}")], None);
+    assert!(ok, "{err}");
+    let failed = lines[0]["result"]["failed"].as_array().unwrap();
+    let codes: Vec<_> = failed.iter().map(|f| (f[0].as_str().unwrap(), f[2].as_str().unwrap())).collect();
+    assert_eq!(codes, [(notes.to_str().unwrap(), "unsupportedFile"), (cut.to_str().unwrap(), "corruptFile")], "{failed:?}");
+    assert!(failed.iter().all(|f| f[1].as_str().is_some_and(|m| !m.is_empty())), "the message stays second: {failed:?}");
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let locked = dir.join("locked");
+        std::fs::create_dir_all(&locked).unwrap();
+        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o555)).unwrap();
+        let out = locked.join("out.jpg");
+        let (ok, lines, _) = run_cli(&["--demo", "app.export", &format!("path={}", out.to_str().unwrap()), "width=40"], None);
+        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o755)).unwrap();
+        assert!(!ok);
+        assert_eq!(lines[0]["code"], "permissionDenied", "{lines:?}");
+        assert!(!out.exists());
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 #[test]
 fn run_subcommand_chains_commands_and_persists_a_library() {
     let input = tmp("run-in.png");

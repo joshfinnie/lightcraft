@@ -130,7 +130,7 @@ fn source_edge_needed(p: &Photo, settings: &DevelopSettings, apply_crop: bool, o
 }
 
 /// Decodes a file into a linear Rec.2020 image no larger than `max_edge` (set by the app).
-pub type FileLoader = Arc<dyn Fn(&str, usize) -> Result<(Rgb32f, SourceInfo), String> + Send + Sync>;
+pub type FileLoader = Arc<dyn Fn(&str, usize) -> crate::Result<(Rgb32f, SourceInfo)> + Send + Sync>;
 
 /// A raw file's embedded (camera-rendered) preview as display sRGB, oriented, no larger than
 /// `max_edge` (set by the app). `None`: no usable preview.
@@ -153,7 +153,7 @@ pub struct DenoiseSpec {
 
 /// Decodes a raw file once and develops it twice: as usual, and from the denoised picture in `spec` when that can be
 /// read (`None` when it cannot). Both are at most `max_edge` long and the same size.
-pub type PairLoader = Arc<dyn Fn(&str, usize, &DenoiseSpec) -> Result<(Rgb32f, Option<Rgb32f>, SourceInfo), String> + Send + Sync>;
+pub type PairLoader = Arc<dyn Fn(&str, usize, &DenoiseSpec) -> crate::Result<(Rgb32f, Option<Rgb32f>, SourceInfo)> + Send + Sync>;
 
 /// A photo's denoised picture next to its plain one, and the last mix of the two that was asked for.
 pub struct Twin {
@@ -266,11 +266,11 @@ pub enum SourceRef {
 }
 
 impl SourceRef {
-    pub fn load(&self) -> Result<Arc<Rgb32f>, String> {
+    pub fn load(&self) -> crate::Result<Arc<Rgb32f>> {
         self.load_source().map(|s| s.image)
     }
 
-    pub fn load_source(&self) -> Result<DecodedSource, String> {
+    pub fn load_source(&self) -> crate::Result<DecodedSource> {
         let image = match self {
             SourceRef::Loaded(a) => return Ok((**a).clone()),
             SourceRef::Fit { from, max_edge } => {
@@ -280,11 +280,11 @@ impl SourceRef {
                 let image = lightcraft_raster::resample::fit(&from.image, *max_edge, *max_edge, lightcraft_raster::resample::Filter::Box);
                 return Ok(DecodedSource { image: Arc::new(image), denoised: None, ..(**from).clone() });
             }
-            SourceRef::Demo { scene, max_edge } => crate::demo::scene_pixels(scene, *max_edge)?,
+            SourceRef::Demo { scene, max_edge } => crate::demo::scene_pixels(scene, *max_edge).map_err(crate::EngineError::Other)?,
             SourceRef::File { path, max_edge, loader, fallback, denoise } => {
                 let plain = || match loader {
                     Some(l) => l(path, *max_edge).map(|(image, info)| DecodedSource::new(Arc::new(image), Some(info))),
-                    None => Err(format!("no decoder available for {path}")),
+                    None => Err(crate::EngineError::Other(format!("no decoder available for {path}"))),
                 };
                 // the denoised picture comes with the plain one from a single decode; when it cannot be read the
                 // pair loader gives the plain picture alone (the cached file is never a reason to fail a render)
@@ -293,13 +293,15 @@ impl SourceRef {
                         // a job that needs the denoised picture has it made first; if that fails the job fails (no smart
                         // preview stands in: an export must not quietly come out without the denoise it was asked for)
                         let made = match &spec.make {
-                            Some(make) => make()?,
+                            Some(make) => make().map_err(crate::EngineError::Other)?,
                             None => true,
                         };
                         if made {
                             pair(path, *max_edge, spec).and_then(|(image, twin, info)| {
                                 if spec.make.is_some() && twin.is_none() {
-                                    return Err("the cached AI Denoise picture could not be read; clear the denoise cache and retry".into());
+                                    return Err(crate::EngineError::Other(
+                                        "the cached AI Denoise picture could not be read; clear the denoise cache and retry".into(),
+                                    ));
                                 }
                                 Ok(DecodedSource {
                                     image: Arc::new(image),
@@ -318,15 +320,15 @@ impl SourceRef {
                 return match (r, fallback) {
                     #[cfg(not(target_arch = "wasm32"))]
                     (Err(e), Some(sp)) if denoise.as_ref().is_none_or(|(spec, _)| spec.make.is_none()) && crate::smart::is_valid(sp) => {
-                        crate::smart::load(sp).map_err(|e2| format!("{e}; smart preview: {e2}"))
+                        crate::smart::load(sp).map_err(|e2| e.reworded(format!("{e}; smart preview: {e2}")))
                     }
                     (r, _) => r,
                 };
             }
             #[cfg(not(target_arch = "wasm32"))]
-            SourceRef::Smart { path } => return crate::smart::load(path),
+            SourceRef::Smart { path } => return crate::smart::load(path).map_err(crate::EngineError::Other),
             #[cfg(target_arch = "wasm32")]
-            SourceRef::Smart { .. } => return Err("smart previews are not available here".into()),
+            SourceRef::Smart { .. } => return Err(crate::EngineError::Other("smart previews are not available here".into())),
         };
         Ok(DecodedSource::new(image, None))
     }
@@ -769,7 +771,7 @@ pub struct RenderResult {
     pub photo: PhotoId,
     pub level: SourceLevel,
     pub key: u64,
-    pub rendered: Result<Rendered, String>,
+    pub rendered: crate::Result<Rendered>,
     /// Set when this job's render was tried on the GPU and fell back to the CPU: why
     /// ([`lightcraft_gpu::Fallback::Failed`]). The result is the CPU render either way.
     pub gpu_fallback: Option<String>,
@@ -870,12 +872,13 @@ impl RenderJob {
     /// for it is told, instead of waiting forever on a worker that died (the pool doesn't replace
     /// it, so a few such panics used to stop every render).
     pub fn run(self) -> RenderResult {
-        let failed = self.failed(String::new());
-        crate::guard::catch("the render", || self.run_unguarded()).unwrap_or_else(|e| RenderResult { rendered: Err(e), ..failed })
+        let failed = self.failed(crate::EngineError::Other(String::new()));
+        crate::guard::catch("the render", || self.run_unguarded())
+            .unwrap_or_else(|e| RenderResult { rendered: Err(crate::EngineError::Other(e)), ..failed })
     }
 
     /// This job's result when it fails with `e`.
-    fn failed(&self, e: String) -> RenderResult {
+    fn failed(&self, e: crate::EngineError) -> RenderResult {
         RenderResult {
             request_id: self.request_id,
             source_key: self.source_key,
@@ -955,7 +958,7 @@ impl RenderJob {
         let was_loaded = matches!(self.source, SourceRef::Loaded(_));
         // The app is closing (issue #620): nobody is left to show this, and quitting waits for the
         // jobs that are running. Without this, one that lost the GPU mid-way would render on the CPU.
-        let closing = || lightcraft_gpu::shutting_down().then(|| "LightCraft is closing".to_string());
+        let closing = || lightcraft_gpu::shutting_down().then(|| crate::EngineError::Cancelled("LightCraft is closing".into()));
         let source = match closing() {
             Some(e) => Err(e),
             None => self.source.load_source().and_then(|s| closing().map_or(Ok(s), Err)),
@@ -1105,7 +1108,7 @@ impl QuickJob {
             photo,
             level: SourceLevel::Thumb,
             key,
-            rendered: Err(e),
+            rendered: Err(crate::EngineError::Other(e)),
             gpu_fallback: None,
             loaded: None,
             quick: None,
@@ -1116,7 +1119,7 @@ impl QuickJob {
     fn run_unguarded(self) -> RenderResult {
         let (photo, key) = (self.photo, self.key);
         let request_id = self.request_id;
-        let done = |rendered: Result<Rendered, String>, quick| RenderResult {
+        let done = |rendered: crate::Result<Rendered>, quick| RenderResult {
             request_id,
             source_key: None,
             photo,
@@ -1146,7 +1149,7 @@ impl QuickJob {
             let r = job.run();
             return RenderResult { request_id, key, quick: Some(QuickSource::Small), ..r };
         }
-        done(Err("no quick preview".into()), None)
+        done(Err(crate::EngineError::Other("no quick preview".into())), None)
     }
 }
 
@@ -1578,8 +1581,8 @@ impl crate::Session {
     }
 
     /// Synchronous render (CLI, MCP, tests).
-    pub fn render_now(&mut self, id: PhotoId, max_w: usize, max_h: usize) -> Result<Rendered, String> {
-        let job = self.render_job(id, max_w, max_h, false, true).ok_or("no such photo")?;
+    pub fn render_now(&mut self, id: PhotoId, max_w: usize, max_h: usize) -> crate::Result<Rendered> {
+        let job = self.render_job(id, max_w, max_h, false, true).ok_or(lightcraft_catalog::CatalogError::NoPhoto(id))?;
         let r = job.run();
         self.accept(&r);
         r.rendered
@@ -1594,8 +1597,8 @@ impl crate::Session {
         max_h: usize,
         space: lightcraft_pipeline::OutputSpace,
         depth: lightcraft_pipeline::OutputDepth,
-    ) -> Result<Rendered, String> {
-        let r = self.export_job(id, max_w, max_h, space, depth)?.run();
+    ) -> crate::Result<Rendered> {
+        let r = self.export_job(id, max_w, max_h, space, depth).map_err(crate::EngineError::Other)?.run();
         self.accept(&r);
         r.rendered
     }
@@ -1672,7 +1675,7 @@ pub struct ProbeInfo {
     pub preview_only: Option<String>,
 }
 
-pub type FileProbe = Arc<dyn Fn(&str) -> Result<ProbeInfo, String> + Send + Sync>;
+pub type FileProbe = Arc<dyn Fn(&str) -> crate::Result<ProbeInfo> + Send + Sync>;
 
 #[cfg(test)]
 mod thumbnail_hash_tests {
@@ -1779,7 +1782,7 @@ mod thumbnail_hash_tests {
         let (key, level, source_key) = (job.key, job.level, job.source_key);
         let r = job.run();
         assert_eq!((r.request_id, r.photo, r.key, r.level, r.source_key), (42, PhotoId(1), key, level, source_key));
-        assert_eq!(r.rendered.err().as_deref(), Some("the render failed unexpectedly: decoder bug"));
+        assert_eq!(r.rendered.err().map(|e| e.to_string()).as_deref(), Some("the render failed unexpectedly: decoder bug"));
         let quick = QuickJob {
             request_id: 7,
             photo: PhotoId(1),
@@ -1790,7 +1793,7 @@ mod thumbnail_hash_tests {
         };
         let r = quick.run();
         assert_eq!((r.request_id, r.key), (7, 9));
-        assert_eq!(r.rendered.err().as_deref(), Some("the render failed unexpectedly: preview reader bug"));
+        assert_eq!(r.rendered.err().map(|e| e.to_string()).as_deref(), Some("the render failed unexpectedly: preview reader bug"));
     }
 }
 

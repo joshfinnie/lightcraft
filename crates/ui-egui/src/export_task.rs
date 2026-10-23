@@ -75,7 +75,7 @@ pub fn start(app: &mut LightcraftApp, items: Vec<PreparedExport>, opts: ExportOp
             let photos = after.run(&files, cancelled);
             (files, photos, cancelled)
         });
-        let _ = tx.send(r);
+        let _ = tx.send(r.map_err(String::from));
     };
     #[cfg(not(target_arch = "wasm32"))]
     std::thread::Builder::new().name("export".into()).spawn(work).map_err(|e| e.to_string())?;

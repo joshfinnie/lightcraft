@@ -29,8 +29,8 @@ use std::path::{Path, PathBuf};
 use lightcraft_catalog::{MediaKind, Op, Photo, PhotoId, Source};
 use serde::{Deserialize, Serialize};
 
-use crate::Session;
 use crate::media::ProbeInfo;
+use crate::{EngineError, Session};
 
 /// File extensions LightCraft imports (lower case).
 pub const EXTENSIONS: &[&str] = &[
@@ -190,6 +190,26 @@ pub struct Duplicate {
     pub existing_deleted: bool,
 }
 
+/// A file an import could not add, and why.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ImportFailure {
+    pub path: String,
+    pub error: crate::CommandError,
+}
+
+impl ImportFailure {
+    pub fn new(path: impl Into<String>, error: impl Into<crate::CommandError>) -> Self {
+        Self { path: path.into(), error: error.into() }
+    }
+}
+
+/// `[path, error, code]`: the pair it was before codes, with the code after.
+impl Serialize for ImportFailure {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> std::result::Result<S::Ok, S::Error> {
+        (&self.path, &self.error.message, self.error.kind.code()).serialize(s)
+    }
+}
+
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct ImportReport {
     pub imported: Vec<u64>,
@@ -204,8 +224,9 @@ pub struct ImportReport {
     /// imported (from its copy, or in place).
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub kept: Vec<Kept>,
-    /// (path, error)
-    pub failed: Vec<(String, String)>,
+    /// The files that could not be imported, serialized `[path, error, code]` (the error's
+    /// [`crate::ErrorKind::code`]).
+    pub failed: Vec<ImportFailure>,
     /// Files found after expanding folders.
     pub scanned: usize,
     /// Photos whose metadata/develop settings were read from an XMP sidecar (or embedded XMP).
@@ -481,13 +502,13 @@ pub fn launch_path(arg: &str, cwd: Option<&Path>, home: Option<&Path>, dcim: imp
 }
 
 /// Probe files (headers + content hash) as an import would.
-pub(crate) fn probe_paths(s: &Session, paths: &[String]) -> Vec<Result<ProbeInfo, String>> {
+pub(crate) fn probe_paths(s: &Session, paths: &[String]) -> Vec<crate::Result<ProbeInfo>> {
     let progress = ScanProgress::default();
     probe_all(s.media.file_probe.as_ref(), paths, &progress.done, &progress.cancel)
 }
 
 /// Probe files with `probe` (a clone of the session's file probe), off the session: on a worker thread.
-pub(crate) fn probe_with(probe: &crate::media::FileProbe, paths: &[String]) -> Vec<Result<ProbeInfo, String>> {
+pub(crate) fn probe_with(probe: &crate::media::FileProbe, paths: &[String]) -> Vec<crate::Result<ProbeInfo>> {
     let progress = ScanProgress::default();
     probe_all(Some(probe), paths, &progress.done, &progress.cancel)
 }
@@ -499,7 +520,7 @@ fn probe_all(
     paths: &[String],
     done: &std::sync::atomic::AtomicUsize,
     cancel: &std::sync::atomic::AtomicBool,
-) -> Vec<Result<ProbeInfo, String>> {
+) -> Vec<crate::Result<ProbeInfo>> {
     use std::sync::atomic::Ordering::Relaxed;
     let Some(probe) = probe.cloned() else {
         return paths
@@ -516,7 +537,7 @@ fn probe_all(
     {
         let n = workers(paths.len());
         if n > 1 {
-            let mut results: Vec<Option<Result<ProbeInfo, String>>> = vec![None; paths.len()];
+            let mut results: Vec<Option<crate::Result<ProbeInfo>>> = std::iter::repeat_with(|| None).take(paths.len()).collect();
             let next = std::sync::atomic::AtomicUsize::new(0);
             let out = std::sync::Mutex::new(&mut results);
             std::thread::scope(|sc| {
@@ -537,14 +558,14 @@ fn probe_all(
                     });
                 }
             });
-            return results.into_iter().map(|r| r.unwrap_or_else(|| Err("not probed".into()))).collect();
+            return results.into_iter().map(|r| r.unwrap_or_else(|| Err(crate::EngineError::Cancelled("not probed".into())))).collect();
         }
     }
     paths
         .iter()
         .map(|p| {
             if cancel.load(Relaxed) {
-                return Err("cancelled".into());
+                return Err(crate::EngineError::Cancelled("cancelled".into()));
             }
             let r = probe(p);
             done.fetch_add(1, Relaxed);
@@ -557,7 +578,7 @@ fn probe_all(
 /// new path. The copy is verified ([`crate::import_move::copy_new`]: a new file, synced and
 /// checked against `probe_hash`, the content hash the probe computed — or compared byte for byte
 /// with the source when there is none); a bad one is removed and the photo reported as failed.
-fn copy_into(dir: &Path, src: &str, name: Option<&str>, probe_hash: Option<&str>) -> Result<String, String> {
+fn copy_into(dir: &Path, src: &str, name: Option<&str>, probe_hash: Option<&str>) -> crate::Result<String> {
     let name = name
         .map(str::to_string)
         .unwrap_or_else(|| Path::new(src).file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| "photo".into()));
@@ -698,10 +719,12 @@ pub(crate) fn scan_files(mut input: ScanInput, files: Vec<String>, progress: &Sc
     let missing: Vec<String> = todo.iter().zip(&cached).filter(|(_, c)| c.is_none()).map(|(f, _)| f.clone()).collect();
     progress.done.store(todo.len() - missing.len(), Relaxed);
     let mut fresh = probe_all(input.probe.as_ref(), &missing, &progress.done, &progress.cancel).into_iter();
-    let probed: Vec<Result<ProbeInfo, String>> =
-        cached.into_iter().map(|c| c.map(Ok).unwrap_or_else(|| fresh.next().unwrap_or_else(|| Err("not probed".into())))).collect();
+    let probed: Vec<crate::Result<ProbeInfo>> = cached
+        .into_iter()
+        .map(|c| c.map(Ok).unwrap_or_else(|| fresh.next().unwrap_or_else(|| Err(EngineError::Cancelled("not probed".into())))))
+        .collect();
     crate::memory::release();
-    let mut probes: HashMap<String, Result<ProbeInfo, String>> = todo.into_iter().zip(probed).collect();
+    let mut probes: HashMap<String, crate::Result<ProbeInfo>> = todo.into_iter().zip(probed).collect();
     // (who in the library has a content that was probed: asked once the probes are in)
     let probed_hashes = probes.values().filter_map(|r| r.as_ref().ok()).filter_map(|info| info.content_hash.as_deref());
     let mut seen_hash: HashMap<String, Option<u64>> =
@@ -737,7 +760,7 @@ pub(crate) fn scan_files(mut input: ScanInput, files: Vec<String>, progress: &Sc
                 }
                 kept.insert(f, info);
             }
-            Some(Err(e)) => c.error = Some(e),
+            Some(Err(e)) => c.error = Some(e.to_string()),
             None => c.error = Some("not probed".into()),
         }
         out.push(c);
@@ -816,7 +839,7 @@ enum PreparedItem {
         reason: &'static str,
         hash: Option<String>,
     },
-    Failed(String, String),
+    Failed(String, EngineError),
     Kept(Kept),
     Ready(Box<ReadyFile>),
 }
@@ -1022,8 +1045,10 @@ impl ImportJob {
         // own, and `cancel` stops it too (a large library takes long enough to want both).
         self.read_total.fetch_add(missing.len(), Relaxed);
         let mut fresh = probe_all(self.probe.as_ref(), &missing, &self.read_done, cancel).into_iter();
-        let probed: Vec<Result<ProbeInfo, String>> =
-            cached.into_iter().map(|c| c.map(Ok).unwrap_or_else(|| fresh.next().unwrap_or_else(|| Err("not probed".into())))).collect();
+        let probed: Vec<crate::Result<ProbeInfo>> = cached
+            .into_iter()
+            .map(|c| c.map(Ok).unwrap_or_else(|| fresh.next().unwrap_or_else(|| Err(EngineError::Cancelled("not probed".into())))))
+            .collect();
         crate::memory::release();
         // Files are planned one by one, in order (duplicates, sidecars, names, folders); their
         // copies or moves — the slow part, reading and writing every byte and verifying it — are
@@ -1249,7 +1274,8 @@ fn run_transfers(
         }
         let path = t.path.clone();
         // last-resort guard: a panic is this file's failure, not the import's
-        let item = crate::guard::catch("import", || run_transfer(t, file_bytes)).unwrap_or_else(|e| PreparedItem::Failed(path, e));
+        let item =
+            crate::guard::catch("import", || run_transfer(t, file_bytes)).unwrap_or_else(|e| PreparedItem::Failed(path, EngineError::Other(e)));
         done.fetch_add(1, Relaxed);
         Some(item)
     };
@@ -1393,7 +1419,7 @@ pub fn commit_prepared(s: &mut Session, opts: &ImportOptions, now: &str, prepare
                     _ => report.duplicates.push(Duplicate { path, existing: existing.map(|i| i.0), reason, existing_deleted: trashed.is_some() }),
                 }
             }
-            PreparedItem::Failed(path, e) => report.failed.push((path, e)),
+            PreparedItem::Failed(path, e) => report.failed.push(ImportFailure::new(path, e)),
             PreparedItem::Kept(k) => report.kept.push(k),
             PreparedItem::Ready(r) => {
                 let ReadyFile { path, stored, info, sidecar, placed: pl } = *r;

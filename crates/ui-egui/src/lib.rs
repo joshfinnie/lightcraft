@@ -201,9 +201,9 @@ pub const SCREEN_PROFILE: &str = "screen";
 pub type PickFiles = Box<dyn FnMut() -> Vec<String>>;
 /// A save dialog: suggested file name → chosen path (`None` = cancelled).
 pub type SaveFile = Box<dyn FnMut(&str) -> Option<String>>;
-pub type WriteFn = Box<dyn FnMut(&str, &[u8]) -> Result<(), String>>;
+pub type WriteFn = Box<dyn FnMut(&str, &[u8]) -> lightcraft_engine::Result<()>>;
 /// A writer other threads can use (background export).
-pub type SharedWrite = std::sync::Arc<dyn Fn(&str, &[u8]) -> Result<(), String> + Send + Sync>;
+pub type SharedWrite = std::sync::Arc<dyn Fn(&str, &[u8]) -> lightcraft_engine::Result<()> + Send + Sync>;
 pub type PngEncode = Box<dyn Fn(&lightcraft_raster::Rgba8) -> Vec<u8>>;
 /// A folder chooser (`None` = cancelled).
 pub type PickFolder = Box<dyn FnMut() -> Option<String>>;

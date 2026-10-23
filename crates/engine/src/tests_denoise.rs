@@ -410,7 +410,7 @@ fn an_export_makes_its_picture_when_the_queue_has_not_and_never_comes_out_withou
     // no model: the export says so instead of leaving the denoise out
     x.s.execute("denoise.models.select", &json!({"id": null})).unwrap();
     let e = export_photo(&mut x.s, id, &o, 1).err().unwrap();
-    assert!(e.contains("no denoise model is chosen") && e.contains("ramp.dng"), "{e}");
+    assert!(e.to_string().contains("no denoise model is chosen") && e.to_string().contains("ramp.dng"), "{e}");
     set_amount(&mut x.s, 0.0);
     assert!(export_photo(&mut x.s, id, &o, 1).is_ok(), "without an amount nothing is asked of the model");
     let _ = std::fs::remove_dir_all(&x.dir);
@@ -426,7 +426,7 @@ fn a_model_that_fails_fails_the_export_and_is_not_retried_by_the_queue() {
     set_amount(&mut x.s, 80.0);
     let o = ExportOptions::from_json(&json!({"format": "png", "width": 100, "height": 100}));
     let e = export_photo(&mut x.s, id, &o, 1).err().unwrap();
-    assert!(e.contains("ramp.dng") && e.contains("the model went away"), "{e}");
+    assert!(e.to_string().contains("ramp.dng") && e.to_string().contains("the model went away"), "{e}");
     // the background job fails too, says why once and does not try again every frame
     for _ in 0..200 {
         x.s.execute("denoise.pump", &json!({"pace": "full"})).unwrap();
@@ -466,7 +466,7 @@ fn a_corrupt_cache_with_a_current_header_never_silently_exports_the_plain_photo(
     assert!(lightcraft_denoise::product::is_current(&spec.product, &spec.key), "header/length still look current");
     x.s.media.forget(id);
     let error = export_photo(&mut x.s, id, &options, 1).err().unwrap();
-    assert!(error.contains("AI Denoise picture could not be read"), "{error}");
+    assert!(error.to_string().contains("AI Denoise picture could not be read"), "{error}");
     let _ = std::fs::remove_dir_all(x.dir);
 }
 

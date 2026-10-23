@@ -45,7 +45,7 @@ pub use rules::{Match, Rule, RuleSet};
 use serde::{Deserialize, Serialize};
 pub use store::{FsStore, MemStore, Store};
 
-#[derive(Debug, thiserror::Error, PartialEq)]
+#[derive(Clone, Debug, thiserror::Error, PartialEq)]
 pub enum CatalogError {
     #[error("no such photo {0:?}")]
     NoPhoto(PhotoId),

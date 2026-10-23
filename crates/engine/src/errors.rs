@@ -31,6 +31,59 @@ impl AiModel {
     }
 }
 
+/// What went wrong with a file the work read or wrote.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum FileProblem {
+    /// The file (or its folder) is not there: moved, deleted, or on a disk that is not connected.
+    NotFound,
+    PermissionDenied,
+    /// The disk (or the browser's storage quota) is full.
+    DiskFull,
+    /// The volume is mounted read-only.
+    ReadOnly,
+    /// A format, or a variant of one, LightCraft does not read.
+    Unsupported,
+    /// The file is damaged or truncated.
+    Corrupt,
+    /// Larger than LightCraft opens (pixels, or a size the file claims).
+    TooLarge,
+    /// Any other input/output failure.
+    Io,
+}
+
+impl FileProblem {
+    /// The problem's `code` in an error reply.
+    pub fn code(self) -> &'static str {
+        match self {
+            Self::NotFound => "notFound",
+            Self::PermissionDenied => "permissionDenied",
+            Self::DiskFull => "diskFull",
+            Self::ReadOnly => "readOnly",
+            Self::Unsupported => "unsupportedFile",
+            Self::Corrupt => "corruptFile",
+            Self::TooLarge => "tooLarge",
+            Self::Io => "io",
+        }
+    }
+
+    const ALL: [Self; 8] =
+        [Self::NotFound, Self::PermissionDenied, Self::DiskFull, Self::ReadOnly, Self::Unsupported, Self::Corrupt, Self::TooLarge, Self::Io];
+
+    /// The problem an I/O error is.
+    pub fn of_io(e: &std::io::Error) -> Self {
+        use std::io::ErrorKind as K;
+        match e.kind() {
+            K::NotFound | K::NotADirectory => Self::NotFound,
+            K::PermissionDenied => Self::PermissionDenied,
+            K::StorageFull | K::QuotaExceeded => Self::DiskFull,
+            K::ReadOnlyFilesystem => Self::ReadOnly,
+            K::FileTooLarge => Self::TooLarge,
+            K::InvalidData | K::UnexpectedEof => Self::Corrupt,
+            _ => Self::Io,
+        }
+    }
+}
+
 /// The kind of an [`EngineError`] (or of an error a frontend raised itself: [`ErrorKind::Other`]).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum ErrorKind {
@@ -45,6 +98,8 @@ pub enum ErrorKind {
     Cancelled,
     /// The feature needs this model, which is not installed (or still downloading).
     ModelMissing(AiModel),
+    /// A file could not be read, decoded or written.
+    File(FileProblem),
     Other,
 }
 
@@ -61,6 +116,7 @@ impl ErrorKind {
             Self::LightroomCatalog => "lightroomCatalog",
             Self::Cancelled => "cancelled",
             Self::ModelMissing(_) => "modelMissing",
+            Self::File(problem) => problem.code(),
             Self::Other => "other",
         }
     }
@@ -72,10 +128,10 @@ impl ErrorKind {
         if code == "modelMissing" {
             return reply.get("model").and_then(Value::as_str).and_then(AiModel::from_id).map_or(Self::Other, Self::ModelMissing);
         }
-        Self::PLAIN.iter().copied().find(|k| k.code() == code).unwrap_or(Self::Other)
+        Self::PLAIN.iter().copied().chain(FileProblem::ALL.map(Self::File)).find(|k| k.code() == code).unwrap_or(Self::Other)
     }
 
-    /// Every kind but [`ErrorKind::ModelMissing`] (one per model).
+    /// Every kind but [`ErrorKind::ModelMissing`] (one per model) and [`ErrorKind::File`] (one per problem).
     const PLAIN: &[Self] = &[
         Self::UnknownCommand,
         Self::Disabled,
@@ -152,6 +208,76 @@ impl From<EngineError> for CommandError {
     }
 }
 
+impl EngineError {
+    /// A file problem, `msg` saying which file and what happened.
+    pub fn file(problem: FileProblem, msg: impl Into<String>) -> Self {
+        Self::File { problem, msg: msg.into() }
+    }
+
+    /// This error said differently: a file problem stays that problem, anything else becomes [`EngineError::Other`].
+    pub fn reworded(&self, msg: impl Into<String>) -> Self {
+        match self {
+            Self::File { problem, .. } => Self::file(*problem, msg),
+            _ => Self::Other(msg.into()),
+        }
+    }
+
+    /// This error about `what` (a file, a photo): `"{what}: {self}"`, of the same kind when it is a file problem.
+    pub fn about(&self, what: impl std::fmt::Display) -> Self {
+        self.reworded(format!("{what}: {self}"))
+    }
+
+    /// `e`, from reading or writing `what` (a path, or what the file is).
+    pub fn io(what: impl std::fmt::Display, e: &std::io::Error) -> Self {
+        Self::file(FileProblem::of_io(e), format!("{what}: {e}"))
+    }
+}
+
+impl From<lightcraft_codecs::Error> for EngineError {
+    fn from(e: lightcraft_codecs::Error) -> Self {
+        use lightcraft_codecs::Error as E;
+        let problem = match &e {
+            E::UnknownFormat | E::Unsupported(..) => FileProblem::Unsupported,
+            E::Malformed(..) => FileProblem::Corrupt,
+            E::TooLarge(..) => FileProblem::TooLarge,
+            E::Encode(_) => return Self::Other(e.to_string()),
+        };
+        Self::file(problem, e.to_string())
+    }
+}
+
+impl From<lightcraft_raw::RawError> for EngineError {
+    fn from(e: lightcraft_raw::RawError) -> Self {
+        use lightcraft_raw::RawError as E;
+        let problem = match &e {
+            E::NotRaw | E::Unsupported(_) => FileProblem::Unsupported,
+            E::Corrupt(_) | E::Tiff(_) => FileProblem::Corrupt,
+            E::Limit(_) | E::TooLarge(..) => FileProblem::TooLarge,
+        };
+        Self::file(problem, e.to_string())
+    }
+}
+
+/// An error reported as text (code that does not say what kind it is): [`EngineError::Other`].
+impl From<String> for EngineError {
+    fn from(msg: String) -> Self {
+        Self::Other(msg)
+    }
+}
+
+impl From<&str> for EngineError {
+    fn from(msg: &str) -> Self {
+        Self::Other(msg.into())
+    }
+}
+
+/// For code that still reports errors as text: the message.
+impl From<EngineError> for String {
+    fn from(e: EngineError) -> Self {
+        e.to_string()
+    }
+}
+
 impl From<CommandError> for String {
     fn from(e: CommandError) -> Self {
         e.message
@@ -171,6 +297,7 @@ impl EngineError {
             Self::LightroomCatalog { .. } => ErrorKind::LightroomCatalog,
             Self::Cancelled(_) => ErrorKind::Cancelled,
             Self::ModelMissing { model, .. } => ErrorKind::ModelMissing(*model),
+            Self::File { problem, .. } => ErrorKind::File(*problem),
             Self::Other(_) => ErrorKind::Other,
         }
     }
@@ -197,7 +324,10 @@ mod tests {
         let plain = ErrorKind::PLAIN.iter().map(|k| k.code()).collect::<std::collections::HashSet<_>>();
         assert_eq!(plain.len(), ErrorKind::PLAIN.len(), "one code per kind");
         let models = [ErrorKind::ModelMissing(AiModel::FaceDetector), ErrorKind::ModelMissing(AiModel::Sam3)];
-        for kind in ErrorKind::PLAIN.iter().copied().chain(models) {
+        let files = FileProblem::ALL.map(ErrorKind::File);
+        let all = plain.iter().copied().chain(files.iter().map(|k| k.code())).collect::<std::collections::HashSet<_>>();
+        assert_eq!(all.len(), plain.len() + files.len(), "a file problem's code is no other kind's");
+        for kind in ErrorKind::PLAIN.iter().copied().chain(models).chain(files) {
             let reply = CommandError { message: "why".into(), kind }.reply();
             assert_eq!(reply["ok"], false);
             assert_eq!(reply["error"], "why");
@@ -207,5 +337,28 @@ mod tests {
         assert_eq!(ErrorKind::from_reply(&json!({"code": "fromTheFuture"})), ErrorKind::Other);
         assert_eq!(ErrorKind::from_reply(&json!({"code": "modelMissing", "model": "gpt"})), ErrorKind::Other);
         assert_eq!(CommandError::from_reply(&json!({"ok": false})), None);
+    }
+
+    #[test]
+    fn file_errors_say_what_went_wrong() {
+        use std::io::{Error, ErrorKind as K};
+        let kind = |k: K| EngineError::io("/x/a.jpg", &Error::from(k)).kind();
+        assert_eq!(kind(K::NotFound), ErrorKind::File(FileProblem::NotFound));
+        assert_eq!(kind(K::PermissionDenied), ErrorKind::File(FileProblem::PermissionDenied));
+        assert_eq!(kind(K::StorageFull), ErrorKind::File(FileProblem::DiskFull));
+        assert_eq!(kind(K::ReadOnlyFilesystem), ErrorKind::File(FileProblem::ReadOnly));
+        assert_eq!(kind(K::Interrupted), ErrorKind::File(FileProblem::Io));
+        #[cfg(unix)]
+        assert_eq!(EngineError::io("x", &Error::from_raw_os_error(28)).kind(), ErrorKind::File(FileProblem::DiskFull), "ENOSPC");
+        assert!(EngineError::io("/x/a.jpg", &Error::from(K::NotFound)).to_string().starts_with("/x/a.jpg: "));
+        let codec = |e: lightcraft_codecs::Error| EngineError::from(e).kind();
+        assert_eq!(codec(lightcraft_codecs::Error::UnknownFormat), ErrorKind::File(FileProblem::Unsupported));
+        assert_eq!(codec(lightcraft_codecs::Error::Malformed(lightcraft_codecs::Format::Jpeg, "x".into())), ErrorKind::File(FileProblem::Corrupt));
+        assert_eq!(codec(lightcraft_codecs::Error::TooLarge(1, 1)), ErrorKind::File(FileProblem::TooLarge));
+        assert_eq!(codec(lightcraft_codecs::Error::Encode("x".into())), ErrorKind::Other, "encoding is not a file problem");
+        let raw = |e: lightcraft_raw::RawError| EngineError::from(e).kind();
+        assert_eq!(raw(lightcraft_raw::RawError::Corrupt("x".into())), ErrorKind::File(FileProblem::Corrupt));
+        assert_eq!(raw(lightcraft_raw::RawError::Unsupported("x".into())), ErrorKind::File(FileProblem::Unsupported));
+        assert_eq!(raw(lightcraft_raw::RawError::Limit("x")), ErrorKind::File(FileProblem::TooLarge));
     }
 }

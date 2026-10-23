@@ -152,8 +152,8 @@ pub struct SyncReport {
     pub relinked: usize,
     pub removed: usize,
     pub read: usize,
-    /// (path or photo, why) for what couldn't be done.
-    pub failed: Vec<(String, String)>,
+    /// What couldn't be done (the path or photo, empty when neither), `[path, error, code]`.
+    pub failed: Vec<crate::import::ImportFailure>,
 }
 
 fn invalid(msg: impl Into<String>) -> EngineError {
@@ -778,7 +778,7 @@ impl SyncCommit {
     /// end, and the rest is still done.
     pub fn apply(&mut self, s: &mut Session, step: SyncStep) {
         if !Arc::ptr_eq(&self.library, &s.library_identity) {
-            self.report.failed.push((String::new(), "another library was opened: the rest of the synchronize was dropped".into()));
+            self.report.failed.push(crate::import::ImportFailure::new("", "another library was opened: the rest of the synchronize was dropped"));
             return;
         }
         let commits = s.commits();
@@ -800,7 +800,7 @@ impl SyncCommit {
                     report.imported += r.imported.len();
                     report.failed.extend(r.failed);
                 }
-                Err(e) => report.failed.push((String::new(), e.to_string())),
+                Err(e) => report.failed.push(crate::import::ImportFailure::new(String::new(), e)),
             },
             SyncStep::Relink(moved) => {
                 let ops: Vec<Op> =
@@ -809,7 +809,7 @@ impl SyncCommit {
                 if n > 0 {
                     match s.commit("Relink Moved Photos", Op::Batch { ops }) {
                         Ok(()) => report.relinked += n,
-                        Err(e) => report.failed.push((String::new(), e.to_string())),
+                        Err(e) => report.failed.push(crate::import::ImportFailure::new(String::new(), e)),
                     }
                 }
             }
@@ -823,7 +823,7 @@ impl SyncCommit {
                 if n > 0 {
                     match s.commit("Remove Missing Photos", Op::Batch { ops }) {
                         Ok(()) => report.removed += n,
-                        Err(e) => report.failed.push((String::new(), e.to_string())),
+                        Err(e) => report.failed.push(crate::import::ImportFailure::new(String::new(), e)),
                     }
                 }
             }
@@ -832,14 +832,14 @@ impl SyncCommit {
                 for (id, path, sc) in read {
                     match sc.map_err(EngineError::Other).and_then(|sc| s.sidecar_op(id, sc)) {
                         Ok(op) => ops.push(op),
-                        Err(e) => report.failed.push((path, e.to_string())),
+                        Err(e) => report.failed.push(crate::import::ImportFailure::new(path, e)),
                     }
                 }
                 let n = ops.len();
                 if n > 0 {
                     match s.commit("Read Metadata from File", Op::Batch { ops }) {
                         Ok(()) => report.read += n,
-                        Err(e) => report.failed.push((String::new(), e.to_string())),
+                        Err(e) => report.failed.push(crate::import::ImportFailure::new(String::new(), e)),
                     }
                 }
             }

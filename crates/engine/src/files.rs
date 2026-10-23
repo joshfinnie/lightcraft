@@ -12,6 +12,7 @@ use lightcraft_raster::Rgb32f;
 use lightcraft_raster::resample::{Filter, fit};
 
 use crate::media::{DenoiseSpec, FileLoader, FileProbe, PairLoader, PreviewLoader, ProbeInfo};
+use crate::{EngineError, FileProblem};
 
 fn meta_of(m: &lightcraft_meta::Metadata) -> (Meta, Option<String>) {
     let shutter = m.exposure_time.map(|t| if t >= 1.0 { format!("{t:.0}") } else { format!("1/{:.0}", 1.0 / t) }).unwrap_or_default();
@@ -133,7 +134,7 @@ fn ext_upper(name: &str) -> String {
 /// raws are described from their headers ([`lightcraft_raw::probe_info`]), other images too
 /// ([`lightcraft_codecs::read_header`], which refuses truncated files but can't see damage inside
 /// compressed data that is all there: such a file imports and shows as unreadable when rendered).
-pub fn probe_bytes(name: &str, bytes: &[u8]) -> Result<ProbeInfo, String> {
+pub fn probe_bytes(name: &str, bytes: &[u8]) -> crate::Result<ProbeInfo> {
     let content_hash = Some(lightcraft_preview::hash_bytes(bytes).to_string());
     let m = lightcraft_meta::extract(bytes);
     let (meta, captured) = meta_of(&m);
@@ -142,7 +143,7 @@ pub fn probe_bytes(name: &str, bytes: &[u8]) -> Result<ProbeInfo, String> {
             Ok(r) => r,
             Err(Ok(why)) => {
                 // a raw variant we can't decode yet: describe it from its embedded preview
-                let (w, h) = embedded_preview_size(bytes).ok_or(format!("unsupported raw ({why}) without an embedded preview"))?;
+                let (w, h) = embedded_preview_size(bytes).ok_or_else(|| unsupported_raw(&why))?;
                 return Ok(ProbeInfo {
                     width: w,
                     height: h,
@@ -184,13 +185,13 @@ pub fn probe_bytes(name: &str, bytes: &[u8]) -> Result<ProbeInfo, String> {
             preview_only: None,
         });
     }
-    let fmt = lightcraft_codecs::sniff(bytes).ok_or("unrecognized file format")?;
+    let fmt = lightcraft_codecs::sniff(bytes).ok_or_else(|| EngineError::file(FileProblem::Unsupported, "unrecognized file format"))?;
     if let Some(why) = fmt.not_decodable() {
         // e.g. "Heif files can't be opened: HEIC/HEIF support isn't included in this build of LightCraft"
-        return Err(format!("{fmt:?} files can't be opened: {why}"));
+        return Err(EngineError::file(FileProblem::Unsupported, format!("{fmt:?} files can't be opened: {why}")));
     }
     // headers only (issue #367: decoding the pixels was nearly all of an import's CPU time)
-    let header = lightcraft_codecs::read_header(bytes).map_err(|e| e.to_string())?;
+    let header = lightcraft_codecs::read_header(bytes)?;
     let o = Orientation::from_exif(header.orientation);
     let (mut w, mut h) = (header.width, header.height);
     if o.swaps_axes() {
@@ -223,14 +224,19 @@ pub fn probe_bytes(name: &str, bytes: &[u8]) -> Result<ProbeInfo, String> {
 /// decoder is verified on few bodies, and every CR3 opened from its embedded JPEG before it existed.
 /// So does any other failure of a recognised raw (damaged or oversized raw data, unreadable TIFF
 /// structure): its preview may still be intact. Only a file that is not a raw reports an error.
-fn preview_reason(bytes: &[u8], e: lightcraft_raw::RawError) -> Result<String, String> {
+fn preview_reason(bytes: &[u8], e: lightcraft_raw::RawError) -> Result<String, EngineError> {
     use lightcraft_raw::RawError;
     match e {
         RawError::Unsupported(why) => Ok(why),
         e if lightcraft_raw::probe(bytes) == Some(lightcraft_raw::RawFormat::Cr3) => Ok(format!("CR3 {e}")),
-        RawError::NotRaw => Err(RawError::NotRaw.to_string()),
+        RawError::NotRaw => Err(RawError::NotRaw.into()),
         e => Ok(e.to_string()),
     }
+}
+
+/// A raw LightCraft can't decode (`why`) and has no embedded preview to show instead.
+fn unsupported_raw(why: &str) -> EngineError {
+    EngineError::file(FileProblem::Unsupported, format!("unsupported raw ({why}) without an embedded preview"))
 }
 
 /// Sensor clip level (normalised) for highlight reconstruction.
@@ -365,20 +371,20 @@ pub fn bin_factor(raw: &lightcraft_raw::RawImage, max_edge: usize) -> Option<usi
 /// Runs on a rayon worker: its many short parallel loops then start on the worker's own queue
 /// instead of each one waking the pool from outside and waiting for it (which costs more than the
 /// loops themselves when the machine is busy).
-pub fn load_bytes(bytes: &[u8], max_edge: usize) -> Result<(Rgb32f, SourceInfo), String> {
+pub fn load_bytes(bytes: &[u8], max_edge: usize) -> crate::Result<(Rgb32f, SourceInfo)> {
     rayon::scope(|_| load_bytes_now(std::borrow::Cow::Borrowed(bytes), max_edge, None).map(|(img, _, info)| (img, info)))
 }
 
 /// [`load_bytes`] taking the file's bytes: a raw file's bytes are freed as soon as it is decoded
 /// (less memory held while it is developed).
-pub fn load_vec(bytes: Vec<u8>, max_edge: usize) -> Result<(Rgb32f, SourceInfo), String> {
+pub fn load_vec(bytes: Vec<u8>, max_edge: usize) -> crate::Result<(Rgb32f, SourceInfo)> {
     rayon::scope(move |_| load_bytes_now(std::borrow::Cow::Owned(bytes), max_edge, None).map(|(img, _, info)| (img, info)))
 }
 
 /// [`load_vec`] that also develops the photo's cached denoised picture (`spec`) from the same decode: the plain
 /// picture, the denoised one (`None` when it cannot be read or does not fit this raw: the plain one is then all
 /// there is) and the source facts. Both pictures are the same size.
-pub fn load_vec_pair(bytes: Vec<u8>, max_edge: usize, spec: &DenoiseSpec) -> Result<(Rgb32f, Option<Rgb32f>, SourceInfo), String> {
+pub fn load_vec_pair(bytes: Vec<u8>, max_edge: usize, spec: &DenoiseSpec) -> crate::Result<(Rgb32f, Option<Rgb32f>, SourceInfo)> {
     rayon::scope(move |_| load_bytes_now(std::borrow::Cow::Owned(bytes), max_edge, Some(spec)))
 }
 
@@ -408,15 +414,13 @@ fn load_bytes_now(
     bytes: std::borrow::Cow<'_, [u8]>,
     max_edge: usize,
     denoise: Option<&DenoiseSpec>,
-) -> Result<(Rgb32f, Option<Rgb32f>, SourceInfo), String> {
+) -> crate::Result<(Rgb32f, Option<Rgb32f>, SourceInfo)> {
     if lightcraft_raw::probe(&bytes).is_some() {
         let mut raw = match lightcraft_raw::decode(&bytes).map_err(|e| preview_reason(&bytes, e)) {
             Ok(r) => r,
             Err(Ok(why)) => {
                 // show the camera's embedded JPEG (rendered, not raw) until the variant is supported
-                return load_embedded_preview(&bytes, max_edge)
-                    .map(|(img, info)| (img, None, info))
-                    .ok_or(format!("unsupported raw ({why}) without an embedded preview"));
+                return load_embedded_preview(&bytes, max_edge).map(|(img, info)| (img, None, info)).ok_or_else(|| unsupported_raw(&why));
             }
             Err(Err(e)) => return Err(e),
         };
@@ -442,7 +446,7 @@ fn load_bytes_now(
         let bin = bin_factor(&raw, max_edge);
         // (binned: block means, and which colours had a clipped sample in each block)
         let binned = match bin {
-            Some(k) => raw.develop_binned_masked(k, HIGHLIGHT_CLIP).map_err(|e| e.to_string())?,
+            Some(k) => raw.develop_binned_masked(k, HIGHLIGHT_CLIP)?,
             None => None,
         };
         let factor = if binned.is_some() { bin.unwrap_or(1) } else { 1 };
@@ -450,7 +454,7 @@ fn load_bytes_now(
             Some((img, mask)) => (img, Some(mask)),
             None => {
                 let method = if max_edge <= 600 { lightcraft_raw::Method::Bilinear } else { lightcraft_raw::Method::Ahd };
-                (raw.develop(method).map_err(|e| e.to_string())?, None)
+                (raw.develop(method)?, None)
             }
         };
         // the same development from the denoised mosaic, when the photo has been denoised
@@ -531,7 +535,7 @@ fn load_bytes_now(
             },
         ));
     }
-    let d = lightcraft_codecs::decode(&bytes, fit_box(max_edge)).map_err(|e| e.to_string())?;
+    let d = lightcraft_codecs::decode(&bytes, fit_box(max_edge))?;
     drop(bytes);
     let img = d.to_working();
     let img = if img.width.max(img.height) > max_edge { fit(&img, max_edge, max_edge, Filter::Mitchell) } else { img };
@@ -1045,7 +1049,7 @@ pub fn fs_pair_loader() -> PairLoader {
         let weight = len * if max_edge <= crate::media::SourceLevel::Thumb.max_edge() { 4 } else { 10 };
         let gate = crate::memory::work_gate();
         let _permit = if crate::memory::is_background() { gate.acquire(weight) } else { gate.acquire_urgent(weight) };
-        let bytes = std::fs::read(path).map_err(|e| format!("{path}: {e}"))?;
+        let bytes = std::fs::read(path).map_err(|e| EngineError::io(path, &e))?;
         let r = load_vec_pair(bytes, max_edge, spec);
         crate::memory::release();
         r
@@ -1065,7 +1069,7 @@ pub fn fs_hooks() -> (FileLoader, FileProbe) {
         let weight = len * if max_edge <= crate::media::SourceLevel::Thumb.max_edge() { 3 } else { 6 };
         let gate = crate::memory::work_gate();
         let _permit = if crate::memory::is_background() { gate.acquire(weight) } else { gate.acquire_urgent(weight) };
-        let bytes = std::fs::read(path).map_err(|e| format!("{path}: {e}"))?;
+        let bytes = std::fs::read(path).map_err(|e| EngineError::io(path, &e))?;
         let r = load_vec(bytes, max_edge);
         // the file, the samples and the intermediate images are gone: give their pages back
         crate::memory::release();
@@ -1074,7 +1078,7 @@ pub fn fs_hooks() -> (FileLoader, FileProbe) {
     let probe: FileProbe = Arc::new(|path: &str| {
         let len = std::fs::metadata(path).map(|m| usize::try_from(m.len()).unwrap_or(usize::MAX)).unwrap_or(0);
         let _permit = crate::memory::work_gate().acquire(len);
-        let bytes = std::fs::read(path).map_err(|e| format!("{path}: {e}"))?;
+        let bytes = std::fs::read(path).map_err(|e| EngineError::io(path, &e))?;
         let mut info = probe_bytes(path, &bytes)?;
         info.file_modified = file_modified(path);
         Ok(info)
@@ -2411,7 +2415,7 @@ pub(crate) mod tests {
         assert_eq!((img.width, img.height, src.raw), (20, 15, false));
         // without a JPEG: a clear error
         let e = probe_bytes("A.MRW", b"\0MRM\0\x01\0\0 nothing here").unwrap_err();
-        assert!(e.contains("without an embedded preview"), "{e}");
+        assert!(e.to_string().contains("without an embedded preview"), "{e}");
     }
 
     /// Issue #1275: an uncompressed Leaf MOS (IFD0 is the 16-bit mosaic, no Make tag; Leaf's data block `0x8606`
@@ -2466,7 +2470,7 @@ pub(crate) mod tests {
         let p = probe_bytes("GOPR0001.GPR", &f).unwrap();
         assert_eq!((p.kind, p.preview_only, p.width, p.height), (MediaKind::Raw, None, 32, 16));
         let e = load_bytes(&f, 16).unwrap_err();
-        assert!(e.contains("GoPro VC-5") && e.contains("not decoded yet"), "{e}");
+        assert!(e.to_string().contains("GoPro VC-5") && e.to_string().contains("not decoded yet"), "{e}");
     }
 
     /// Any failure of a recognised raw (not only an unsupported variant) can fall back to its preview;
@@ -2475,7 +2479,7 @@ pub(crate) mod tests {
     fn decode_failures_of_recognised_raws_may_fall_back_to_the_preview() {
         use lightcraft_raw::RawError;
         let cr3 = b"\0\0\0\x18ftypcrx \0\0\0\x01";
-        assert_eq!(preview_reason(b"x", RawError::Unsupported("x".into())), Ok("x".to_string()));
+        assert_eq!(preview_reason(b"x", RawError::Unsupported("x".into())).ok(), Some("x".to_string()));
         assert!(preview_reason(b"x", RawError::Corrupt("bad strip".into())).is_ok_and(|w| w.contains("bad strip")));
         assert!(preview_reason(b"x", RawError::Limit("too big")).is_ok());
         assert!(preview_reason(b"x", RawError::Tiff(lightcraft_tiff::TiffError::MissingTag(256))).is_ok());

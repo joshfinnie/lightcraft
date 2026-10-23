@@ -234,7 +234,8 @@ fn export_shows_a_row_and_stops_on_activity_cancel() {
 #[test]
 fn dead_export_worker_leaves_no_row() {
     let mut h = demo();
-    h.app.services.write_shared = Some(std::sync::Arc::new(|_: &str, _: &[u8]| -> Result<(), String> { panic!("synthetic writer panic") }));
+    h.app.services.write_shared =
+        Some(std::sync::Arc::new(|_: &str, _: &[u8]| -> lightcraft_engine::Result<()> { panic!("synthetic writer panic") }));
     start_export(&mut h, 2);
     assert!(h.step_until(Duration::from_secs(60), |h| h.app.export.is_none()));
     assert!(h.app.session.activity.list().is_empty());

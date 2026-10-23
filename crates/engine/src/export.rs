@@ -1557,7 +1557,7 @@ pub fn output_size(p: &lightcraft_catalog::Photo, o: &ExportOptions) -> (usize, 
 
 /// Render photo `id` at the requested size and encode it (or copy / convert its original for
 /// [`ExportFormat::Original`] / [`ExportFormat::Dng`]).
-pub fn export_photo(session: &mut crate::Session, id: lightcraft_catalog::PhotoId, o: &ExportOptions, seq: usize) -> Result<Exported, String> {
+pub fn export_photo(session: &mut crate::Session, id: lightcraft_catalog::PhotoId, o: &ExportOptions, seq: usize) -> crate::Result<Exported> {
     prepare_export(session, id, o, seq)?.run()
 }
 
@@ -1607,18 +1607,13 @@ enum Work {
 
 /// Set up the export of photo `id` at 1-based position `seq` of a batch. (For a whole batch use
 /// [`prepare_batch`]: it looks at the library's originals once.)
-pub fn prepare_export(
-    session: &mut crate::Session,
-    id: lightcraft_catalog::PhotoId,
-    o: &ExportOptions,
-    seq: usize,
-) -> Result<PreparedExport, String> {
+pub fn prepare_export(session: &mut crate::Session, id: lightcraft_catalog::PhotoId, o: &ExportOptions, seq: usize) -> crate::Result<PreparedExport> {
     let guard = std::sync::Arc::new(session.original_guard());
     prepare_guarded(session, id, o, seq, guard)
 }
 
 /// [`prepare_export`] for each of `ids` in order (`{seq}` = position, from 1).
-pub fn prepare_batch(session: &mut crate::Session, ids: &[lightcraft_catalog::PhotoId], o: &ExportOptions) -> Result<Vec<PreparedExport>, String> {
+pub fn prepare_batch(session: &mut crate::Session, ids: &[lightcraft_catalog::PhotoId], o: &ExportOptions) -> crate::Result<Vec<PreparedExport>> {
     let guard = std::sync::Arc::new(session.original_guard());
     ids.iter().enumerate().map(|(i, id)| prepare_guarded(session, *id, o, i + 1, guard.clone())).collect()
 }
@@ -1629,7 +1624,7 @@ fn prepare_guarded(
     o: &ExportOptions,
     seq: usize,
     guard: std::sync::Arc<crate::originals::OriginalGuard>,
-) -> Result<PreparedExport, String> {
+) -> crate::Result<PreparedExport> {
     let p = session.catalog.photo(id).ok_or("no such photo")?;
     let file_name = o.file_name_for(p, seq);
     let source_dir = original_folder(&p.source);
@@ -1652,13 +1647,13 @@ fn prepare_guarded(
         let job = session.export_job(id, w, h, o.effective_space(), o.effective_depth())?;
         let weight = render_weight(full_px, long, job.level, w.saturating_mul(h));
         if let Some(why) = too_big_for_memory((w, h), native_px, weight, crate::memory::total_ram()) {
-            return Err(format!("{label}: {why}"));
+            return Err(format!("{label}: {why}").into());
         }
         let hdr_job = if gain_map { Some(session.export_job(id, w, h, o.effective_space(), OutputDepth::F32Hdr)?) } else { None };
         (Work::Render(Box::new(RenderWork { job, hdr_job, meta, opts: o.clone() })), weight)
     } else {
         let lightcraft_catalog::Source::File { path } = &p.source else {
-            return Err(format!("{} is a generated demo photo: it has no original file to export", p.file_name));
+            return Err(format!("{} is a generated demo photo: it has no original file to export", p.file_name).into());
         };
         let dng = (o.format == ExportFormat::Dng).then_some(o.dng_compression);
         // the file's bytes; a DNG also decodes the raw data (16-bit samples) and writes it again
@@ -1725,7 +1720,7 @@ fn render_weight(full_px: usize, long: usize, level: crate::media::SourceLevel, 
 }
 
 impl PreparedExport {
-    pub fn run(self) -> Result<Exported, String> {
+    pub fn run(self) -> crate::Result<Exported> {
         let file_name = self.file_name;
         match self.work {
             Work::Render(w) => {
@@ -1746,14 +1741,15 @@ impl PreparedExport {
             Work::File { path, read, packet, dng, quality, lossy_edge, label, size, remove_location } => {
                 let bytes = match &read {
                     Some(r) => r(&path)?,
-                    None => std::fs::read(&path).map_err(|e| format!("{path}: {e}"))?,
+                    None => std::fs::read(&path).map_err(|e| crate::EngineError::io(&path, &e))?,
                 };
                 let Some(dng) = dng else {
                     // the file is copied byte for byte: refuse rather than leak a location it embeds
                     if remove_location && lightcraft_meta::extract(&bytes).gps.is_some() {
                         return Err(format!(
                             "{label}: can't remove the location from an original file that embeds GPS; export as JPEG, TIFF or DNG instead"
-                        ));
+                        )
+                        .into());
                     }
                     return Ok(Exported {
                         file_name,
@@ -1765,9 +1761,9 @@ impl PreparedExport {
                     });
                 };
                 if lightcraft_raw::probe(&bytes).is_none() {
-                    return Err(format!("{label}: DNG export needs a raw photo"));
+                    return Err(crate::EngineError::file(crate::FileProblem::Unsupported, format!("{label}: DNG export needs a raw photo")));
                 }
-                let mut raw = lightcraft_raw::decode(&bytes).map_err(|e| format!("{label}: {e}"))?;
+                let mut raw = lightcraft_raw::decode(&bytes).map_err(|e| crate::EngineError::from(e).about(&label))?;
                 crate::camera_preview::with_starting_colour(&mut raw, &bytes);
                 drop(bytes);
                 let compression = match dng {
@@ -1916,9 +1912,9 @@ pub fn export_batch(
     ids: &[lightcraft_catalog::PhotoId],
     o: &ExportOptions,
     to: &Destination,
-    write: &mut dyn FnMut(&str, &[u8]) -> Result<(), String>,
+    write: &mut dyn FnMut(&str, &[u8]) -> crate::Result<()>,
     exists: &dyn Fn(&str) -> bool,
-) -> Result<Vec<serde_json::Value>, String> {
+) -> crate::Result<Vec<serde_json::Value>> {
     let items = prepare_batch(session, ids, o)?;
     run_batch(items, o, to, write, exists, true, &mut |_, _| true)
 }
@@ -1928,23 +1924,31 @@ pub fn export_batch(
 /// renamed into place), so a failure part-way leaves any previous file intact and no truncated
 /// one. Not synced to disk (issue #134): an export can always be made again from the original.
 /// The native writer behind exports, renders and screenshots (app, CLI, MCP).
-pub fn write_file(path: &str, bytes: &[u8]) -> Result<(), String> {
+pub fn write_file(path: &str, bytes: &[u8]) -> crate::Result<()> {
     write_with(path, bytes, false)
 }
 
 /// [`write_file`], synced to disk: for a written file that becomes a library photo (Edit a Copy)
 /// and so can't simply be exported again once the catalog points at it.
-pub fn write_file_durable(path: &str, bytes: &[u8]) -> Result<(), String> {
+pub fn write_file_durable(path: &str, bytes: &[u8]) -> crate::Result<()> {
     write_with(path, bytes, true)
 }
 
-fn write_with(path: &str, bytes: &[u8], durable: bool) -> Result<(), String> {
+fn write_with(path: &str, bytes: &[u8], durable: bool) -> crate::Result<()> {
     use lightcraft_catalog::safe_file::{write_atomic, write_atomic_nosync};
     let p = std::path::Path::new(path);
     if let Some(dir) = p.parent().filter(|d| !d.as_os_str().is_empty()) {
-        std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+        std::fs::create_dir_all(dir).map_err(|e| crate::EngineError::io(dir.display(), &e))?;
     }
-    if durable { write_atomic(p, bytes) } else { write_atomic_nosync(p, bytes) }.map_err(|e| format!("{path}: {e}"))
+    if durable { write_atomic(p, bytes) } else { write_atomic_nosync(p, bytes) }.map_err(|e| crate::EngineError::io(path, &e))
+}
+
+/// A batch's row for photo `photo` (file `file`) that could not be exported: `{photo, file, error, code}`.
+fn failed_row(photo: lightcraft_catalog::PhotoId, file: &str, e: crate::EngineError) -> serde_json::Value {
+    let mut row = crate::CommandError::from(e).fields();
+    row.insert("photo".into(), serde_json::json!(photo.0));
+    row.insert("file".into(), serde_json::json!(file));
+    serde_json::Value::Object(row)
 }
 
 /// The path of the sidecar with extension `ext` of the exported file `main`.
@@ -1968,11 +1972,11 @@ pub fn run_batch(
     items: Vec<PreparedExport>,
     o: &ExportOptions,
     to: &Destination,
-    write: &mut dyn FnMut(&str, &[u8]) -> Result<(), String>,
+    write: &mut dyn FnMut(&str, &[u8]) -> crate::Result<()>,
     exists: &dyn Fn(&str) -> bool,
     stop_on_error: bool,
     progress: &mut dyn FnMut(usize, &str) -> bool,
-) -> Result<Vec<serde_json::Value>, String> {
+) -> crate::Result<Vec<serde_json::Value>> {
     let lanes = export_parallelism(items.len());
     run_batch_with(items, &mut Placer::new(o, to, write, exists, stop_on_error), progress, lanes)
 }
@@ -1994,7 +1998,7 @@ fn run_batch_with(
     placer: &mut Placer<'_>,
     progress: &mut dyn FnMut(usize, &str) -> bool,
     lanes: usize,
-) -> Result<Vec<serde_json::Value>, String> {
+) -> crate::Result<Vec<serde_json::Value>> {
     placer.single = items.len() == 1;
     if lanes <= 1 || items.len() <= 1 {
         for (i, item) in items.into_iter().enumerate() {
@@ -2031,7 +2035,7 @@ fn run_batch_with(
                 let e = queue.result(i);
                 placer.place(photo, name, source_dir.as_deref(), &guard, e)?;
             }
-            Ok::<_, String>(())
+            Ok::<_, crate::EngineError>(())
         };
         placed()
     })?;
@@ -2049,10 +2053,10 @@ impl Drop for StopOnDrop<'_> {
 
 /// Run one photo's export holding its working memory from [`crate::memory::export_gate`]; a panic
 /// becomes that photo's error, not the batch's end.
-fn run_gated(item: PreparedExport) -> Result<Exported, String> {
+fn run_gated(item: PreparedExport) -> crate::Result<Exported> {
     let _held = crate::memory::export_gate().acquire(item.weight);
     let what = format!("exporting {}", item.file_name);
-    crate::guard::catch(&what, || item.run()).and_then(|r| r)
+    crate::guard::catch(&what, || item.run()).map_err(crate::EngineError::Other).and_then(|r| r)
 }
 
 /// The photos of a batch shared by its lanes: each lane takes the next one, at most
@@ -2071,7 +2075,7 @@ struct Lane {
     /// Photos handed to the placer so far.
     placed: usize,
     stop: bool,
-    done: std::collections::HashMap<usize, Result<Exported, String>>,
+    done: std::collections::HashMap<usize, crate::Result<Exported>>,
 }
 
 impl Lane {
@@ -2092,7 +2096,7 @@ impl Queue {
         self.cv.wait(g).unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
-    fn finish(&self, i: usize, r: Result<Exported, String>) {
+    fn finish(&self, i: usize, r: crate::Result<Exported>) {
         self.lock().done.insert(i, r);
         self.cv.notify_all();
     }
@@ -2119,7 +2123,7 @@ impl Queue {
     }
 
     /// Photo `i`'s result, waiting for it; run here when no lane has started it yet.
-    fn result(&self, i: usize) -> Result<Exported, String> {
+    fn result(&self, i: usize) -> crate::Result<Exported> {
         let mut l = self.lock();
         loop {
             if let Some(r) = l.done.remove(&i) {
@@ -2155,7 +2159,7 @@ struct Placer<'a> {
     single: bool,
     taken: std::collections::HashSet<String>,
     out: Vec<serde_json::Value>,
-    write: &'a mut dyn FnMut(&str, &[u8]) -> Result<(), String>,
+    write: &'a mut dyn FnMut(&str, &[u8]) -> crate::Result<()>,
     exists: &'a dyn Fn(&str) -> bool,
     stop_on_error: bool,
 }
@@ -2168,7 +2172,7 @@ impl<'a> Placer<'a> {
     fn new(
         o: &'a ExportOptions,
         to: &'a Destination,
-        write: &'a mut dyn FnMut(&str, &[u8]) -> Result<(), String>,
+        write: &'a mut dyn FnMut(&str, &[u8]) -> crate::Result<()>,
         exists: &'a dyn Fn(&str) -> bool,
         stop_on_error: bool,
     ) -> Placer<'a> {
@@ -2178,17 +2182,21 @@ impl<'a> Placer<'a> {
     /// The folder photo `name` (its original in `source_dir`) is written to: the batch's folder or
     /// the photo's own ([`DestinationMode`]), plus the subfolder. An error for a photo with no
     /// folder of its own, or whose folder is gone: never a file written somewhere else instead.
-    fn folder_for(&self, name: &str, source_dir: Option<&str>) -> Result<String, String> {
+    fn folder_for(&self, name: &str, source_dir: Option<&str>) -> crate::Result<String> {
         let base = match self.o.destination_mode {
             DestinationMode::SpecificFolder => self.to.dir.clone(),
             DestinationMode::SameAsOriginal => {
                 let Some(d) = source_dir else {
                     return Err(format!(
                         "{name}: the photo has no folder on disk (a demo photo or one in the browser's storage), so it can't be exported to the same folder as its original; choose a specific folder"
-                    ));
+                    )
+                    .into());
                 };
                 if !(self.exists)(d) {
-                    return Err(format!("{name}: the original's folder is missing ({d}); reconnect it or choose a specific folder"));
+                    return Err(crate::EngineError::file(
+                        crate::FileProblem::NotFound,
+                        format!("{name}: the original's folder is missing ({d}); reconnect it or choose a specific folder"),
+                    ));
                 }
                 d.to_string()
             }
@@ -2204,8 +2212,8 @@ impl<'a> Placer<'a> {
         name: String,
         source_dir: Option<&str>,
         guard: &crate::originals::OriginalGuard,
-        e: Result<Exported, String>,
-    ) -> Result<(), String> {
+        e: crate::Result<Exported>,
+    ) -> crate::Result<()> {
         use serde_json::json;
         // an exact file path needs no folder
         let dir = if self.to.exact.is_some() && self.single { Ok(String::new()) } else { self.folder_for(&name, source_dir) };
@@ -2214,14 +2222,14 @@ impl<'a> Placer<'a> {
             Ok(v) => v,
             Err(err) if self.stop_on_error => return Err(err),
             Err(err) => {
-                self.out.push(json!({"photo": photo.0, "file": name, "error": err}));
+                self.out.push(failed_row(photo, &name, err));
                 return Ok(());
             }
         };
         let dir = dir.as_str();
         // the exported file and its sidecars
         let group = |main: &str| std::iter::once(main.to_string()).chain(e.sidecars.iter().map(|(x, _)| sidecar_path(main, x))).collect::<Vec<_>>();
-        let path = match self.to.exact.as_deref().filter(|_| self.single) {
+        let path: crate::Result<String> = match self.to.exact.as_deref().filter(|_| self.single) {
             Some(p) => Ok(p.to_string()),
             None => {
                 let path = join_path(dir, &e.file_name);
@@ -2239,7 +2247,7 @@ impl<'a> Placer<'a> {
                         Conflict::Unique => {
                             let (stem, ext) = e.file_name.rsplit_once('.').map_or((e.file_name.as_str(), None), |(a, b)| (a, Some(b)));
                             let name = |n: usize| join_path(dir, &ext.map_or(format!("{stem}-{n}"), |x| format!("{stem}-{n}.{x}")));
-                            (2..1_000_000).map(name).find(|p| !busy(p)).ok_or_else(|| format!("{path}: no free file name"))
+                            (2..1_000_000).map(name).find(|p| !busy(p)).ok_or_else(|| format!("{path}: no free file name").into())
                         }
                     }
                 }
@@ -2271,7 +2279,7 @@ impl<'a> Placer<'a> {
                 self.out.push(entry);
             }
             Err(err) if self.stop_on_error => return Err(err),
-            Err(err) => self.out.push(json!({"photo": photo.0, "file": file, "error": err})),
+            Err(err) => self.out.push(failed_row(photo, &file, err)),
         }
         Ok(())
     }
@@ -3322,7 +3330,7 @@ mod tests {
         lanes: usize,
         stop_on_error: bool,
         cancel_at: usize,
-    ) -> (Result<Vec<serde_json::Value>, String>, Vec<(String, Vec<u8>)>, Vec<(usize, String)>) {
+    ) -> (crate::Result<Vec<serde_json::Value>>, Vec<(String, Vec<u8>)>, Vec<(usize, String)>) {
         let items = prepare_batch(s, ids, o).unwrap();
         let to = Destination { dir: "out".into(), exact: None };
         let mut written = Vec::new();
@@ -3433,7 +3441,7 @@ mod tests {
             let r = crate::guard::catch("test batch", || {
                 run_batch_with(items, &mut Placer::new(&o, &to, &mut write, &|_| false, true), &mut progress, 2)
             });
-            tx.send(r.and_then(|r| r)).ok();
+            tx.send(r.map_err(crate::EngineError::Other).and_then(|r| r)).ok();
         });
         let r = rx.recv_timeout(lightcraft_testkit::scaled(std::time::Duration::from_secs(60)));
         assert!(matches!(r, Ok(Err(_))), "the batch returns an error instead of hanging: {r:?}");

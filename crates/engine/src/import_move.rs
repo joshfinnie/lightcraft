@@ -24,6 +24,8 @@ use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 
+use crate::{EngineError, FileProblem};
+
 /// A photo put in place by [`place`]; its source is untouched.
 #[derive(Clone, Debug)]
 pub(crate) struct Placed {
@@ -146,8 +148,8 @@ pub(crate) fn sidecars_of(src: &Path) -> Vec<(PathBuf, bool)> {
 
 /// Put `src` into `dir` as `name` (-1, -2… when taken) with its sidecars, leaving the source
 /// untouched. On failure nothing is left at the destination.
-pub(crate) fn place(src: &Path, dir: &Path, name: &str) -> Result<Placed, String> {
-    fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+pub(crate) fn place(src: &Path, dir: &Path, name: &str) -> crate::Result<Placed> {
+    fs::create_dir_all(dir).map_err(|e| EngineError::io(dir.display(), &e))?;
     let (stem, ext) = match name.rsplit_once('.') {
         Some((s, e)) if !s.is_empty() => (s.to_string(), format!(".{e}")),
         _ => (name.to_string(), String::new()),
@@ -161,10 +163,10 @@ pub(crate) fn place(src: &Path, dir: &Path, name: &str) -> Result<Placed, String
                 break;
             }
             Err(e) if e.kind() == io::ErrorKind::AlreadyExists => continue,
-            Err(e) => return Err(format!("move {}: {e} (the original is kept)", src.display())),
+            Err(e) => return Err(io_error(&e, format!("move {}: {e} (the original is kept)", src.display()))),
         }
     }
-    let Some(dst) = dst else { return Err(format!("move {}: no free name in {}", src.display(), dir.display())) };
+    let Some(dst) = dst else { return Err(EngineError::Other(format!("move {}: no free name in {}", src.display(), dir.display()))) };
     let mut placed = Placed { src: src.to_path_buf(), dst, sidecars: Vec::new() };
     for (sc, stem_named) in sidecars_of(src) {
         let sc_ext = sc.extension().map(|e| e.to_string_lossy().to_string()).unwrap_or_else(|| "xmp".into());
@@ -173,11 +175,11 @@ pub(crate) fn place(src: &Path, dir: &Path, name: &str) -> Result<Placed, String
         let r = if sc_dst.exists() {
             match same_bytes(&sc, &sc_dst) {
                 Ok(true) => Ok(false),
-                Ok(false) => Err(format!("a different sidecar is already at {} (the original is kept)", sc_dst.display())),
-                Err(e) => Err(format!("{}: {e} (the original is kept)", sc_dst.display())),
+                Ok(false) => Err(EngineError::Other(format!("a different sidecar is already at {} (the original is kept)", sc_dst.display()))),
+                Err(e) => Err(io_error(&e, format!("{}: {e} (the original is kept)", sc_dst.display()))),
             }
         } else {
-            link_or_copy(&sc, &sc_dst).map(|()| true).map_err(|e| format!("move {}: {e} (the original is kept)", sc.display()))
+            link_or_copy(&sc, &sc_dst).map(|()| true).map_err(|e| io_error(&e, format!("move {}: {e} (the original is kept)", sc.display())))
         };
         match r {
             Ok(created) => placed.sidecars.push(PlacedSidecar { src: sc, dst: sc_dst, created, stem: stem_named }),
@@ -200,8 +202,8 @@ pub(crate) fn place(src: &Path, dir: &Path, name: &str) -> Result<Placed, String
 /// a third read of the card (issue #134). It also catches a source that changed since the probe
 /// (whose recorded metadata and hash would be stale). Without one the copy is compared byte for
 /// byte with the source.
-pub(crate) fn copy_new(src: &Path, dir: &Path, name: &str, expect: Option<lightcraft_preview::Hash128>) -> Result<PathBuf, String> {
-    fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+pub(crate) fn copy_new(src: &Path, dir: &Path, name: &str, expect: Option<lightcraft_preview::Hash128>) -> crate::Result<PathBuf> {
+    fs::create_dir_all(dir).map_err(|e| EngineError::io(dir.display(), &e))?;
     let (stem, ext) = match name.rsplit_once('.') {
         Some((s, e)) if !s.is_empty() => (s.to_string(), format!(".{e}")),
         _ => (name.to_string(), String::new()),
@@ -211,10 +213,15 @@ pub(crate) fn copy_new(src: &Path, dir: &Path, name: &str, expect: Option<lightc
         match copy_verified(src, &d, expect) {
             Ok(()) => return Ok(d),
             Err(e) if e.kind() == io::ErrorKind::AlreadyExists => continue,
-            Err(e) => return Err(format!("copy {}: {e} (nothing was imported from it; the original is untouched)", src.display())),
+            Err(e) => return Err(io_error(&e, format!("copy {}: {e} (nothing was imported from it; the original is untouched)", src.display()))),
         }
     }
-    Err(format!("copy {}: no free name in {}", src.display(), dir.display()))
+    Err(EngineError::Other(format!("copy {}: no free name in {}", src.display(), dir.display())))
+}
+
+/// `e` reported as `msg`.
+fn io_error(e: &io::Error, msg: String) -> EngineError {
+    EngineError::file(FileProblem::of_io(e), msg)
 }
 
 /// Undo a [`place`]: remove what it created at the destination (the sources were never touched).

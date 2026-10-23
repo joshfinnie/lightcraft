@@ -130,7 +130,7 @@ const FACE: Rect = Rect { x0: 0.45, y0: 0.45, x1: 0.55, y1: 0.55 };
 /// A face of 2 %: a 64 px tile would need a 1883 px source; the preview is under ¾ of that.
 const TINY_FACE: Rect = Rect { x0: 0.49, y0: 0.49, x1: 0.51, y1: 0.51 };
 
-fn tile(s: &mut Session, id: PhotoId, face: Rect, edge: usize) -> Result<Rgba8, String> {
+fn tile(s: &mut Session, id: PhotoId, face: Rect, edge: usize) -> crate::Result<Rgba8> {
     s.face_job(id, face, edge).unwrap().run().rendered.map(|r| r.image)
 }
 

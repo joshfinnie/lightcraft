@@ -76,7 +76,9 @@ mode ([mcp.md](mcp.md)) is a thin layer over this channel. Implementation:
 ## Error codes
 
 Every `ok: false` reply carries `code`, the kind of failure (`lightcraft_engine::ErrorKind::code`). A
-code this version doesn't list is treated as `other`.
+code this version doesn't list is treated as `other`. Reports that list per-file failures carry the same codes:
+`library.import` (and Synchronize Folder) `failed` rows are `[path, error, code]`, and a batch export's failed photo
+is `{photo, file, error, code}`.
 
 | `code` | Meaning |
 |---|---|
@@ -89,6 +91,14 @@ code this version doesn't list is treated as `other`.
 | `lightroomCatalog` | The folder is a Lightroom Classic catalog, not a LightCraft library ([below](#open-library-on-a-lightroom-catalog)) |
 | `cancelled` | The work was cancelled: not a failure |
 | `modelMissing` | The feature needs an AI model that isn't installed; `model` says which (`faceDetector`, `sam3`) |
+| `notFound` | A file or folder isn't there (moved, deleted, a disk that isn't connected) |
+| `permissionDenied` | The system refused to read or write the file |
+| `diskFull` | The disk (or the browser's storage quota) is full |
+| `readOnly` | The volume is mounted read-only |
+| `unsupportedFile` | A format, or a variant of one, LightCraft doesn't read |
+| `corruptFile` | The file is damaged or truncated |
+| `tooLarge` | Larger than LightCraft opens |
+| `io` | Another input/output failure |
 | `other` | Anything else, including the control server's own refusals (authentication, timeouts, oversized lines) |
 
 ## Isolated automation profiles

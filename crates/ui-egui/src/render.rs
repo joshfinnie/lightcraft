@@ -823,7 +823,7 @@ impl Renderer {
                 Err(e) => {
                     if !matches!(slot, Slot::Prefetch(_)) {
                         log::warn!("render {slot:?}: {e}");
-                        self.failed.insert(slot, (r.key, e, self.catalog_rev, r.photo));
+                        self.failed.insert(slot, (r.key, e.to_string(), self.catalog_rev, r.photo));
                     }
                     continue;
                 }

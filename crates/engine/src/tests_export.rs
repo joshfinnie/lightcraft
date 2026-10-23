@@ -80,7 +80,7 @@ fn original_and_dng_need_a_file() {
     let id = s.active().unwrap();
     for f in ["original", "dng"] {
         let err = export_photo(&mut s, id, &ExportOptions::from_json(&json!({"format": f})), 1).err().unwrap();
-        assert!(err.contains("no original file"), "{err}");
+        assert!(err.to_string().contains("no original file"), "{err}");
     }
 }
 
@@ -94,7 +94,7 @@ fn dng_export_rejects_non_raw_photos() {
     s.execute("library.import", &json!({"paths": [src.to_string_lossy()]})).unwrap();
     let id = s.catalog.photos().next().unwrap().id;
     let err = export_photo(&mut s, id, &ExportOptions { format: ExportFormat::Dng, ..Default::default() }, 1).err().unwrap();
-    assert!(err.contains("needs a raw photo"), "{err}");
+    assert!(err.to_string().contains("needs a raw photo"), "{err}");
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -304,7 +304,7 @@ fn disk_batch(
     id: lightcraft_catalog::PhotoId,
     o: &ExportOptions,
     to: &crate::export::Destination,
-) -> Result<Vec<serde_json::Value>, String> {
+) -> crate::Result<Vec<serde_json::Value>> {
     crate::export::export_batch(s, &[id], o, to, &mut crate::export::write_file, &|p| std::path::Path::new(p).exists())
 }
 
@@ -317,14 +317,14 @@ fn export_never_overwrites_an_original() {
     let folder = Destination { dir: dir.to_string_lossy().to_string(), exact: None };
     let o = ExportOptions { naming: "{name}".into(), conflict: Conflict::Overwrite, ..Default::default() };
     let err = disk_batch(&mut s, id, &o, &folder).unwrap_err();
-    assert!(err.contains("original of IMG_1.jpg"), "{err}");
+    assert!(err.to_string().contains("original of IMG_1.jpg"), "{err}");
     assert_eq!(std::fs::read(&src).unwrap(), original, "the original is byte-identical");
 
     // the exact path of the control channel / MCP, also spelled another way
     std::fs::create_dir_all(dir.join("sub")).unwrap();
     for exact in [src.to_string_lossy().to_string(), dir.join("sub/../IMG_1.jpg").to_string_lossy().to_string()] {
         let to = Destination { dir: String::new(), exact: Some(exact) };
-        assert!(disk_batch(&mut s, id, &o, &to).unwrap_err().contains("never writes over an original"));
+        assert!(disk_batch(&mut s, id, &o, &to).unwrap_err().to_string().contains("never writes over an original"));
     }
     // the "Original" format re-writing the file onto itself (and its sidecar)
     let orig = ExportOptions { format: ExportFormat::Original, ..o.clone() };
@@ -392,7 +392,7 @@ fn a_failed_export_write_keeps_the_previous_file() {
     {
         let _fault = lightcraft_catalog::safe_file::fail_writes_after(100);
         let err = disk_batch(&mut s, id, &o, &to).unwrap_err();
-        assert!(err.contains("injected"), "{err}");
+        assert!(err.to_string().contains("injected"), "{err}");
     }
     assert_eq!(std::fs::read(&prev).unwrap(), b"last week's export");
     assert_eq!(std::fs::read_dir(&out).unwrap().count(), 1, "no temp file left behind");
@@ -575,7 +575,7 @@ fn remove_location_holds_for_original_and_dng_exports() {
     let e = export_photo(&mut s, jid, &opts("original", false), 1).unwrap();
     assert!(lightcraft_meta::extract(&e.bytes).gps.is_some());
     let err = export_photo(&mut s, jid, &opts("original", true), 1).err().unwrap();
-    assert!(err.contains("can't remove the location") && err.contains("export as JPEG"), "{err}");
+    assert!(err.to_string().contains("can't remove the location") && err.to_string().contains("export as JPEG"), "{err}");
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -616,7 +616,7 @@ fn remove_location_refuses_a_raw_that_embeds_gps() {
     s.execute("library.import", &json!({"paths": [raw.to_string_lossy()]})).unwrap();
     let id = s.catalog.photos().next().unwrap().id;
     let err = export_photo(&mut s, id, &ExportOptions::from_json(&json!({"format": "original", "removeLocation": true})), 1).err().unwrap();
-    assert!(err.contains("can't remove the location"), "{err}");
+    assert!(err.to_string().contains("can't remove the location"), "{err}");
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -1003,7 +1003,7 @@ fn same_folder_as_original_exports_next_to_each_photo() {
     // no subfolder: next to the original, which is never written over
     let beside = ExportOptions { subfolder: String::new(), conflict: Conflict::Overwrite, ..o.clone() };
     let err = crate::export::export_batch(&mut s, &ids, &beside, &to, &mut crate::export::write_file, &exists).unwrap_err();
-    assert!(err.contains("original of IMG_1.jpg"), "{err}");
+    assert!(err.to_string().contains("original of IMG_1.jpg"), "{err}");
     let unique = ExportOptions { conflict: Conflict::Unique, ..beside };
     let files = crate::export::export_batch(&mut s, &ids, &unique, &to, &mut crate::export::write_file, &exists).unwrap();
     assert!(files.iter().all(|f| f["path"].as_str().unwrap().ends_with("IMG_1-2.jpg")), "{files:?}");
@@ -1027,12 +1027,12 @@ fn same_folder_as_original_refuses_photos_without_a_folder() {
     // the writer lives in a block of its own, so its borrow of `written` has ended by the time
     // the assertion below reads it
     let files = {
-        let mut write = |p: &str, _: &[u8]| -> Result<(), String> {
+        let mut write = |p: &str, _: &[u8]| -> crate::Result<()> {
             written.push(p.to_string());
             Ok(())
         };
         let err = crate::export::export_batch(&mut s, &ids, &o, &to, &mut write, &|_| false).unwrap_err();
-        assert!(err.contains("no folder on disk"), "{err}");
+        assert!(err.to_string().contains("no folder on disk"), "{err}");
         // without stopping: one error per photo, nothing written
         let items = crate::export::prepare_batch(&mut s, &ids, &o).unwrap();
         crate::export::run_batch(items, &o, &to, &mut write, &|_| false, false, &mut |_, _| true).unwrap()
@@ -1049,9 +1049,10 @@ fn same_folder_as_original_refuses_photos_without_a_folder() {
     let items = crate::export::prepare_batch(&mut s, &[id], &o).unwrap();
     let gone = dir.to_string_lossy().to_string();
     let exists = |p: &str| p != gone && !p.starts_with(&format!("{gone}/"));
-    let mut write = |p: &str, _: &[u8]| -> Result<(), String> { Err(format!("wrote {p}")) };
+    let mut write = |p: &str, _: &[u8]| -> crate::Result<()> { Err(format!("wrote {p}").into()) };
     let files = crate::export::run_batch(items, &o, &to, &mut write, &exists, false, &mut |_, _| true).unwrap();
     let e = files[0]["error"].as_str().unwrap();
     assert!(e.contains("folder is missing") && e.contains(&gone), "{e}");
+    assert_eq!(files[0]["code"], "notFound", "{}", files[0]);
     let _ = std::fs::remove_dir_all(&dir);
 }

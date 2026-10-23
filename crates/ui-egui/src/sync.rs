@@ -306,8 +306,8 @@ pub fn poll_run(app: &mut LightcraftApp, ctx: &egui::Context) {
         not_saved.push(e.to_string());
     }
     let r = report.unwrap_or_default();
-    for (path, e) in &r.failed {
-        log::warn!("synchronize {name}: {path}: {e}");
+    for f in &r.failed {
+        log::warn!("synchronize {name}: {}: {}", f.path, f.error);
     }
     for e in &not_saved {
         log::warn!("synchronize {name}: not saved: {e}");

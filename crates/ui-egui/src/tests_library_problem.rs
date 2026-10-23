@@ -38,7 +38,7 @@ fn unopenable_library_asks_instead_of_running_a_demo() {
         session,
         Services {
             png: Some(Box::new(png)),
-            write: Some(Box::new(|p: &str, b: &[u8]| std::fs::write(p, b).map_err(|e| e.to_string()))),
+            write: Some(Box::new(|p: &str, b: &[u8]| std::fs::write(p, b).map_err(|e| lightcraft_engine::EngineError::io(p, &e)))),
             ..Default::default()
         },
     );

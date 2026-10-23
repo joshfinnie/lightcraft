@@ -198,6 +198,6 @@ impl crate::Session {
         let job = self.slide_job_look(settings, overlays, id, width, height, None, false).ok_or("no such photo")?;
         let r = job.run();
         self.accept(&r);
-        r.rendered.map(|r| r.image)
+        r.rendered.map(|r| r.image).map_err(String::from)
     }
 }

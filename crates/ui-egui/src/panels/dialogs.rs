@@ -99,7 +99,7 @@ fn watermark_preview(
                 let work = move || {
                     for job in jobs {
                         // (a panic in the render is its failure: `RenderJob::run`)
-                        let r = job.run().rendered.map(|r| r.image);
+                        let r = job.run().rendered.map(|r| r.image).map_err(String::from);
                         let mut got = out.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
                         // a failed sharp render keeps the thumbnail
                         if r.is_ok() || !matches!(got.1, Some(Ok(_))) {

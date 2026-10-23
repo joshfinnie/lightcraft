@@ -200,7 +200,7 @@ fn edit_copy(s: &mut Session, demo_dir: Option<&str>, id: lightcraft_catalog::Ph
         },
     };
     let mut written = Vec::new();
-    let mut write = |path: &str, bytes: &[u8]| -> std::result::Result<(), String> {
+    let mut write = |path: &str, bytes: &[u8]| -> Result<()> {
         // durable: the TIFF becomes a library photo the external editor then changes
         crate::export::write_file_durable(path, bytes)?;
         written.push(path.to_string());

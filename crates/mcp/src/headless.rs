@@ -59,10 +59,10 @@ impl Headless {
     /// The UI command `app.export`, emulated with the same parameters as the desktop app
     /// (see `lightcraft_engine::export::ExportOptions::from_json`, plus `ids`, `dir`, `path`).
     /// With `path` and no `format`, the format follows the path's extension.
-    fn export(&mut self, p: &Value) -> Result<Value, String> {
+    fn export(&mut self, p: &Value) -> Result<Value, CommandError> {
         use lightcraft_engine::export::{Destination, ExportFormat, ExportOptions, Resize, prepare_batch, run_batch};
         let p = &self.session.export_params(p)?;
-        let mut opts = ExportOptions::from_params(p).map_err(|e| e.to_string())?;
+        let mut opts = ExportOptions::from_params(p)?;
         if !ExportOptions::has_size_param(p) {
             opts.resize = Some(Resize::long_edge(3000));
         }
@@ -104,7 +104,7 @@ impl Headless {
             cancelled = !hook(total, total, "");
         }
         if cancelled {
-            return Err("cancelled".into());
+            return Err(lightcraft_engine::EngineError::Cancelled("cancelled".into()).into());
         }
         // Single-photo exports also report path/width/height at the top level (back-compat).
         let mut out = files.first().cloned().unwrap_or_else(|| json!({}));
@@ -128,7 +128,7 @@ impl Backend for Headless {
                 let id = p.get("command").or(p.get("id")).and_then(Value::as_str).ok_or("missing `command`")?;
                 let params = p.get("params").cloned().filter(|v| !v.is_null()).unwrap_or(json!({}));
                 if id == "app.export" {
-                    return self.export(&params).map_err(CommandError::from);
+                    return self.export(&params);
                 }
                 self.session.execute(id, &params).map_err(CommandError::from)
             }
@@ -150,7 +150,7 @@ impl Backend for Headless {
                     None => Ok(json!({"width": img.width, "height": img.height})),
                 }
             }
-            "app.export" => self.export(&p).map_err(CommandError::from),
+            "app.export" => self.export(&p),
             m if m.starts_with("ui.") || m == "app.quit" => {
                 Err(format!("`{m}` needs the desktop app: start `lightcraft --control 7980` and run the MCP server with `--connect`").into())
             }
@@ -199,7 +199,7 @@ pub fn encode_image(ext: &str, img: &Rgba8, quality: u8) -> Result<Vec<u8>, Stri
 pub fn write_image(path: &Path, img: &Rgba8, quality: u8) -> Result<(), String> {
     let ext = path.extension().map(|e| e.to_string_lossy().to_string()).unwrap_or_default();
     let bytes = encode_image(&ext, img, quality)?;
-    lightcraft_engine::export::write_file(&path.to_string_lossy(), &bytes)
+    Ok(lightcraft_engine::export::write_file(&path.to_string_lossy(), &bytes)?)
 }
 
 #[cfg(test)]

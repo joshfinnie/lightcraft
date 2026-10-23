@@ -89,7 +89,7 @@ pub mod walk;
 use std::sync::Arc;
 
 pub use cmd::{CommandInfo, CommandSpec, command_specs, find_command};
-pub use errors::{AiModel, CommandError, ErrorKind};
+pub use errors::{AiModel, CommandError, ErrorKind, FileProblem};
 pub use history::{FolderMove, Interaction, UndoEntry};
 use lightcraft_catalog::{Catalog, Filter, Op, PhotoId, Sort};
 use lightcraft_develop::DevelopSettings;
@@ -98,7 +98,7 @@ use serde_json::Value;
 pub use view::{Browse, FilterChip, LibrarySource, Selection, SelectionState, filter_chips};
 pub use {lightcraft_catalog as catalog, lightcraft_develop as develop, lightcraft_gpu as gpu, lightcraft_pipeline as pipeline};
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Clone, Debug, thiserror::Error)]
 pub enum EngineError {
     #[error("unknown command `{0}`")]
     UnknownCommand(String),
@@ -127,6 +127,9 @@ pub enum EngineError {
     /// offers its download (terms first) on [`ErrorKind::ModelMissing`], not on the message.
     #[error("{msg}")]
     ModelMissing { model: AiModel, msg: String },
+    /// A file could not be read, decoded or written: [`ErrorKind::File`].
+    #[error("{msg}")]
+    File { problem: FileProblem, msg: String },
     #[error("{0}")]
     Other(String),
 }

@@ -123,7 +123,7 @@ fn export(s: &mut Session, p: Export) -> Result<Value> {
     }
     let target = path.to_string_lossy();
     s.check_write_target(&target).map_err(|e| bad("preset.export", e))?;
-    crate::export::write_file_durable(&target, to_lcpreset(&chosen).as_bytes()).map_err(crate::EngineError::Other)?;
+    crate::export::write_file_durable(&target, to_lcpreset(&chosen).as_bytes())?;
     Ok(json!({"path": path.display().to_string(), "count": chosen.len()}))
 }
 

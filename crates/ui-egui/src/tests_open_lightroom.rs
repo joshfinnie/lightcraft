@@ -46,7 +46,7 @@ fn open_library_on_a_lightroom_catalog_offers_its_import() {
     let services = Services {
         pick_folder: Some(Box::new(move || Some(picked.clone()))),
         png: Some(Box::new(png)),
-        write: Some(Box::new(|p: &str, b: &[u8]| std::fs::write(p, b).map_err(|e| e.to_string()))),
+        write: Some(Box::new(|p: &str, b: &[u8]| std::fs::write(p, b).map_err(|e| lightcraft_engine::EngineError::io(p, &e)))),
         ..Default::default()
     };
     let mut h = Headless::new(LightcraftApp::new(session, services), [1200.0, 800.0], 1.0);

@@ -57,7 +57,7 @@ pub fn file_probe(s: &Session) -> Option<FileProbe> {
 }
 
 /// Probe each listed photo's file as Reload would. Doesn't touch the session.
-pub fn probe(probe: &FileProbe, stale: Vec<Stale>) -> Vec<(Stale, std::result::Result<ProbeInfo, String>)> {
+pub fn probe(probe: &FileProbe, stale: Vec<Stale>) -> Vec<(Stale, crate::Result<ProbeInfo>)> {
     let paths: Vec<String> = stale.iter().map(|x| x.path.clone()).collect();
     stale.into_iter().zip(crate::import::probe_with(probe, &paths)).collect()
 }
@@ -81,7 +81,7 @@ impl Rechecked {
 /// journaled but isn't an undo step. A file that can't be read (missing, offline) changes nothing,
 /// so it is tried again next time; a photo that changed since it was listed (relinked, reloaded,
 /// removed) is skipped.
-pub fn apply(s: &mut Session, results: Vec<(Stale, std::result::Result<ProbeInfo, String>)>) -> Result<Rechecked> {
+pub fn apply(s: &mut Session, results: Vec<(Stale, Result<ProbeInfo>)>) -> Result<Rechecked> {
     let mut ops = Vec::new();
     let mut out = Rechecked::default();
     for (item, info) in results {

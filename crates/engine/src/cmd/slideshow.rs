@@ -166,7 +166,7 @@ fn preview_size(layout: &lightcraft_slideshow::SlideSettings, p: &Preview) -> Re
 fn deliver(png: &[u8], path: Option<&str>, out: &mut Value) -> Result<()> {
     match path {
         Some(path) => {
-            crate::export::write_file(path, png).map_err(crate::EngineError::Other)?;
+            crate::export::write_file(path, png)?;
             out["path"] = json!(path);
         }
         None => out["png"] = json!(base64(png)),
@@ -359,7 +359,7 @@ fn tpl_export(s: &mut Session, p: ExportTemplate) -> Result<Value> {
     let t = s.slide_template(id).map_err(|e| bad(C, e))?;
     s.check_write_target(path).map_err(|e| bad(C, e))?;
     let bytes = serde_json::to_vec_pretty(&t.to_doc()).map_err(|e| crate::EngineError::Other(e.to_string()))?;
-    crate::export::write_file(path, &bytes).map_err(crate::EngineError::Other)?;
+    crate::export::write_file(path, &bytes)?;
     Ok(json!({"id": t.id, "name": t.name, "path": path}))
 }
 
