@@ -11,7 +11,6 @@ pub mod album_picker;
 pub mod brush_live;
 pub mod button;
 pub mod canvas_keys;
-mod command_error;
 mod commands;
 pub mod control;
 pub mod credits;
@@ -191,8 +190,8 @@ use std::sync::mpsc::{Receiver, Sender};
 use lightcraft_engine::{AiModel, ErrorKind, Session};
 use serde_json::Value;
 
-pub use command_error::CommandError;
 pub use control::{ControlRequest, ControlResponse};
+pub use lightcraft_engine::CommandError;
 pub use state::UiState;
 
 const TOAST_SECONDS: f64 = 1.4;

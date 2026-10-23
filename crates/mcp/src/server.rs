@@ -224,7 +224,7 @@ impl Server {
                         COMMANDS_URI => b.call("engine.commands", json!({})),
                         _ => b.call("engine.execute", json!({"command": cmd, "params": {}})),
                     })
-                    .and_then(|v| v)
+                    .and_then(|v| v.map_err(String::from))
                     .map_err(|e| (INTERNAL_ERROR, e))?;
                 Ok(json!({"contents": [{"uri": uri, "mimeType": "application/json", "text": serde_json::to_string_pretty(&v).unwrap_or_default()}]}))
             }

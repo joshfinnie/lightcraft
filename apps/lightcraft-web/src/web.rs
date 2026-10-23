@@ -580,7 +580,8 @@ thread_local! {
 }
 
 /// Run a command by id from JavaScript (automation, tests): `await command("library.info", "{}")`
-/// resolves to the result as JSON text, or rejects with the error. Besides every engine/UI
+/// resolves to the result as JSON text, or rejects with an `Error` whose `code` (and `model`) name the kind of
+/// failure as a control-channel reply does (`docs/control-protocol.md` → Error codes). Besides every engine/UI
 /// command, `web.stats` reports the browser host's state (storage, workers, originals in memory).
 #[wasm_bindgen]
 pub fn command(id: String, params: String) -> js_sys::Promise {
@@ -588,6 +589,17 @@ pub fn command(id: String, params: String) -> js_sys::Promise {
         INBOX.with(|q| q.borrow_mut().push((id.clone(), params.clone(), (resolve, reject))));
         CTX.with(|c| c.borrow().as_ref().map(|c| c.request_repaint()));
     })
+}
+
+/// `e` as a JavaScript `Error` carrying its reply fields (`code`, `model`) as properties.
+fn js_error(e: &lightcraft_ui_egui::CommandError) -> JsValue {
+    let error = js_sys::Error::new(&e.message);
+    for (k, v) in e.fields() {
+        if let (false, Some(v)) = (k == "error", v.as_str()) {
+            let _ = js_sys::Reflect::set(&error, &k.into(), &v.into());
+        }
+    }
+    error.into()
 }
 
 impl WebApp {
@@ -613,10 +625,10 @@ impl WebApp {
         let inbox = INBOX.with(|q| std::mem::take(&mut *q.borrow_mut()));
         for (id, params, (resolve, reject)) in inbox {
             let params: serde_json::Value = serde_json::from_str(&params).unwrap_or(json!({}));
-            let r = if id == "web.stats" { Ok(self.web_stats()) } else { self.app.run(&id, params) };
+            let r = if id == "web.stats" { Ok(self.web_stats()) } else { self.app.run_typed(&id, params) };
             let _ = match r {
                 Ok(v) => resolve.call1(&JsValue::NULL, &v.to_string().into()),
-                Err(e) => reject.call1(&JsValue::NULL, &e.into()),
+                Err(e) => reject.call1(&JsValue::NULL, &js_error(&e)),
             };
         }
     }

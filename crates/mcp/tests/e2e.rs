@@ -155,7 +155,11 @@ fn fake_app() -> String {
                 let msg: Value = serde_json::from_str(&line).unwrap();
                 let reply = match backend.call(msg["method"].as_str().unwrap(), msg["params"].clone()) {
                     Ok(v) => json!({"id": msg["id"], "ok": true, "result": v}),
-                    Err(e) => json!({"id": msg["id"], "ok": false, "error": e}),
+                    Err(e) => {
+                        let mut reply = e.reply();
+                        reply["id"] = msg["id"].clone();
+                        reply
+                    }
                 };
                 if writeln!(out, "{reply}").is_err() {
                     break;
@@ -186,6 +190,23 @@ fn remote_unreachable_is_a_tool_error() {
     assert!(r[0]["result"]["content"][0]["text"].as_str().unwrap().contains("not reachable"));
 }
 
+/// The app's error code reaches the MCP client through the control channel.
+#[test]
+fn remote_errors_keep_their_code() {
+    let addr = fake_app();
+    let mut server = Server::new(Box::new(Remote::connect(&addr).unwrap()));
+    let r = session(
+        &mut server,
+        &[
+            call(1, "run_command", json!({"command": "no.such"})),
+            call(2, "run_command", json!({"command": "photo.rate", "params": {"rating": "five"}})),
+        ],
+    );
+    assert_eq!(r[0]["result"]["isError"], true, "{r:?}");
+    assert_eq!(r[0]["result"]["structuredContent"]["code"], "unknownCommand", "{r:?}");
+    assert_eq!(r[1]["result"]["structuredContent"]["code"], "badParams", "{r:?}");
+}
+
 /// [`Headless`] whose batch export, while `hold` is set, waits once its first photo is written:
 /// it keeps asking the server's progress hook at that photo boundary (which answers pings and
 /// reads cancels meanwhile) until the request is cancelled or the test clears `hold`. A ping or
@@ -196,7 +217,7 @@ struct HoldAfterFirst {
 }
 
 impl Backend for HoldAfterFirst {
-    fn call(&mut self, method: &str, params: Value) -> Result<Value, String> {
+    fn call(&mut self, method: &str, params: Value) -> Result<Value, lightcraft_engine::CommandError> {
         self.inner.call(method, params)
     }
 

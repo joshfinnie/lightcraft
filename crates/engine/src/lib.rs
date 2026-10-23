@@ -89,7 +89,7 @@ pub mod walk;
 use std::sync::Arc;
 
 pub use cmd::{CommandInfo, CommandSpec, command_specs, find_command};
-pub use errors::{AiModel, ErrorKind};
+pub use errors::{AiModel, CommandError, ErrorKind};
 pub use history::{FolderMove, Interaction, UndoEntry};
 use lightcraft_catalog::{Catalog, Filter, Op, PhotoId, Sort};
 use lightcraft_develop::DevelopSettings;

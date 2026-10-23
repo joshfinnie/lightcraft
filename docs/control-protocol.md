@@ -9,8 +9,11 @@ on every connection authenticates (see [Authentication](#authentication)):
 ← {"id": 0, "ok": true, "result": {"authenticated": true}}
 → {"id": 1, "method": "engine.execute", "params": {"command": "photo.rate", "params": {"rating": 4}}}
 ← {"id": 1, "ok": true, "result": null}
-← {"id": 2, "ok": false, "error": "unknown command `nope`"}
+← {"id": 2, "ok": false, "error": "unknown command `nope`", "code": "unknownCommand"}
 ```
+
+An error reply's `error` is the message for people; it gets reworded, so a client that decides on a
+failure reads [`code`](#error-codes) instead.
 
 ## Authentication
 
@@ -69,6 +72,24 @@ UI thread, and at most 16 connections are served at once (further ones get an er
 that hit an error reply should reconnect (and authenticate again). The MCP server's connect
 mode ([mcp.md](mcp.md)) is a thin layer over this channel. Implementation:
 `crates/ui-egui/src/control.rs` (methods) and `apps/lightcraft/src/control_server.rs` (transport).
+
+## Error codes
+
+Every `ok: false` reply carries `code`, the kind of failure (`lightcraft_engine::ErrorKind::code`). A
+code this version doesn't list is treated as `other`.
+
+| `code` | Meaning |
+|---|---|
+| `unknownCommand` | No command has that id (see `engine.commands`) |
+| `disabled` | The command exists but can't run now (nothing selected, wrong view…) |
+| `badParams` | A param the command doesn't take or a value of the wrong type; nothing ran |
+| `catalog` | The library refused the change (no such photo, album or keyword…) |
+| `notSaved` | The change is applied in memory but couldn't be written; LightCraft retries ([below](#when-the-library-cant-be-saved)) |
+| `libraryInUse` | Another process has the library open |
+| `lightroomCatalog` | The folder is a Lightroom Classic catalog, not a LightCraft library ([below](#open-library-on-a-lightroom-catalog)) |
+| `cancelled` | The work was cancelled: not a failure |
+| `modelMissing` | The feature needs an AI model that isn't installed; `model` says which (`faceDetector`, `sam3`) |
+| `other` | Anything else, including the control server's own refusals (authentication, timeouts, oversized lines) |
 
 ## Isolated automation profiles
 
@@ -242,7 +263,7 @@ For example, send these requests one at a time and read each reply before sendin
 {"id":5,"method":"engine.execute","params":{"command":"photo.inspect"}}
 ```
 
-Replies use `{id, ok, result}` or `{id, ok: false, error}`. A command refuses params it doesn't
+Replies use `{id, ok, result}` or `{id, ok: false, error, code}` ([error codes](#error-codes)). A command refuses params it doesn't
 take: an unknown key (at any depth) or a value of the wrong type is an error such as
 `` invalid parameters for `photo.rate`: unknown parameter `idz` (takes `ids`, `id`, `rating`, `advance`) ``,
 and nothing changes. In the photo snapshot, exposure is

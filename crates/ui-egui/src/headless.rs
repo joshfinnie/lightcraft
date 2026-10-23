@@ -18,7 +18,7 @@ use std::sync::mpsc::Sender;
 use std::time::{Duration, Instant};
 
 use egui::{Color32, ColorImage, RawInput, TextureId, ViewportCommand, ViewportId};
-use serde_json::{Value, json};
+use serde_json::Value;
 
 use crate::softpaint::{self, CpuTexture, Layered, TextureStore};
 use crate::{ControlRequest, LightcraftApp};
@@ -435,7 +435,7 @@ impl Headless {
     pub(crate) fn hide_home_above(&mut self, path: &std::path::Path) {
         let home = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")).unwrap_or_default();
         if !home.is_empty() && lightcraft_catalog::query::folder_within(&path.to_string_lossy(), &home) {
-            let r = self.request("engine.execute", json!({"command": "local.hide", "params": {"path": home}}), Duration::from_secs(10));
+            let r = self.request("engine.execute", serde_json::json!({"command": "local.hide", "params": {"path": home}}), Duration::from_secs(10));
             assert_eq!(r["ok"], true, "{r}");
         }
     }
@@ -445,7 +445,7 @@ impl Headless {
     pub fn request(&mut self, method: &str, params: Value, timeout: Duration) -> Value {
         let (req, rx) = ControlRequest::new(method, params);
         if self.control.send(req).is_err() {
-            return json!({"ok": false, "error": "control channel closed"});
+            return crate::CommandError::from("control channel closed").reply();
         }
         let t0 = Instant::now();
         let reply = loop {
@@ -454,7 +454,7 @@ impl Headless {
                 break v;
             }
             if t0.elapsed() > timeout {
-                return json!({"ok": false, "error": "timeout"});
+                return crate::CommandError::from("timeout").reply();
             }
             if self.busy() {
                 std::thread::sleep(Duration::from_millis(1));
@@ -612,6 +612,7 @@ mod tests {
     }
 
     use super::*;
+    use serde_json::json;
 
     /// The pretend host has a clipboard, as a desktop does: text the UI copies lands in it, and a
     /// cut, copy or paste request (from a context menu) comes back as that event on the next frame.

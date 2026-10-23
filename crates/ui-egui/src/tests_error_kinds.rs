@@ -55,6 +55,26 @@ fn run_typed_keeps_the_kind_and_run_the_message() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// A control-channel error reply names its kind in `code` (and the model in `model`), so an agent
+/// decides on it like the UI does.
+#[test]
+fn control_replies_carry_the_kind() {
+    let mut h = demo();
+    let t = std::time::Duration::from_secs(30);
+    let r = h.request("engine.execute", json!({"command": "no.such"}), t);
+    assert_eq!((r["ok"].as_bool(), r["code"].as_str()), (Some(false), Some("unknownCommand")), "{r}");
+    let r = h.request("engine.execute", json!({"command": "photo.rate", "params": {"rating": "five"}}), t);
+    assert_eq!(r["code"], "badParams", "{r}");
+    let dir = std::env::temp_dir().join(format!("lc-ui-error-codes-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    h.app.session.face_models_dir = Some(dir.join("models"));
+    let r = h.request("engine.execute", json!({"command": "faces.detect"}), t);
+    assert_eq!((r["code"].as_str(), r["model"].as_str()), (Some("modelMissing"), Some("faceDetector")), "{r}");
+    let r = h.request("ui.zoom", json!({"factor": -1}), t);
+    assert_eq!(r["code"], "other", "an error the UI raised itself: {r}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 /// A UI command's error is logged and shown on the status line like an engine command's (B5: the
 /// UI commands returned before either).
 #[test]

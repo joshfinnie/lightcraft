@@ -17,7 +17,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::time::Duration;
 
-use lightcraft_engine::control_auth;
+use lightcraft_engine::{CommandError, control_auth};
 use lightcraft_ui_egui::ControlRequest;
 use serde_json::{Value, json};
 
@@ -60,7 +60,7 @@ fn spawn_connection(
 ) -> Option<std::thread::JoinHandle<()>> {
     if open.fetch_add(1, Ordering::SeqCst) >= MAX_CONNECTIONS {
         open.fetch_sub(1, Ordering::SeqCst);
-        let _ = writeln!(stream, "{}", json!({"ok": false, "error": "too many control connections"}));
+        let _ = writeln!(stream, "{}", CommandError::from("too many control connections").reply());
         return None;
     }
     let slot = Arc::clone(&open);
@@ -123,7 +123,7 @@ fn await_reply(
     loop {
         match rrx.recv_timeout(slice) {
             Ok(v) => return v,
-            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => return json!({"ok": false, "error": "the app dropped the request"}),
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => return CommandError::from("the app dropped the request").reply(),
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
         }
         let now = frames();
@@ -132,12 +132,12 @@ fn await_reply(
         }
         let taken = state.load(Ordering::SeqCst) == lightcraft_ui_egui::control::TAKEN;
         if !taken && since.elapsed() >= no_frames && ControlRequest::abandon(state) {
-            return json!({"ok": false, "error": HIDDEN_WINDOW_ERROR});
+            return CommandError::from(HIDDEN_WINDOW_ERROR).reply();
         }
         if start.elapsed() >= timeout {
             // not run yet: make sure it never is; already running: it may still finish
             ControlRequest::abandon(state);
-            return json!({"ok": false, "error": "timeout"});
+            return CommandError::from("timeout").reply();
         }
         wake();
     }
@@ -271,7 +271,7 @@ fn serve_lines<R: Read, W: Write>(read: R, mut out: W, token: &str, mut handle: 
                 }
             },
         };
-        let _ = writeln!(out, "{}", json!({"ok": false, "error": reject})).and_then(|()| out.flush());
+        let _ = writeln!(out, "{}", CommandError::from(reject).reply()).and_then(|()| out.flush());
         return;
     }
 }

@@ -4,6 +4,7 @@
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use lightcraft_engine::CommandError;
 use serde_json::{Map, Value, json};
 
 use crate::backend::Backend;
@@ -36,11 +37,14 @@ impl ToolResult {
         r
     }
 
-    pub fn error(msg: impl Into<String>) -> Self {
-        Self { is_error: true, ..Self::text(msg) }
+    /// A failed call: its message as text, and `structuredContent` `{error, code, model?}` for a
+    /// client that decides on what kind of error it is ([`lightcraft_engine::ErrorKind::code`]).
+    pub fn error(e: impl Into<CommandError>) -> Self {
+        let e = e.into();
+        Self { is_error: true, structured: Some(Value::Object(e.fields())), ..Self::text(e.message) }
     }
 
-    fn from(r: Result<Value, String>) -> Self {
+    fn from(r: Result<Value, CommandError>) -> Self {
         match r {
             Ok(v) => Self::json(v),
             Err(e) => Self::error(e),
@@ -425,12 +429,12 @@ pub fn tool_definitions(backend: &mut dyn Backend, with_commands: bool) -> Vec<V
     v
 }
 
-fn exec(b: &mut dyn Backend, command: &str, params: Value) -> Result<Value, String> {
+fn exec(b: &mut dyn Backend, command: &str, params: Value) -> Result<Value, CommandError> {
     b.call("engine.execute", json!({"command": command, "params": params}))
 }
 
 /// Make `args.id` (if any) the active photo.
-fn activate(b: &mut dyn Backend, args: &Value) -> Result<(), String> {
+fn activate(b: &mut dyn Backend, args: &Value) -> Result<(), CommandError> {
     if let Some(id) = args.get("id").and_then(Value::as_u64) {
         exec(b, "library.select", json!({"ids": [id], "active": id}))?;
     }
@@ -492,7 +496,7 @@ fn image_result(file: &std::path::Path, max: Option<u32>, format: &str, save_to:
 }
 
 /// A user-given `path` to save to must not be a photo's original (or its sidecar).
-fn check_save_path(b: &mut dyn Backend, args: &Value) -> Result<(), String> {
+fn check_save_path(b: &mut dyn Backend, args: &Value) -> Result<(), CommandError> {
     match args.get("path").and_then(Value::as_str) {
         Some(p) => exec(b, "export.checkTarget", json!({"path": p})).map(|_| ()),
         None => Ok(()),
@@ -593,7 +597,7 @@ pub fn call_tool(b: &mut dyn Backend, name: &str, args: &Value) -> ToolResult {
             for st in steps {
                 let Some(id) = st["id"].as_str() else {
                     failed += 1;
-                    results.push(json!({"ok": false, "error": "step without `id`"}));
+                    results.push(CommandError::from("step without `id`").reply());
                     if stop {
                         break;
                     }
@@ -606,7 +610,7 @@ pub fn call_tool(b: &mut dyn Backend, name: &str, args: &Value) -> ToolResult {
                     }
                     Err(e) => {
                         failed += 1;
-                        results.push(json!({"ok": false, "error": e}));
+                        results.push(e.reply());
                         if stop {
                             break;
                         }
@@ -669,7 +673,7 @@ pub fn call_tool(b: &mut dyn Backend, name: &str, args: &Value) -> ToolResult {
                 let values = args.get("values").filter(|v| v.as_object().is_some_and(|o| !o.is_empty()));
                 let settings = args.get("settings").filter(|v| v.as_object().is_some_and(|o| !o.is_empty()));
                 if values.is_none() && settings.is_none() {
-                    return Err("give `values` ({controlId: number}) and/or `settings` (partial develop JSON)".to_string());
+                    return Err("give `values` ({controlId: number}) and/or `settings` (partial develop JSON)".into());
                 }
                 if let Some(v) = values {
                     exec(b, "develop.set", json!({"values": v}))?;
@@ -784,7 +788,7 @@ pub fn call_tool(b: &mut dyn Backend, name: &str, args: &Value) -> ToolResult {
 }
 
 /// The canonical document resource and tool share the same snapshot.
-pub(crate) fn doc_inspect(b: &mut dyn Backend) -> Result<Value, String> {
+pub(crate) fn doc_inspect(b: &mut dyn Backend) -> Result<Value, CommandError> {
     let library = exec(b, "library.state", json!({}))?;
     let stats = exec(b, "catalog.stats", json!({}))?;
     Ok(json!({"library": library, "stats": stats}))

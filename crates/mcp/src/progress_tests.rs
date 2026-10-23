@@ -9,7 +9,7 @@ struct ExportUntilCancelled {
 }
 
 impl Backend for ExportUntilCancelled {
-    fn call(&mut self, _: &str, _: Value) -> Result<Value, String> {
+    fn call(&mut self, _: &str, _: Value) -> Result<Value, lightcraft_engine::CommandError> {
         if self.retain_hook {
             return Ok(json!({}));
         }

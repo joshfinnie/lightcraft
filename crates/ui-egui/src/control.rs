@@ -18,7 +18,7 @@ use std::sync::mpsc::Sender;
 
 use serde_json::{Value, json};
 
-use crate::LightcraftApp;
+use crate::{CommandError, LightcraftApp};
 
 pub type ControlResponse = Value;
 
@@ -65,10 +65,10 @@ pub enum Outcome {
 fn ok(v: Value) -> Outcome {
     Outcome::Done(json!({"ok": true, "result": v}))
 }
-fn err(e: impl std::fmt::Display) -> Outcome {
-    Outcome::Done(json!({"ok": false, "error": e.to_string()}))
+fn err(e: impl Into<CommandError>) -> Outcome {
+    Outcome::Done(e.into().reply())
 }
-fn wrap(r: Result<Value, String>) -> Outcome {
+fn wrap(r: Result<Value, impl Into<CommandError>>) -> Outcome {
     match r {
         Ok(v) => ok(v),
         Err(e) => err(e),
@@ -214,7 +214,7 @@ pub fn handle(app: &mut LightcraftApp, ctx: &egui::Context, req: &ControlRequest
         "engine.execute" | "ui.menu.invoke" | "command" => {
             let Some(id) = s("command").or(s("id")) else { return err("missing `command`") };
             let params = p.get("params").cloned().filter(|v| !v.is_null()).unwrap_or(json!({}));
-            let r = app.run(id, params);
+            let r = app.run_typed(id, params);
             ctx.request_repaint();
             wrap(r)
         }
@@ -395,7 +395,7 @@ pub fn handle(app: &mut LightcraftApp, ctx: &egui::Context, req: &ControlRequest
                     ctx.request_repaint();
                     ok(serde_json::to_value(&app.ui).unwrap_or_default())
                 }
-                Err(e) => err(e),
+                Err(e) => err(e.to_string()),
             }
         }
         "ui.dialog.confirm" => match app.ui.dialog.take() {
@@ -577,15 +577,15 @@ pub fn save_screenshot(app: &mut LightcraftApp, image: &egui::ColorImage, path: 
     };
     let rgba: Vec<u8> = image.pixels.iter().flat_map(|c| c.to_array()).collect();
     let Some(img) = lightcraft_raster::Rgba8::from_bytes(w, h, &rgba) else {
-        return json!({"ok": false, "error": "bad screenshot buffer"});
+        return CommandError::from("bad screenshot buffer").reply();
     };
-    let Some(png) = app.services.png.as_ref() else { return json!({"ok": false, "error": "no encoder"}) };
+    let Some(png) = app.services.png.as_ref() else { return CommandError::from("no encoder").reply() };
     let bytes = png(&img);
     match app.services.write.as_mut() {
         Some(wr) => match wr(path, &bytes) {
             Ok(()) => json!({"ok": true, "result": {"path": path, "width": w, "height": h}}),
-            Err(e) => json!({"ok": false, "error": e}),
+            Err(e) => CommandError::from(e).reply(),
         },
-        None => json!({"ok": false, "error": "no writer configured"}),
+        None => CommandError::from("no writer configured").reply(),
     }
 }

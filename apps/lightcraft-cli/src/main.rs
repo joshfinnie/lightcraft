@@ -510,7 +510,7 @@ fn parse_steps(tokens: &[String]) -> Result<Vec<Step>, String> {
 
 /// Run one step: control-protocol methods (`ui.*`, `engine.*`) directly, everything else as a
 /// command through `engine.execute`.
-fn run_step(b: &mut dyn Backend, s: &Step) -> Result<Value, String> {
+fn run_step(b: &mut dyn Backend, s: &Step) -> Result<Value, lightcraft_engine::CommandError> {
     let direct = s.id.starts_with("ui.") || s.id.starts_with("engine.") || s.id == "app.quit";
     if direct { b.call(&s.id, s.params.clone()) } else { b.call("engine.execute", json!({"command": s.id, "params": s.params})) }
 }
@@ -614,7 +614,9 @@ fn run(args: &[String]) -> Result<(), String> {
             Ok(r) => json!({"command": s.id, "ok": true, "result": r, "ms": (t.elapsed().as_secs_f64() * 1e4).round() / 10.0}),
             Err(e) => {
                 failed += 1;
-                json!({"command": s.id, "ok": false, "error": e})
+                let mut line = e.reply();
+                line["command"] = json!(s.id);
+                line
             }
         };
         writeln!(out, "{line}").map_err(|e| e.to_string())?;

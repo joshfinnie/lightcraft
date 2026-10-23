@@ -49,6 +49,16 @@ fn errors() {
     let r = rpc(&mut s, 4, "tools/call", json!({"name": "run_command", "arguments": {"command": "no.such"}}));
     assert_eq!(r["result"]["isError"], true);
     assert!(r["result"]["content"][0]["text"].as_str().unwrap().contains("unknown command"));
+    assert_eq!(r["result"]["structuredContent"]["code"], "unknownCommand", "{r}");
+    assert_eq!(r["result"]["structuredContent"]["error"], r["result"]["content"][0]["text"]);
+    let r = rpc(&mut s, 5, "tools/call", json!({"name": "run_command", "arguments": {"command": "photo.rate", "params": {"rating": "five"}}}));
+    assert_eq!(r["result"]["structuredContent"]["code"], "badParams", "{r}");
+    let r = rpc(&mut s, 6, "tools/call", json!({"name": "nope", "arguments": {}}));
+    assert_eq!(r["result"]["structuredContent"]["code"], "other", "an error the server raised itself: {r}");
+    let steps = json!([{"id": "no.such"}, {"params": {}}]);
+    let r = rpc(&mut s, 7, "tools/call", json!({"name": "command_batch", "arguments": {"steps": steps, "stop_on_error": false}}));
+    let results = &r["result"]["structuredContent"]["results"];
+    assert_eq!((results[0]["code"].as_str(), results[1]["code"].as_str()), (Some("unknownCommand"), Some("other")), "{r}");
 }
 
 #[test]
@@ -118,9 +128,9 @@ fn path_writes_never_replace_an_original() {
     let path = orig.to_string_lossy().to_string();
     let r = call_tool(&mut b, "render_photo", &json!({"id": id, "path": path}));
     assert!(r.is_error, "{r:?}");
-    assert!(b.call("ui.render", json!({"id": id, "path": path})).unwrap_err().contains("original"));
+    assert!(b.call("ui.render", json!({"id": id, "path": path})).unwrap_err().message.contains("original"));
     let e = b.call("app.export", json!({"ids": [id], "path": path})).unwrap_err();
-    assert!(e.contains("never writes over an original"), "{e}");
+    assert!(e.message.contains("never writes over an original"), "{e}");
     assert_eq!(std::fs::read(&orig).unwrap(), png, "the original is untouched");
     // another path still works
     let r = call_tool(&mut b, "render_photo", &json!({"id": id, "path": base.join("render.png").to_string_lossy()}));
@@ -135,11 +145,11 @@ fn export_refuses_unknown_params_and_bad_values() {
     let mut b = Headless::demo();
     let out = "/nonexistent-lc-test/x.jpg";
     let e = b.call("app.export", json!({"path": out, "longEdgee": 400})).unwrap_err();
-    assert!(e.contains("unknown parameter `longEdgee` (did you mean `longEdge`?)"), "{e}");
+    assert!(e.message.contains("unknown parameter `longEdgee` (did you mean `longEdge`?)"), "{e}");
     let e = b.call("app.export", json!({"path": out, "longEdge": "banana"})).unwrap_err();
-    assert!(e.contains("`longEdge` must be a number"), "{e}");
+    assert!(e.message.contains("`longEdge` must be a number"), "{e}");
     let e = b.call("app.export", json!({"path": out, "watermark": {"text": "x", "size": 3}})).unwrap_err();
-    assert!(e.contains("`watermark.size` must be a number 0.005..0.5"), "{e}");
+    assert!(e.message.contains("`watermark.size` must be a number 0.005..0.5"), "{e}");
     // `export` tool and preset expansion go through the same check
     let r = call_tool(&mut b, "export", &json!({"path": out, "quality": 101}));
     assert!(r.is_error, "{r:?}");
@@ -476,7 +486,7 @@ fn escaped_tool_panic_is_an_error_and_session_survives() {
         fail: bool,
     }
     impl Backend for Faulty {
-        fn call(&mut self, method: &str, params: Value) -> Result<Value, String> {
+        fn call(&mut self, method: &str, params: Value) -> Result<Value, lightcraft_engine::CommandError> {
             if method == "engine.execute" && params["command"] == "catalog.stats" && std::mem::take(&mut self.fail) {
                 panic!("synthetic backend panic");
             }
@@ -521,7 +531,7 @@ fn modern_requests_receive_result_and_cache_fields() {
 struct Recorder(Vec<(String, Value)>);
 
 impl Backend for Recorder {
-    fn call(&mut self, method: &str, params: Value) -> Result<Value, String> {
+    fn call(&mut self, method: &str, params: Value) -> Result<Value, lightcraft_engine::CommandError> {
         self.0.push((method.to_string(), params));
         Ok(Value::Null)
     }

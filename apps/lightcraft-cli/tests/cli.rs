@@ -502,6 +502,14 @@ fn run_cli(args: &[&str], stdin: Option<&str>) -> (bool, Vec<Value>, String) {
 }
 
 #[test]
+fn a_failed_run_step_names_its_error_code() {
+    let (ok, lines, _) = run_cli(&["--demo", "--keep-going", "no.such", "photo.rate", "rating=five"], None);
+    assert!(!ok);
+    let codes: Vec<_> = lines.iter().map(|l| (l["command"].as_str(), l["ok"].as_bool(), l["code"].as_str())).collect();
+    assert_eq!(codes, [(Some("no.such"), Some(false), Some("unknownCommand")), (Some("photo.rate"), Some(false), Some("badParams"))], "{lines:?}");
+}
+
+#[test]
 fn run_subcommand_chains_commands_and_persists_a_library() {
     let input = tmp("run-in.png");
     gradient_png(&input);

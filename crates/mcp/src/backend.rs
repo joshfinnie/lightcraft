@@ -4,7 +4,7 @@ use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpStream, ToSocketAddrs};
 use std::time::Duration;
 
-use lightcraft_engine::control_auth;
+use lightcraft_engine::{CommandError, control_auth};
 use serde_json::{Value, json};
 
 /// Reply payloads include base64-encoded previews and screenshots, unlike the small requests.
@@ -14,7 +14,7 @@ const MAX_REPLY: usize = 64 * 1024 * 1024;
 /// `ui.render`, `ui.screenshot`, `ui.key`, …). See `docs/control-protocol.md`.
 pub trait Backend {
     /// Call one method. `Ok` carries the `result`, `Err` the error message.
-    fn call(&mut self, method: &str, params: Value) -> Result<Value, String>;
+    fn call(&mut self, method: &str, params: Value) -> Result<Value, CommandError>;
     /// True when a real UI is attached (`ui.inspect`, `ui.clickWidget`, `ui.pointer` … work).
     fn has_ui(&self) -> bool;
     /// Short human description ("headless", "remote 127.0.0.1:7980").
@@ -194,7 +194,7 @@ fn peer_closed(stream: &TcpStream) -> bool {
 }
 
 impl Backend for Remote {
-    fn call(&mut self, method: &str, params: Value) -> Result<Value, String> {
+    fn call(&mut self, method: &str, params: Value) -> Result<Value, CommandError> {
         let id = self.next_id;
         self.next_id += 1;
         let line = json!({"id": id, "method": method, "params": params}).to_string();
@@ -207,23 +207,23 @@ impl Backend for Remote {
                 self.conn = None;
                 self.roundtrip(&line).map_err(|(e, sent)| {
                     self.conn = None;
-                    if sent {
+                    CommandError::from(if sent {
                         self.unknown_outcome(method, &e)
                     } else if e.kind() == std::io::ErrorKind::PermissionDenied {
                         format!("LightCraft app at {} refused the connection: {e}", self.addr)
                     } else {
                         format!("LightCraft app at {} is not reachable: {e} (start it with `lightcraft --control PORT`)", self.addr)
-                    }
+                    })
                 })?
             }
             Err((e, true)) => {
                 self.conn = None;
-                return Err(self.unknown_outcome(method, &e));
+                return Err(self.unknown_outcome(method, &e).into());
             }
         };
         let v = parse_reply(&reply, id).map_err(|e| {
             self.conn = None;
-            self.unknown_outcome(method, &e)
+            CommandError::from(self.unknown_outcome(method, &e))
         })?;
         if v.get("id").is_none() {
             self.conn = None;
@@ -231,7 +231,7 @@ impl Backend for Remote {
         if v.get("ok").and_then(Value::as_bool) == Some(true) {
             Ok(v.get("result").cloned().unwrap_or(Value::Null))
         } else {
-            Err(v.get("error").and_then(Value::as_str).unwrap_or("unknown error").to_string())
+            Err(CommandError::from_reply(&v).unwrap_or_else(|| "unknown error".into()))
         }
     }
 
@@ -251,7 +251,7 @@ mod tests {
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
-    fn with_reply(reply: &[u8], check: impl FnOnce(&mut Remote, Result<Value, String>)) {
+    fn with_reply(reply: &[u8], check: impl FnOnce(&mut Remote, Result<Value, CommandError>)) {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let addr = listener.local_addr().unwrap().to_string();
         let reply = reply.to_vec();
@@ -339,7 +339,7 @@ mod tests {
         let (addr, app) = app_with_token(TOKEN);
         let mut remote = Remote::lazy(&addr).with_token(None);
         let err = remote.call("app.quit", json!({})).unwrap_err();
-        assert!(err.contains("authentication required"), "{err}");
+        assert!(err.message.contains("authentication required"), "{err}");
         drop(remote);
         assert!(app.join().unwrap().is_empty());
     }
@@ -348,7 +348,7 @@ mod tests {
     fn mismatched_reply_id_is_rejected_without_resending() {
         with_reply(b"{\"id\":999,\"ok\":true,\"result\":\"unrelated\"}\n", |remote, result| {
             let err = result.unwrap_err();
-            assert!(err.contains("outcome is unknown"), "{err}");
+            assert!(err.message.contains("outcome is unknown"), "{err}");
             assert!(remote.conn.is_none(), "discard the untrustworthy connection");
         });
     }
@@ -357,7 +357,7 @@ mod tests {
     fn unterminated_reply_is_rejected_without_resending() {
         with_reply(b"{\"id\":1,\"ok\":true,\"result\":7}", |remote, result| {
             let err = result.unwrap_err();
-            assert!(err.contains("outcome is unknown"), "{err}");
+            assert!(err.message.contains("outcome is unknown"), "{err}");
             assert!(remote.conn.is_none(), "discard the incomplete response");
         });
     }
@@ -381,12 +381,12 @@ mod tests {
         ] {
             with_reply(reply.as_bytes(), |remote, result| {
                 let err = result.unwrap_err();
-                assert!(err.contains("outcome is unknown"), "{reply}: {err}");
+                assert!(err.message.contains("outcome is unknown"), "{reply}: {err}");
                 assert!(remote.conn.is_none());
             });
         }
         with_reply(b"\xff\n", |remote, result| {
-            assert!(result.unwrap_err().contains("outcome is unknown"));
+            assert!(result.unwrap_err().message.contains("outcome is unknown"));
             assert!(remote.conn.is_none());
         });
     }
@@ -396,8 +396,12 @@ mod tests {
         for (reply, expected) in [
             ("{\"id\":1,\"ok\":true,\"result\":7}\n", Ok(json!(7))),
             ("{\"id\":1,\"ok\":true,\"result\":null}\r\n", Ok(Value::Null)),
-            ("{\"id\":1,\"ok\":false,\"error\":\"unknown command\"}\n", Err("unknown command".to_string())),
-            ("{\"ok\":false,\"error\":\"too many control connections\"}\n", Err("too many control connections".to_string())),
+            ("{\"id\":1,\"ok\":false,\"error\":\"unknown command\"}\n", Err("unknown command".into())),
+            (
+                "{\"id\":1,\"ok\":false,\"error\":\"unknown command `x`\",\"code\":\"unknownCommand\"}\n",
+                Err(CommandError { message: "unknown command `x`".into(), kind: lightcraft_engine::ErrorKind::UnknownCommand }),
+            ),
+            ("{\"ok\":false,\"error\":\"too many control connections\"}\n", Err("too many control connections".into())),
         ] {
             with_reply(reply.as_bytes(), |remote, result| {
                 assert_eq!(result, expected);
@@ -470,7 +474,7 @@ mod tests {
         });
         let mut remote = Remote::lazy(&addr);
         let err = remote.call("engine.execute", json!({})).unwrap_err();
-        assert!(err.contains("outcome is unknown"), "{err}");
+        assert!(err.message.contains("outcome is unknown"), "{err}");
         std::thread::sleep(Duration::from_millis(200));
         assert_eq!(seen.load(Ordering::SeqCst), 1);
     }
@@ -555,6 +559,6 @@ mod tests {
         let addr = listener.local_addr().unwrap().to_string();
         drop(listener);
         let err = Remote::lazy(&addr).call("engine.commands", json!({})).unwrap_err();
-        assert!(err.contains("not reachable"), "{err}");
+        assert!(err.message.contains("not reachable"), "{err}");
     }
 }

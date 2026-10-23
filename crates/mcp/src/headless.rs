@@ -3,8 +3,8 @@
 
 use std::path::Path;
 
-use lightcraft_engine::Session;
 use lightcraft_engine::catalog::PhotoId;
+use lightcraft_engine::{CommandError, Session};
 use lightcraft_raster::Rgba8;
 use serde_json::{Value, json};
 
@@ -121,16 +121,16 @@ impl Backend for Headless {
         self.progress = hook;
     }
 
-    fn call(&mut self, method: &str, params: Value) -> Result<Value, String> {
+    fn call(&mut self, method: &str, params: Value) -> Result<Value, CommandError> {
         let p = if params.is_null() { json!({}) } else { params };
         match method {
             "engine.execute" | "ui.menu.invoke" | "command" => {
                 let id = p.get("command").or(p.get("id")).and_then(Value::as_str).ok_or("missing `command`")?;
                 let params = p.get("params").cloned().filter(|v| !v.is_null()).unwrap_or(json!({}));
                 if id == "app.export" {
-                    return self.export(&params);
+                    return self.export(&params).map_err(CommandError::from);
                 }
-                self.session.execute(id, &params).map_err(|e| e.to_string())
+                self.session.execute(id, &params).map_err(CommandError::from)
             }
             "engine.commands" => {
                 let mut v: Vec<Value> = self.session.commands().into_iter().map(|c| serde_json::to_value(c).unwrap_or_default()).collect();
@@ -150,11 +150,11 @@ impl Backend for Headless {
                     None => Ok(json!({"width": img.width, "height": img.height})),
                 }
             }
-            "app.export" => self.export(&p),
+            "app.export" => self.export(&p).map_err(CommandError::from),
             m if m.starts_with("ui.") || m == "app.quit" => {
-                Err(format!("`{m}` needs the desktop app: start `lightcraft --control 7980` and run the MCP server with `--connect`"))
+                Err(format!("`{m}` needs the desktop app: start `lightcraft --control 7980` and run the MCP server with `--connect`").into())
             }
-            other => Err(format!("unknown method `{other}`")),
+            other => Err(format!("unknown method `{other}`").into()),
         }
     }
 

@@ -275,7 +275,9 @@ for command mapping, live slider values and polling semantics.
 ```
 
 Errors from commands (unknown control, nothing selected, app not reachable) come back as tool
-results with `isError: true` so the model can read and correct them; malformed JSON-RPC gets the
+results with `isError: true` so the model can read and correct them, and `structuredContent`
+`{error, code, model?}` naming the kind of failure ([error codes](control-protocol.md#error-codes); `command_batch`
+puts the same fields in each failed step's result); malformed JSON-RPC gets the
 standard error codes (-32700 parse, -32600 invalid request, -32601 method not found, -32602
 invalid params, -32002 resource not found).
 
@@ -286,7 +288,8 @@ written by the next successful save (see [control-protocol.md](control-protocol.
 ## One-shot commands: `lightcraft-cli run`
 
 For agents that prefer a shell over an MCP session: run any chain of commands in one process and read one JSON
-line per command (`{"command", "ok", "result" | "error", "ms"}`; non-zero exit status on failure). A word without
+line per command (`{"command", "ok", "result", "ms"}` or `{"command", "ok": false, "error", "code"}` with an
+[error code](control-protocol.md#error-codes); non-zero exit status on failure). A word without
 `=` starts the next command; `key=value` values are JSON when they parse, else strings; a `'{…}'` argument merges a
 JSON object into the params. Quote values with brackets or spaces for your shell (`'ids=[3,4]'`; zsh treats `[…]` as a glob).
 
