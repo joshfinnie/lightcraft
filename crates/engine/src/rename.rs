@@ -477,6 +477,10 @@ fn move_across_volumes(fs: &RealFs, a: &Path, b: &Path) -> std::io::Result<()> {
         let _ = std::fs::remove_file(b);
         return Err(std::io::Error::other(format!("the copy at {} did not match the original; the original was kept", b.display())));
     }
+    // the copy's name is on disk before the original goes
+    if let Some(dir) = b.parent() {
+        lightcraft_catalog::safe_file::sync_dir(dir);
+    }
     std::fs::remove_file(a).inspect_err(|_| {
         // the original stays: drop the copy so the file isn't in two places
         let _ = std::fs::remove_file(b);

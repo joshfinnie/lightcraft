@@ -131,12 +131,13 @@ impl<T: Copy + Default> Image<T> {
     pub fn get(&self, x: usize, y: usize) -> T {
         self.data[y * self.width + x]
     }
-    /// Clamped access (edge extension).
+    /// Clamped access (edge extension). An image of no size (or a buffer shorter than its size)
+    /// reads as `T::default()`.
     #[inline]
     pub fn get_clamped(&self, x: isize, y: isize) -> T {
-        let x = x.clamp(0, self.width as isize - 1) as usize;
-        let y = y.clamp(0, self.height as isize - 1) as usize;
-        self.data[y * self.width + x]
+        let x = x.clamp(0, (self.width as isize - 1).max(0)) as usize;
+        let y = y.clamp(0, (self.height as isize - 1).max(0)) as usize;
+        self.data.get(y * self.width + x).copied().unwrap_or_default()
     }
     #[inline]
     pub fn set(&mut self, x: usize, y: usize, v: T) {
@@ -196,16 +197,18 @@ impl<T: Copy + Default> Image<T> {
         });
         out
     }
-    /// Per-pixel combination of two images of the same size (row-parallel).
+    /// Per-pixel combination of two images of the same size (row-parallel). Where `other` is
+    /// smaller, the output is `V::default()`.
     pub fn zip_map<U: Copy + Default + Sync, V: Copy + Default + Send>(&self, other: &Image<U>, f: impl Fn(T, U) -> V + Sync + Send) -> Image<V>
     where
         T: Sync,
     {
-        assert_eq!((self.width, self.height), (other.width, other.height), "zip_map: size mismatch");
         let mut out = Image::<V>::new(self.width, self.height);
         let w = self.width;
+        let ow = other.width.min(w);
         par_rows(&mut out.data, w, |y, row| {
-            let (a, b) = (&self.data[y * w..(y + 1) * w], &other.data[y * w..(y + 1) * w]);
+            let a = self.data.get(y * w..(y + 1) * w).unwrap_or(&[]);
+            let b = if y < other.height { other.data.get(y * other.width..y * other.width + ow).unwrap_or(&[]) } else { &[] };
             for ((o, s), t) in row.iter_mut().zip(a).zip(b) {
                 *o = f(*s, *t);
             }
@@ -329,6 +332,23 @@ impl Rgba8 {
 
 #[cfg(test)]
 mod tests {
+
+    /// An image of no size (a crop or fit rounded to nothing) is read, halved, sampled and combined
+    /// without a panic: `get_clamped` clamped to `0..=-1` before.
+    #[test]
+    fn empty_images_read_as_default() {
+        for (w, h) in [(0, 0), (0, 5), (5, 0)] {
+            let img = Rgb32f::new(w, h);
+            assert_eq!(img.get_clamped(-3, 7), [0.0; 3]);
+            assert_eq!(img.sample_bilinear(1.5, 2.5), [0.0; 3]);
+            let half = crate::resample::half(&img);
+            assert!(half.data.iter().all(|p| *p == [0.0; 3]));
+        }
+        let a = Plane::filled(3, 2, 1.0);
+        let b = Plane::filled(2, 1, 2.0);
+        let c = a.zip_map(&b, |x, y| x + y);
+        assert_eq!(c.data, [3.0, 3.0, 0.0, 0.0, 0.0, 0.0]);
+    }
     use super::*;
     use lightcraft_geom::Orientation;
 

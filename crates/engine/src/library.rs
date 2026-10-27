@@ -293,7 +293,7 @@ fn lossy_path<S: serde::Serializer>(p: &Option<PathBuf>, s: S) -> std::result::R
     p.as_ref().map(|p| p.to_string_lossy()).serialize(s)
 }
 
-fn presets_json(s: &Session) -> String {
+fn presets_json(s: &Session) -> serde_json::Result<String> {
     #[cfg(test)]
     PRESETS_SERIALIZED.with(|c| c.set(c.get() + 1));
     let presets = &s.presets;
@@ -303,7 +303,7 @@ fn presets_json(s: &Session) -> String {
         profile_favorites: s.profile_favorites.clone(),
         profile_recent: s.profile_recent.clone(),
     };
-    serde_json::to_string_pretty(&f).unwrap_or_default()
+    serde_json::to_string_pretty(&f)
 }
 
 /// Finish a background compaction that is done (cheap otherwise). A failed one lost nothing (the
@@ -592,7 +592,7 @@ impl Session {
             self.media.attach_disk_cache(&dir.join("thumbs"), self.cache_bytes());
             self.tidy_thumbnail_cache();
         }
-        let view_written = self.view_json();
+        let view_written = self.view_json().unwrap_or_default();
         self.library = Some(Library {
             dir,
             on_disk,
@@ -669,7 +669,14 @@ impl Session {
         if !due {
             return Ok(());
         }
-        let presets = presets_json(self);
+        // never written empty over the user's presets: what can't be serialized is not saved
+        let presets = match presets_json(self) {
+            Ok(p) => p,
+            Err(e) => {
+                log::error!("library: presets: {e}");
+                return Ok(());
+            }
+        };
         let mut state = PresetsSaved::state_of(self);
         state.hash = bytes_hash(presets.as_bytes());
         let Some(lib) = self.library.as_mut() else { return Ok(()) };
@@ -739,7 +746,7 @@ impl Session {
         result
     }
 
-    fn view_json(&self) -> Vec<u8> {
+    fn view_json(&self) -> serde_json::Result<Vec<u8>> {
         let view = ViewFile {
             source: self.source,
             browse: self.browse.clone(),
@@ -748,7 +755,7 @@ impl Session {
             sort: self.sort,
             selection: self.selection.clone(),
         };
-        serde_json::to_vec_pretty(&view).unwrap_or_default()
+        serde_json::to_vec_pretty(&view)
     }
 
     /// Save the view state (source, sort, selection) if it changed since it was last
@@ -758,7 +765,10 @@ impl Session {
         if self.library.is_none() {
             return;
         }
-        let v = self.view_json();
+        let v = match self.view_json() {
+            Ok(v) => v,
+            Err(e) => return log::error!("library: view: {e}"),
+        };
         let Some(lib) = self.library.as_mut() else { return };
         if v != lib.view_written && !lib.blocked.contains(&"view.json") {
             match lib.files.write_atomic("view.json", &v) {
@@ -770,7 +780,7 @@ impl Session {
 
     /// Save the library preferences (no-op for in-memory sessions).
     pub fn save_prefs(&mut self) -> Result<()> {
-        let v = serde_json::to_vec_pretty(&self.prefs).unwrap_or_default();
+        let v = serde_json::to_vec_pretty(&self.prefs).map_err(|e| EngineError::Other(format!("prefs: {e}")))?;
         let Some(lib) = self.library.as_mut() else { return Ok(()) };
         if lib.blocked.contains(&"prefs.json") {
             return Err(EngineError::Other(

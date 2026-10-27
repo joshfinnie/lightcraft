@@ -6,7 +6,7 @@ use lightcraft_pipeline::colorops::POINT_WORDS;
 use lightcraft_pipeline::finish::{FinishParams, MASK_TERMS, srgb_lut};
 
 /// Entries per tone-curve table (`lightcraft_pipeline::finish` builds them at this size).
-pub const CURVE_N: u32 = 1024;
+pub const CURVE_N: u32 = lightcraft_pipeline::finish::CURVE_LUT_N as u32;
 
 /// Field name and number of 32-bit words.
 const FIELDS: &[(&str, usize)] = &[
@@ -147,9 +147,10 @@ pub fn finish_block(fp: &FinishParams, masks: &[[f32; MASK_TERMS]], present: &Pr
     aux.extend_from_slice(&srgb_lut()[..]);
     let curve_off = aux.len();
     if let Some(c) = &fp.curves {
+        // exactly CURVE_N entries each, as the kernel reads them (the last one held if short)
         for l in c {
-            assert_eq!(l.v.len(), CURVE_N as usize);
-            aux.extend_from_slice(&l.v);
+            let last = l.v.last().copied().unwrap_or(1.0);
+            aux.extend(l.v.iter().copied().chain(std::iter::repeat(last)).take(CURVE_N as usize));
         }
     }
     let mask_off = aux.len();

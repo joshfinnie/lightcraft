@@ -20,6 +20,9 @@ fn smooth(e0: f32, e1: f32, x: f32) -> f32 {
     t * t * (3.0 - 2.0 * t)
 }
 
+/// Entries in each tone-curve LUT ([`FinishParams::curves`]); the GPU's table has the same size.
+pub const CURVE_LUT_N: usize = 1024;
+
 /// Parametric region curve (encoded domain) composed with the master point curve.
 fn curve_luts(c: &ToneCurve) -> Option<[Lut1; 3]> {
     let parametric = c.highlights != 0.0 || c.lights != 0.0 || c.darks != 0.0 || c.shadows != 0.0;
@@ -28,7 +31,7 @@ fn curve_luts(c: &ToneCurve) -> Option<[Lut1; 3]> {
     if !parametric && !master && !chans.iter().any(|b| *b) {
         return None;
     }
-    const N: usize = 1024;
+    const N: usize = CURVE_LUT_N;
     let (s1, s2, s3) = ((c.split_shadows / 100.0) as f32, (c.split_mid / 100.0) as f32, (c.split_highlights / 100.0) as f32);
     let regions = [(0.0, s1, c.shadows), (s1, s2, c.darks), (s2, s3, c.lights), (s3, 1.0, c.highlights)];
     let mut base = Lut1::from_fn(N, |x| {

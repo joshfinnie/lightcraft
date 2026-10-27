@@ -20,9 +20,11 @@
 //! (Not `std::fs::rename`: it would remove the source before the catalog knows the new place,
 //! and on Unix it silently replaces an existing destination.)
 
-use std::fs::{self, File, OpenOptions};
+use std::fs::{self, File};
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
+
+use lightcraft_catalog::safe_file;
 
 use crate::{EngineError, FileProblem};
 
@@ -244,6 +246,10 @@ pub(crate) fn finish(p: &Placed) -> Result<Vec<(String, String)>, String> {
     if !same {
         return Err(format!("{} is missing or changed: the original is kept", p.dst.display()));
     }
+    // the new names (a hard link's too) are on disk before the only other copy goes
+    for dir in std::iter::once(&p.dst).chain(p.sidecars.iter().map(|sc| &sc.dst)).filter_map(|d| d.parent()) {
+        safe_file::sync_dir(dir);
+    }
     if injected(Fault::FailRemove) {
         return Err("could not remove the original (injected): it stays where it was".into());
     }
@@ -302,17 +308,25 @@ fn link_or_copy(src: &Path, dst: &Path) -> io::Result<()> {
 }
 
 /// Copy into a new file, sync it to disk and verify it: against `expect` (the probe's hash of the
-/// source) when given, else byte for byte against the source. On any failure the partial copy is
-/// removed.
+/// source) when given, else byte for byte against the source. The copy is made under a hidden
+/// temp name and gets `dst` only once verified (never replacing a file there), and the folder is
+/// synced: a crash mid-copy never leaves a truncated photo under a real name, and a source removed
+/// after this can't outlive its copy's name. On any failure nothing is left behind.
 pub(crate) fn copy_verified(src: &Path, dst: &Path, expect: Option<lightcraft_preview::Hash128>) -> io::Result<()> {
-    let mut out = OpenOptions::new().write(true).create_new(true).open(dst)?;
-    let r = (|| {
+    // a name already taken is found before anything is copied (one taken meanwhile is still kept)
+    if fs::symlink_metadata(dst).is_ok() {
+        return Err(io::Error::new(io::ErrorKind::AlreadyExists, format!("{} exists", dst.display())));
+    }
+    let (partial, mut out) = safe_file::create_temp(dst)?;
+    let copied = (|| {
         let mut inp = File::open(src)?;
         if injected(Fault::FailWrite) {
             out.write_all(b"partial")?;
             return Err(io::Error::other("write failed (injected)"));
         }
         io::copy(&mut inp, &mut out)?;
+        #[cfg(test)]
+        DST_SEEN_MID_COPY.with(|c| c.set(Some(fs::symlink_metadata(dst).is_ok())));
         #[cfg(test)]
         if injected(Fault::Slow) {
             COPY_THREADS.lock().unwrap_or_else(std::sync::PoisonError::into_inner).push(std::thread::current().id());
@@ -326,20 +340,29 @@ pub(crate) fn copy_verified(src: &Path, dst: &Path, expect: Option<lightcraft_pr
             let _ = out.set_modified(m);
         }
         match expect {
-            Some(h) if hash_file(dst)? != h => {
+            Some(h) if hash_file(&partial)? != h => {
                 Err(io::Error::other("the copy differs from the original as it was read for the import (a bad copy, or the file changed meanwhile)"))
             }
             Some(_) => Ok(()),
-            None if !same_bytes(src, dst)? => Err(io::Error::other("the copy differs from the original")),
+            None if !same_bytes(src, &partial)? => Err(io::Error::other("the copy differs from the original")),
             None => Ok(()),
         }
     })();
+    // closed before it is published: Windows can't rename an open file
     #[cfg_attr(target_arch = "wasm32", allow(clippy::drop_non_drop))]
     drop(out);
-    if r.is_err() {
-        let _ = fs::remove_file(dst);
+    let r = copied.and_then(|()| safe_file::publish_new(&partial, dst));
+    let _ = fs::remove_file(&partial);
+    if r.is_ok() {
+        safe_file::sync_dir(dst.parent().unwrap_or(Path::new(".")));
     }
     r
+}
+
+#[cfg(test)]
+thread_local! {
+    /// Whether `dst` existed while its copy was being written (tests only: it mustn't).
+    pub(crate) static DST_SEEN_MID_COPY: std::cell::Cell<Option<bool>> = const { std::cell::Cell::new(None) };
 }
 
 /// [`lightcraft_preview::hash_bytes`] of a file's content, read in chunks.

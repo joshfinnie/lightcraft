@@ -728,7 +728,7 @@ fn services(cc: &eframe::CreationContext<'_>, log_file: Option<&std::path::Path>
 
 /// The library session with the folders face models (`<config>/models`) and slideshow templates
 /// (`<config>/slideshow-templates`) are kept in.
-fn open_session(in_memory: bool, dir: Option<std::path::PathBuf>, seed_demo: bool) -> (Session, Option<LibraryProblem>) {
+fn open_session(in_memory: bool, dir: Option<LibraryDir>, seed_demo: bool) -> (Session, Option<LibraryProblem>) {
     let (mut s, problem) = open_library_session(in_memory, dir, seed_demo);
     s.face_models_dir = lightcraft_engine::config::default_face_models_dir();
     s.slide_templates_dir = lightcraft_engine::config::config_dir().map(|d| d.join(lightcraft_engine::slide_template::DIR_NAME));
@@ -737,20 +737,34 @@ fn open_session(in_memory: bool, dir: Option<std::path::PathBuf>, seed_demo: boo
     (s, problem)
 }
 
+/// Where the library to open is, and whether it may be created there.
+#[derive(Debug, Clone, PartialEq)]
+struct LibraryDir {
+    path: std::path::PathBuf,
+    /// The library last opened from Settings: it was there, so a missing folder is a moved library
+    /// or a disconnected drive, never a place to start a new, empty one.
+    remembered: bool,
+}
+
 /// The persistent library session, or with `--memory` an in-memory one (demo photos).
 ///
 /// If the library can't be opened the session is empty and in memory — never seeded with the
 /// demo photos, never written anywhere — and the problem is returned: the window then says so
 /// and offers Try Again / Choose Another Library… / Continue Without Saving / Quit (issue #100).
-fn open_library_session(in_memory: bool, dir: Option<std::path::PathBuf>, seed_demo: bool) -> (Session, Option<LibraryProblem>) {
+fn open_library_session(in_memory: bool, dir: Option<LibraryDir>, seed_demo: bool) -> (Session, Option<LibraryProblem>) {
     if in_memory {
         return (if seed_demo { Session::with_demo() } else { Session::new() }.with_fs().with_default_denoise_models().with_system_clock(), None);
     }
     let unopened = || Session::new().with_fs().with_default_denoise_models().with_system_clock();
-    let Some(dir) = dir else {
+    let Some(LibraryDir { path: dir, remembered }) = dir else {
         log::warn!("no library location (set --library or LIGHTCRAFT_LIBRARY)");
         return (unopened(), Some(LibraryProblem::new("", "There is no home folder to keep the library in. Choose a folder for it.")));
     };
+    if remembered && !matches!(dir.try_exists(), Ok(true)) {
+        log::error!("library {} is missing", dir.display());
+        let error = "The library is no longer there: it was moved or renamed, or its drive is disconnected. Reconnect the drive and choose Try Again, or choose the library where it is now.";
+        return (unopened(), Some(LibraryProblem::new(dir.to_string_lossy(), error)));
+    }
     let t0 = std::time::Instant::now();
     let mut s = Session::new().with_fs().with_default_denoise_models().with_system_clock();
     match s.open_library(&dir, seed_demo) {
@@ -930,12 +944,20 @@ fn main() -> std::process::ExitCode {
         });
         dhat::Profiler::builder().file_name(file).build()
     };
-    let args: Vec<String> = std::env::args().skip(1).collect();
+    // std::env::args panics on an argument that isn't valid Unicode (a Latin-1 file name on
+    // Linux, an unpaired surrogate on Windows): refuse it with a message instead
+    let args = match std::env::args_os().skip(1).map(std::ffi::OsString::into_string).collect::<Result<Vec<String>, _>>() {
+        Ok(args) => args,
+        Err(bad) => {
+            eprintln!("lightcraft: the argument `{}` isn't valid Unicode; rename the file or pass its folder", bad.to_string_lossy());
+            return std::process::ExitCode::from(2);
+        }
+    };
     if cli::is_subcommand(&args) {
         alloc_release::install();
         return cli::dispatch(&args);
     }
-    match run_app() {
+    match run_app(args) {
         Ok(()) => std::process::ExitCode::SUCCESS,
         Err(e) => {
             eprintln!("Error: {e:?}");
@@ -944,7 +966,7 @@ fn main() -> std::process::ExitCode {
     }
 }
 
-fn run_app() -> eframe::Result {
+fn run_app(args: Vec<String>) -> eframe::Result {
     // First, so every start-up record is kept for the log file (`logging`).
     let logger = logging::install();
     lightcraft_engine::guard::install_hook(panic_log_path_with(|name| std::env::var_os(name), std::env::temp_dir()));
@@ -958,12 +980,19 @@ fn run_app() -> eframe::Result {
     let mut seed_demo = true;
     let mut in_memory = false;
     let mut library_dir: Option<std::path::PathBuf> = None;
-    let mut args = std::env::args().skip(1);
+    let mut args = args.into_iter();
+    // an option missing its value is a usage error: `--library` alone must not open the default library
+    let value = |args: &mut std::vec::IntoIter<String>, option: &str| {
+        args.next().unwrap_or_else(|| {
+            eprintln!("lightcraft: `{option}` needs a value\n\n{HELP}");
+            std::process::exit(2);
+        })
+    };
     while let Some(a) = args.next() {
         match a.as_str() {
-            "--control" => control_port = control_port_from("--control", Some(args.next().unwrap_or_default())),
-            "--control-token" => control_token_arg = Some(args.next().unwrap_or_default()),
-            "--library" => library_dir = args.next().map(std::path::PathBuf::from),
+            "--control" => control_port = control_port_from("--control", Some(value(&mut args, "--control"))),
+            "--control-token" => control_token_arg = Some(value(&mut args, "--control-token")),
+            "--library" => library_dir = Some(value(&mut args, "--library").into()),
             "--no-demo" => seed_demo = false,
             "--memory" | "--demo" => in_memory = true,
             "--version" => {
@@ -1003,14 +1032,20 @@ fn run_app() -> eframe::Result {
     let (files, launch_notices) = launch_imports(&files);
     let (prefs, prefs_warning, keep_prefs_file) = load_prefs(in_memory);
     // --library, else the library last opened from Settings, else the default location
-    let library_dir = library_dir.or_else(|| {
-        prefs
-            .as_ref()
-            .map(|u| u.settings.library_path.clone())
-            .filter(|p| !p.is_empty() && std::env::var_os("LIGHTCRAFT_LIBRARY").is_none())
-            .map(Into::into)
-    });
-    let library_dir = library_dir.or_else(lightcraft_engine::library::default_dir);
+    let default_dir = lightcraft_engine::library::default_dir();
+    let library_dir = library_dir
+        .map(|path| LibraryDir { path, remembered: false })
+        .or_else(|| {
+            prefs.as_ref().map(|u| u.settings.library_path.clone()).filter(|p| !p.is_empty() && std::env::var_os("LIGHTCRAFT_LIBRARY").is_none()).map(
+                |p| {
+                    let path = std::path::PathBuf::from(p);
+                    // the default location is made again when it's gone, as on a first start
+                    let remembered = default_dir.as_ref() != Some(&path);
+                    LibraryDir { path, remembered }
+                },
+            )
+        })
+        .or_else(|| default_dir.map(|path| LibraryDir { path, remembered: false }));
     // GPU compute: off if the preference says so, or if the last launch died creating the device
     // (issue #136) — before anything can create it
     let gpu_crash = gpu_crash_check(in_memory).or_else(|| gpu_lost_check_at(gpu_lost_marker_path().as_deref(), in_memory));
@@ -1283,6 +1318,20 @@ mod tests {
         assert!(problem.is_none());
         assert!(s.apple_photos_background);
         assert!(!lightcraft_engine::Session::new().apple_photos_background);
+    }
+
+    /// A library remembered from Settings whose folder is gone (moved, or on a drive that isn't
+    /// connected) is reported, not made again there as a new, empty library seeded with the demo.
+    #[test]
+    fn a_missing_remembered_library_is_reported_not_recreated() {
+        let gone = dir("gone-library").join("Photos Library");
+        let (s, problem) = open_session(false, Some(LibraryDir { path: gone.clone(), remembered: true }), true);
+        let problem = problem.expect("a missing library is a problem");
+        assert_eq!(problem.path, gone.to_string_lossy());
+        assert!(problem.error.contains("no longer there"), "{}", problem.error);
+        assert!(problem.can_retry);
+        assert!(!gone.exists(), "nothing is created where the library was");
+        assert!(s.library.is_none() && s.catalog.is_empty(), "no demo photos");
     }
 
     /// Issue #103: a damaged ui.json (which holds the library location) is kept aside and

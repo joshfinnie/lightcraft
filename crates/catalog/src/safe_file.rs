@@ -108,7 +108,7 @@ pub fn sync_dir(dir: &Path) {
 }
 
 /// A new, empty temp file next to `path` (hidden, unique in this process and folder).
-fn create_temp(path: &Path) -> io::Result<(PathBuf, File)> {
+pub fn create_temp(path: &Path) -> io::Result<(PathBuf, File)> {
     static N: AtomicU64 = AtomicU64::new(0);
     if path.file_name().is_none() {
         return Err(io::Error::new(io::ErrorKind::InvalidInput, format!("{} is not a file path", path.display())));
@@ -221,8 +221,9 @@ pub fn write_new_unique(candidates: &mut dyn Iterator<Item = PathBuf>, data: &[u
     r
 }
 
-/// Give the complete temp file `tmp` the name `path`, unless that is taken.
-fn publish_new(tmp: &Path, path: &Path) -> io::Result<()> {
+/// Give the complete temp file `tmp` the name `path`, unless that is taken (`AlreadyExists`).
+/// `tmp` may still exist afterwards (as a second name of the file): remove it either way.
+pub fn publish_new(tmp: &Path, path: &Path) -> io::Result<()> {
     match fs::hard_link(tmp, path) {
         Ok(()) => Ok(()),
         Err(e) if e.kind() == io::ErrorKind::AlreadyExists => Err(e),

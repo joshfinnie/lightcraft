@@ -1095,10 +1095,16 @@ pub fn open_library(app: &mut LightcraftApp, p: &Value) -> Result<Value, String>
         app.ui.dialog = Some(crate::state::Dialog::LightroomCatalog { folder: path.clone(), catalog: catalog.clone() });
         return Ok(json!({"opened": false, "lightroomCatalog": catalog, "path": path}));
     }
-    // a remembered library that is gone: say so (and forget it) instead of creating an empty one there
-    if app.ui.settings.recent_libraries.contains(&path) && !std::path::Path::new(&path).exists() {
+    // a remembered library that is gone: say so (and forget it) instead of creating an empty one
+    // there. The one last opened too: Try Again after a launch that found it missing.
+    let recent = app.ui.settings.recent_libraries.contains(&path);
+    if (recent || app.ui.settings.library_path == path) && !matches!(std::path::Path::new(&path).try_exists(), Ok(true)) {
+        let gone = format!("{path}: the library is no longer there (moved, renamed or on a disconnected drive)");
+        if !recent {
+            return Err(gone);
+        }
         app.ui.settings.recent_libraries.retain(|r| r != &path);
-        return Err(format!("{path}: the library is no longer there (moved, renamed or on a disconnected drive); removed from Open Recent Library"));
+        return Err(format!("{gone}; removed from Open Recent Library"));
     }
     switch_library(app, &path)
 }
@@ -1334,6 +1340,20 @@ mod tests {
         app.import = Some(crate::import::ImportTask::new(vec!["a.jpg".into()], json!({"mode": "add"}), 0, false));
         assert!(!crate::menus::ui_enabled(&app, "app.openLibrary"));
         assert!(!crate::menus::ui_enabled(&app, "app.newLibrary"));
+    }
+
+    /// Try Again in the library problem window, for the library last opened that was missing at
+    /// launch, still refuses to make a new, empty library where it was.
+    #[test]
+    fn reopening_the_last_library_while_it_is_missing_creates_nothing() {
+        let gone = std::env::temp_dir().join(format!("lc-ui-gone-library-{}", std::process::id())).join("Library");
+        let path = gone.to_string_lossy().into_owned();
+        let mut app = LightcraftApp::new(lightcraft_engine::Session::new(), crate::Services::default());
+        app.ui.settings.library_path = path.clone();
+        let err = open_library(&mut app, &json!({"path": path})).unwrap_err();
+        assert!(err.contains("no longer there"), "{err}");
+        assert!(!gone.exists());
+        assert!(app.session.library.is_none());
     }
 
     /// The folder scan before an import's review counts too: it ends in an import into the open library.

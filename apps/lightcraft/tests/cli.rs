@@ -780,3 +780,29 @@ fn denoise_serve_runs_tiles_for_another_computer() {
     let _ = child.wait();
     let _ = std::fs::remove_dir_all(&models);
 }
+
+/// An argument that isn't valid Unicode is refused with a message (std::env::args panicked on it,
+/// before the panic hook was installed, so nothing was even logged).
+#[cfg(unix)]
+#[test]
+fn a_non_unicode_argument_is_refused_not_a_crash() {
+    use std::os::unix::ffi::OsStrExt;
+    for args in [vec![std::ffi::OsStr::from_bytes(b"caf\xe9.jpg")], vec![std::ffi::OsStr::new("render"), std::ffi::OsStr::from_bytes(b"\xff.dng")]] {
+        let out = Command::new(BIN).args(&args).output().unwrap();
+        let err = String::from_utf8_lossy(&out.stderr);
+        assert_eq!(out.status.code(), Some(2), "{err}");
+        assert!(err.contains("isn't valid Unicode"), "{err}");
+        assert!(!err.contains("panicked"), "{err}");
+    }
+}
+
+/// `--library` with no folder after it is a usage error, not a start on the default library.
+#[test]
+fn an_option_missing_its_value_is_a_usage_error() {
+    for option in ["--library", "--control", "--control-token"] {
+        let out = Command::new(BIN).arg(option).output().unwrap();
+        let err = String::from_utf8_lossy(&out.stderr);
+        assert_eq!(out.status.code(), Some(2), "{option}: {err}");
+        assert!(err.contains(&format!("`{option}` needs a value")), "{err}");
+    }
+}

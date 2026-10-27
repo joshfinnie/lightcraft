@@ -6,11 +6,15 @@
 
 #[cfg(not(target_arch = "wasm32"))]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut args = std::env::args().skip(1);
-    let dir = args.next().ok_or("usage: lightcraft-sam3-worker MODEL_DIR [127.0.0.1:8793]")?;
-    let address = args.next().unwrap_or_else(|| "127.0.0.1:8793".into()).parse()?;
+    // args_os: std::env::args panics on an argument that isn't valid Unicode
+    let mut args = std::env::args_os().skip(1);
+    let dir = std::path::PathBuf::from(args.next().ok_or("usage: lightcraft-sam3-worker MODEL_DIR [127.0.0.1:8793]")?);
+    let address = match args.next() {
+        Some(a) => a.to_str().ok_or("the address isn't valid text")?.parse()?,
+        None => "127.0.0.1:8793".parse()?,
+    };
     let device = candle_core::Device::new_metal(0)?;
-    lightcraft_segment::remote::serve(address, std::path::Path::new(&dir), device)?;
+    lightcraft_segment::remote::serve(address, &dir, device)?;
     Ok(())
 }
 

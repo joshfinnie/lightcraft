@@ -239,6 +239,38 @@ fn copy_is_verified_against_the_probe_hash() {
     let _ = std::fs::remove_dir_all(&base);
 }
 
+/// A copy only takes its real name once it is complete and verified, and that name is synced to
+/// disk: a crash mid-copy leaves no truncated photo under it, and a Move can't remove the source
+/// while the copy's name could still be lost. Failures leave no temp file behind either.
+#[test]
+fn a_copy_gets_its_name_only_when_complete_and_durable() {
+    use crate::import_move::{DST_SEEN_MID_COPY, copy_verified};
+    use lightcraft_catalog::safe_file::syncs_on_this_thread;
+    let base = temp_dir("copyname");
+    let src = base.join("src.bin");
+    std::fs::write(&src, vec![7u8; 100_000]).unwrap();
+    let out = base.join("out");
+    std::fs::create_dir_all(&out).unwrap();
+    let before = syncs_on_this_thread();
+    copy_verified(&src, &out.join("IMG_1.CR3"), None).unwrap();
+    assert_eq!(DST_SEEN_MID_COPY.with(|c| c.get()), Some(false), "the real name doesn't exist while copying");
+    assert!(syncs_on_this_thread() > before, "the folder is synced");
+    // a name taken meanwhile is never replaced
+    std::fs::write(out.join("IMG_2.CR3"), b"someone else's").unwrap();
+    let e = copy_verified(&src, &out.join("IMG_2.CR3"), None).unwrap_err();
+    assert_eq!(e.kind(), std::io::ErrorKind::AlreadyExists);
+    assert_eq!(std::fs::read(out.join("IMG_2.CR3")).unwrap(), b"someone else's");
+    for fault in [Fault::FailWrite, Fault::Corrupt] {
+        inject(fault);
+        assert!(copy_verified(&src, &out.join("IMG_3.CR3"), None).is_err());
+        inject(Fault::None);
+    }
+    let mut names: Vec<String> = std::fs::read_dir(&out).unwrap().map(|e| e.unwrap().file_name().to_string_lossy().into_owned()).collect();
+    names.sort();
+    assert_eq!(names, ["IMG_1.CR3", "IMG_2.CR3"], "no partial or temp files");
+    let _ = std::fs::remove_dir_all(&base);
+}
+
 /// A file replaced after Review Import probed it is not imported on the strength of the old probe:
 /// its copy no longer matches the probe's hash, so it's reported as failed and nothing is left.
 #[test]
