@@ -5,7 +5,7 @@
 //! Missing Photos view), so in the app the answers come from a cache that a worker thread fills
 //! ([`Availability::run_in_background`]): an unknown file is reported as `None` ("assume it is
 //! there"; the render worker finds out if it isn't), known answers are rechecked after
-//! [`RECHECK`]. Everywhere else (CLI, MCP, tests) the default is synchronous: every question is a
+//! [`RECHECK`]. Everywhere else (CLI, tests) the default is synchronous: every question is a
 //! fresh check, as before.
 
 use std::collections::{HashMap, HashSet, VecDeque};

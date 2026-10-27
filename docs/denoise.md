@@ -128,7 +128,7 @@ selected model the way the app does (the card when it can run it, checked agains
 
 ```text
 export LIGHTCRAFT_DENOISE_TOKEN='a long random string, at least 16 characters'
-lightcraft-cli denoise-serve --listen 100.101.102.103:7990          # e.g. the machine's Tailscale address
+lightcraft denoise-serve --listen 100.101.102.103:7990          # e.g. the machine's Tailscale address
 ```
 
 On the laptop, before LightCraft starts:
@@ -168,7 +168,7 @@ the tile's samples as little-endian half floats, byte-shuffled (low bytes, then 
 
 ## Commands and limits
 
-UI, CLI, control channel and MCP dispatch `denoise.toggle`, `denoise.settings`,
+UI, CLI and control channel dispatch `denoise.toggle`, `denoise.settings`,
 `denoise.queue`, `.cancel`, `.status`, `.pump`, `.clear`, and `denoise.models.*`
 (`list`, `install`, `download`, `downloads`, `downloadCancel`, `test`, `remove`,
 `select`). The develop control is `enhance.denoise`.

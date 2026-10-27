@@ -9,12 +9,12 @@
 //!
 //! before any other request runs, as in PhotoCraft. The app takes the token from
 //! `--control-token` / `$LIGHTCRAFT_CONTROL_TOKEN`, or makes a fresh one for the run, and writes it
-//! to [`token_file`] in the settings folder (one file per port), where `lightcraft-cli --connect` and
-//! `lightcraft-cli mcp --connect` read it. A page in a browser can't read that file. See
+//! to [`token_file`] in the settings folder (one file per port), where clients on this machine
+//! (`docs/showcase/run.py`) read it. A page in a browser can't read that file. See
 //! `docs/control-protocol.md` → Authentication.
 //!
 //! The token itself is made by the desktop app (`apps/lightcraft`), which has the random source;
-//! this module only checks, compares, stores and finds tokens, so the CLI and MCP client share it.
+//! this module only checks, compares and stores tokens.
 
 use std::path::{Path, PathBuf};
 
@@ -111,28 +111,6 @@ pub fn read_token_file(path: &Path) -> Result<String, String> {
     validate(&text).map_err(|e| format!("{}: {e}", path.display()))
 }
 
-/// The token a client should send to the app at `addr` (`host:port`): `$LIGHTCRAFT_CONTROL_TOKEN`,
-/// else the app's token file for that port. `Ok(None)` when there is neither (the request then
-/// gets the app's "authentication required" reply, which says what to do).
-pub fn client_token(addr: &str) -> Result<Option<String>, String> {
-    client_token_with(addr, std::env::var(TOKEN_ENV).ok(), crate::config::config_dir().as_deref())
-}
-
-fn client_token_with(addr: &str, env: Option<String>, config_dir: Option<&Path>) -> Result<Option<String>, String> {
-    if let Some(token) = env.filter(|t| !t.trim().is_empty()) {
-        return validate(&token).map(Some).map_err(|e| format!("{TOKEN_ENV}: {e}"));
-    }
-    let Some(path) = port_of(addr).and_then(|port| token_file_in(config_dir, port)) else { return Ok(None) };
-    if !path.exists() {
-        return Ok(None);
-    }
-    read_token_file(&path).map(Some)
-}
-
-fn port_of(addr: &str) -> Option<u16> {
-    addr.rsplit_once(':').and_then(|(_, port)| port.trim().parse().ok())
-}
-
 /// The request a client sends first.
 pub fn auth_request(id: Value, token: &str) -> Value {
     json!({"id": id, "method": AUTH_METHOD, "params": {"token": token}})
@@ -198,33 +176,6 @@ mod tests {
             assert!(!text.contains(TOKEN), "the reply must not reveal the token: {text}");
             assert!(text.contains("closing the connection"), "{text}");
         }
-    }
-
-    #[test]
-    fn clients_find_the_token_in_the_environment_or_the_ports_file() {
-        let dir = std::env::temp_dir().join(format!("lightcraft-control-auth-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        // nothing anywhere: no token, not an error
-        assert_eq!(client_token_with("127.0.0.1:18431", None, Some(&dir)), Ok(None));
-        // the app's file for that port
-        let path = token_file_in(Some(&dir), 18431).unwrap();
-        write_token_file(&path, TOKEN).unwrap();
-        assert_eq!(client_token_with("127.0.0.1:18431", None, Some(&dir)), Ok(Some(TOKEN.into())));
-        // another port's file is not used
-        assert_eq!(client_token_with("127.0.0.1:18432", None, Some(&dir)), Ok(None));
-        // the environment wins, and a bad value is an error naming the variable
-        let other = "f".repeat(64);
-        assert_eq!(client_token_with("127.0.0.1:18431", Some(other.clone()), Some(&dir)), Ok(Some(other)));
-        assert!(client_token_with("127.0.0.1:18431", Some("short".into()), Some(&dir)).unwrap_err().contains(TOKEN_ENV));
-        // an empty variable counts as unset
-        assert_eq!(client_token_with("127.0.0.1:18431", Some(String::new()), Some(&dir)), Ok(Some(TOKEN.into())));
-        // a damaged file is an error naming it
-        std::fs::write(&path, "nope").unwrap();
-        assert!(client_token_with("127.0.0.1:18431", None, Some(&dir)).unwrap_err().contains("control-token-18431"));
-        // no settings folder, or no port in the address
-        assert_eq!(client_token_with("127.0.0.1:18431", None, None), Ok(None));
-        assert_eq!(client_token_with("localhost", None, Some(&dir)), Ok(None));
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[cfg(unix)]

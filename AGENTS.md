@@ -29,7 +29,7 @@ and often so a crash loses minutes, not hours.
 
 ## Never crash (outranks feature work)
 People trust LightCraft with their photo libraries and edits; a crash loses their work. A malformed raw/JPEG/XMP, a bad
-command, control or MCP argument, a corrupt catalog or settings file, or a full disk must produce an error the user (or
+command, control-channel or CLI argument, a corrupt catalog or settings file, or a full disk must produce an error the user (or
 agent) can act on, never a panic. Don't ship a feature by adding a panic path, and fix a crash before building on top
 of it.
 - **Non-test code never panics:** no `unwrap()`, `expect()`, `panic!`, `unreachable!`, `todo!`, `unimplemented!`, and
@@ -58,7 +58,7 @@ of it.
 - **Clean-room.** Never read/disassemble anything inside Adobe app bundles (names/listings only). Never copy Adobe icons, presets, profiles (DCP), lens profiles (LCP), camera matrices, fonts. Observation of the installed Lightroom is read-only (it syncs the user's personal library: never import/edit/rate/delete there). Never copy GPL/LGPL/AGPL code (darktable, RawTherapee, ART, LibRaw, rawspeed, rawloader, rawler, lensfun, dcraw-derived GPL code…).
 - **Pure Rust** in the product. No C/C++ dependencies.
 - **Layering** (`plan/architecture.md` §3, enforced by `cargo xtask layers`): nothing below L5 depends on egui/eframe/winit/rfd.
-- **Everything is a command** (`crates/engine`): id, label, menu path, shortcut, params, enabled(), run(). UI, CLI, control channel and MCP all dispatch by id. Every slider is a `develop` control spec.
+- **Everything is a command** (`crates/engine`): id, label, menu path, shortcut, params, enabled(), run(). UI, CLI and control channel all dispatch by id. Every slider is a `develop` control spec.
   A command's params are a `params!` struct (`crates/engine/src/cmd/params.rs`) named in its `cmd!`: a key it doesn't
   take (at any depth) or a value of the wrong type is refused before `run`, never ignored. A partial value the command
   merges (`Patch`) is read with `params::from_value`, which checks it the same way. `tests/param_callers.rs` checks every
@@ -91,12 +91,12 @@ of it.
   through its control channel (`ui.key`, `ui.pointer`, `ui.clickWidget`, `ui.menu.invoke`) or headless snapshots.
 - For UI work, **look at the result**: drive via the control channel and take `ui.screenshot`, compare with `plan/lightroom/screenshots/`.
 - **Unattended (display asleep/locked, CI, nightly runs): prefer headless snapshots** — no window needed:
-  `lightcraft-cli snapshot --demo --script tour.jsonl -o out.png --size 1600x1000` (control-protocol requests,
+  `lightcraft snapshot --demo --script tour.jsonl -o out.png --size 1600x1000` (control-protocol requests,
   one per line; see `docs/control-protocol.md` → Headless rendering). In a running app use
   `ui.screenshot {"path": …, "headless": true}`; windowed screenshots fall back to headless after 2 s.
-- MCP: `lightcraft-cli mcp` (headless, `--demo` for the procedural library) or `lightcraft-cli mcp --connect` (drives
-  the running app). See `docs/mcp.md`. Quick non-UI checks: `lightcraft-cli render in.jpg -o out.jpg --set light.exposure=1`.
-- Export goes through `lightcraft_engine::export` (one encoder for app, CLI, MCP and web). UI-only commands are rows of
+- The `lightcraft` binary is also the CLI (`docs/cli.md`): `lightcraft run --demo CMD key=value…` runs commands in a
+  session of its own. Quick non-UI checks: `lightcraft render in.jpg -o out.jpg --set light.exposure=1`.
+- Export goes through `lightcraft_engine::export` (one encoder for app, CLI and web). UI-only commands are rows of
   `UI_COMMANDS` in `crates/ui-egui/src/menus.rs` (id, label, shortcut, menu, params type, function), run by
   `crates/ui-egui/src/commands/*.rs`; their params are typed like the engine's.
 - Shell gotcha: `mv`/`cp` are aliased interactive here — use `/bin/mv -f` / `/bin/cp -f`.
@@ -104,8 +104,8 @@ of it.
 - Test corpora: `cargo xtask corpus --download` into `corpus/` (gitignored, CC0 only). Never commit media.
 
 ## Testing & performance (do this often)
-- Unit/property tests next to the code; end-to-end tests drive real binaries (`crates/mcp/tests/e2e.rs`,
-  `apps/lightcraft-cli/tests/`). New features need at least one test that would fail without them.
+- Unit/property tests next to the code; end-to-end tests drive the real binary
+  (`apps/lightcraft/tests/`). New features need at least one test that would fail without them.
 - **Run the app after every user-visible change**: launch with `--control 7980`, drive it with a JSON-lines script
   (`docs/showcase/run.py file.jsonl`), take `ui.screenshot`, and look at it. Check `ui.inspect` → `perf`.
 - **Benchmarks:** `cargo xtask bench` (24 MP raw from corpus; CPU and GPU columns) appends to `target/bench/history.jsonl`
@@ -120,7 +120,7 @@ of it.
 
 ## Map of the code
 `geom`, `color`, `raster`, `tiff` (L0) → `raw`, `codecs`, `meta`, `develop` (L1) → `pipeline` → `catalog` → `engine`
-→ `ui-egui`, `mcp` (L5) → apps `lightcraft` (desktop), `lightcraft-cli` (render/commands/MCP). `scenes` generates demo
+→ `ui-egui` (L5) → apps `lightcraft` (desktop app and CLI subcommands), `lightcraft-console` (Windows `lightcraft.com`). `scenes` generates demo
 photos. `xtask` = tooling (`ci`, `layers`, `assets`, `parity`, `wasm`, `corpus`, `stats`); `testkit` = test helpers
 (dev-dependency only).
 

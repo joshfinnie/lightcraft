@@ -385,7 +385,7 @@ fn seed_param(seed: Option<u64>, cmd: &str, default: u64) -> Result<u64> {
 
 /// The seed after `prev` at time `now`: a mix of `prev` and the clock text, so repeated reshuffles
 /// within one clock tick still differ (barring a 2^-53 collision). Kept below 2^53 so JSON
-/// clients that read numbers as doubles (web, MCP agents) get the same seed back.
+/// clients that read numbers as doubles (web, agents) get the same seed back.
 fn next_seed(prev: u64, now: &str) -> u64 {
     let t = now.bytes().fold(0u64, |h, b| lightcraft_catalog::mix64(h ^ u64::from(b)));
     (lightcraft_catalog::mix64(prev.wrapping_add(1)) ^ t) & (MAX_SEED - 1)

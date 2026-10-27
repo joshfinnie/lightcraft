@@ -73,7 +73,7 @@ press moves the bottom-bar slider by 30 pt within its 90–480 pt range and stop
 work in Photo Grid, Square Grid and People (the views with the slider), do nothing in Detail, Compare,
 Survey and Reference, and leave text fields alone, so the search box still types `-` and `=`. `⌘=` /
 `⌘−` remain Zoom In / Out. The same steps are the View ▸ Increase / Decrease Grid Thumbnail Size
-commands (`view.thumbSizeUp`, `view.thumbSizeDown`, reachable from the control channel and MCP, which
+commands (`view.thumbSizeUp`, `view.thumbSizeDown`, reachable from the control channel and the CLI, which
 return `{"size"}`); the size is saved with the other interface settings.
 
 Public behaviour references, checked 2026-10-08 (thumbnail size: 2026-10-13):

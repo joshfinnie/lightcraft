@@ -4,7 +4,7 @@
 //! image. A drag is a *domain operation* on the crop, not a UI detail: the handle being dragged
 //! decides which edges are anchored, an optional aspect lock decides the shape, and the image
 //! bounds decide how far the drag may go. [`drag_crop`] answers all three in one place so the app,
-//! CLI, control channel and MCP agree.
+//! CLI and control channel agree.
 
 use crate::{CropGeometry, Point, Rect};
 

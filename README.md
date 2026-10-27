@@ -27,7 +27,8 @@ Windows x64 PC. The web build is kept working too.
   longer refused, click and drag counts bounded on the control channel, one format for
   shutter, aperture, ISO and focal length everywhere, real timestamps in the web build, a
   flaky MCP test on macOS, and a warning-free wasm build.
-- **Less to maintain.** No FreeBSD or Nix packaging and no CI for platforms I don't use.
+- **Less to maintain.** No FreeBSD or Nix packaging and no CI for platforms I don't use. No MCP
+  server, and no separate `lightcraft-cli`: the app's own binary takes the CLI's subcommands.
 
 `git log --oneline upstream/main..main` lists every change.
 
@@ -36,7 +37,7 @@ Windows x64 PC. The web build is kept working too.
 A non-destructive raw developer and photo library modelled on Lightroom Classic's workflow:
 Light, Color, Effects, Tone Curve, colour grading, masking, presets and profiles, crop and
 geometry, black and white, ratings, flags, labels, albums, smart collections and search. Native
-on macOS and Windows, in the browser via WebAssembly, and drivable by AI agents over MCP.
+on macOS and Windows, in the browser via WebAssembly, and scriptable from the command line and a local control channel.
 Upstream's [ROADMAP.md](ROADMAP.md) has the detailed feature status.
 
 ## Build and run
@@ -49,7 +50,7 @@ cargo run --release -p lightcraft                       # opens ~/Pictures/Light
 cargo run --release -p lightcraft -- ~/Pictures/trip    # import a folder (duplicates skipped)
 cargo run --release -p lightcraft -- --memory           # throwaway in-memory demo session, writes nothing
 cargo xtask web --serve                                 # the browser build at http://127.0.0.1:8080/
-cargo run --release -p lightcraft-cli -- render photo.jpg -o out.jpg --set light.exposure=0.5
+cargo run --release -p lightcraft -- render photo.jpg -o out.jpg --set light.exposure=0.5
 ```
 
 The web build needs the `wasm32-unknown-unknown` target and the matching `wasm-bindgen` CLI;
@@ -60,9 +61,8 @@ Logs go to `~/Library/Application Support/LightCraft/logs/` on macOS and
 
 ## Automation
 
-`--control PORT` opens a JSON-lines control channel on localhost; `lightcraft-cli mcp --connect`
-drives the running app over MCP, and `lightcraft-cli mcp --demo` runs headless. In this fork every
-connection must authenticate first:
+`--control PORT` opens a JSON-lines control channel on localhost that drives the running app. In
+this fork every connection must authenticate first:
 
 ```json
 {"method": "auth", "params": {"token": "<64 hex digits>"}}
@@ -70,7 +70,11 @@ connection must authenticate first:
 
 The app writes a fresh token to `control-token-<PORT>` in its settings folder on each run, or
 takes one from `--control-token` / `LIGHTCRAFT_CONTROL_TOKEN`. Protocol details are in
-[docs/control-protocol.md](docs/control-protocol.md) and [docs/mcp.md](docs/mcp.md).
+[docs/control-protocol.md](docs/control-protocol.md).
+
+The same program is the command line: `lightcraft run`, `render`, `snapshot` and the other
+subcommands work without a window ([docs/cli.md](docs/cli.md)). On Windows a terminal runs them
+through `lightcraft.com`, which ships beside `lightcraft.exe`.
 
 ## Working on the fork
 

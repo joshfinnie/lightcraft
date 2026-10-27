@@ -1,58 +1,53 @@
-//! `lightcraft-cli`: headless LightCraft.
+//! `lightcraft <subcommand>`: LightCraft without a window.
 //!
 //! ```text
-//! lightcraft-cli run [--demo | --library DIR | --connect [ADDR]] [--import PATH]… CMD [key=value…]…
-//! lightcraft-cli mcp [--connect [ADDR]] [--demo] [--compact] [FILES/FOLDERS…]
-//! lightcraft-cli render <in> -o <out> [--set control=value]… [--settings FILE.json|FILE.lcpreset] [--preset ID] [--size N] [--quality Q]
-//! lightcraft-cli snapshot [--library DIR | --demo] [--script FILE.jsonl] [-o OUT.png] [--size WxH] [--scale S] [FILES…]
-//! lightcraft-cli merge hdr|panorama|hdr-panorama|hdr-batch [OPTIONS] FILES…
-//! lightcraft-cli synth-merge hdr|panorama -o DIR
-//! lightcraft-cli denoise-serve [--model ID] [--models DIR] [--listen ADDR] [--token-env VAR] [--run-on auto|gpu|cpu]
-//! lightcraft-cli commands [--json]
-//! lightcraft-cli controls [--json]
-//! lightcraft-cli calibrate [--max N] [--out DIR] FOLDERS/FILES…
+//! lightcraft run [--demo | --library DIR] [--import PATH]… CMD [key=value…]…
+//! lightcraft render <in> -o <out> [--set control=value]… [--settings FILE.json|FILE.lcpreset] [--preset ID] [--size N] [--quality Q]
+//! lightcraft snapshot [--library DIR | --demo] [--script FILE.jsonl] [-o OUT.png] [--size WxH] [--scale S] [FILES…]
+//! lightcraft merge hdr|panorama|hdr-panorama|hdr-batch [OPTIONS] FILES…
+//! lightcraft synth-merge hdr|panorama -o DIR
+//! lightcraft denoise-serve [--model ID] [--models DIR] [--listen ADDR] [--token-env VAR] [--run-on auto|gpu|cpu]
+//! lightcraft commands [--json]
+//! lightcraft controls [--json]
+//! lightcraft calibrate [--max N] [--out DIR] FOLDERS/FILES…
 //! ```
-#![forbid(unsafe_code)]
-#![cfg_attr(test, allow(clippy::disallowed_methods))]
-#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
+//!
+//! [`dispatch`] runs one when the first argument names it; anything else starts the app. On Windows,
+//! where `lightcraft.exe` has no console, `lightcraft.com` (`apps/lightcraft-console`) runs it from a
+//! terminal.
 
-mod alloc_release;
+mod headless;
 
 use std::io::Write;
 use std::path::Path;
 use std::process::ExitCode;
 
+use headless::{Headless, expand_paths};
 use lightcraft_engine::{Session, walk};
-use lightcraft_mcp::{Backend, DEFAULT_ADDR, Headless, Remote, Server, expand_paths};
 use serde_json::{Value, json};
 
 const USAGE: &str = "\
-lightcraft-cli — headless LightCraft (photo library + raw developer)
+lightcraft — LightCraft (photo library + raw developer)
+
+  lightcraft [--library DIR | --memory] [--no-demo] [--control PORT] [FILES…]
+      Open the app (`lightcraft --help` lists its options). The subcommands below work without a window.
 
 USAGE:
-  lightcraft-cli run [OPTIONS] COMMAND [key=value | '{json}']… [COMMAND …]…
-      Run one or more commands (ids from `commands`, or control-protocol methods such as
-      engine.commands / ui.inspect / ui.screenshot) and print one JSON line per command:
-      {\"command\", \"ok\", \"result\" | \"error\", \"ms\"}. A word without `=` starts the next
+  lightcraft run [OPTIONS] COMMAND [key=value | '{json}']… [COMMAND …]…
+      Run one or more commands (ids from `commands`) in a session of their own and print one
+      JSON line per command: {\"command\", \"ok\", \"result\", \"ms\"} or
+      {\"command\", \"ok\": false, \"error\", \"code\"}. A word without `=` starts the next
       command; values are JSON when they parse (1, true, [1,2], {…}), else strings. Exit status
       is non-zero when a command fails. Example:
-        lightcraft-cli run --import ~/Photos/a.jpg develop.set control=light.exposure value=0.7 \\
+        lightcraft run --import ~/Photos/a.jpg develop.set control=light.exposure value=0.7 \\
             develop.auto app.export path=/tmp/a.jpg longEdge=1600
       Options:
         --demo            headless, the procedural demo library
         --library DIR     headless, open (or create) a LightCraft library; edits are saved
         --import PATH     headless, import a file or folder first (repeatable)
-        --connect [ADDR]  drive the running app (`lightcraft --control 7980`; default 127.0.0.1:7980)
         --script FILE|-   also run JSON lines {\"command\": id, \"params\": {…}} (or {\"method\": …})
         --keep-going      continue after a failed command
-  lightcraft-cli mcp [OPTIONS] [FILES/FOLDERS…]
-      MCP server (JSON-RPC 2.0 over stdio). Headless by default: an in-process session with the
-      given files imported. Options:
-        --connect [ADDR]  drive a running app instead (`lightcraft --control 7980`; default 127.0.0.1:7980)
-        --demo            headless: start with the procedurally generated demo library
-        --library DIR     headless: open (or create) a persistent LightCraft library; edits are saved
-        --compact         list only the helper tools (every command stays reachable via run_command)
-  lightcraft-cli render <IN> -o <OUT> [OPTIONS]
+  lightcraft render <IN> -o <OUT> [OPTIONS]
       Develop one file and export it (.jpg, .png, .tif, .webp, .avif, .jxl, .psd or .dng by extension) with the
       same encoder as the app's Export dialog. Options:
         --set CONTROL=VALUE  set a develop slider, repeatable (e.g. --set light.exposure=0.5)
@@ -67,7 +62,7 @@ USAGE:
                              --opt format=original (copy + XMP sidecar) --opt metadata=none
                              --opt addToPhotos=true --opt photosAlbum=NAME (macOS: then add
                              the file to Apple Photos, into that album)
-  lightcraft-cli snapshot [OPTIONS] [FILES/FOLDERS…]
+  lightcraft snapshot [OPTIONS] [FILES/FOLDERS…]
       Run the full app UI headlessly (no window, no GPU: CPU-rasterized egui) and write PNGs.
       Options:
         --demo            the procedural demo library (default unless --library or FILES)
@@ -81,7 +76,7 @@ USAGE:
         -o, --output OUT  PNG path (a final screenshot is written here if the script took none)
         --size WxH        window size in points (default 1600x1000)
         --scale S         pixels per point (default 1)
-  lightcraft-cli merge hdr|panorama|hdr-panorama|hdr-batch [OPTIONS] FILES…
+  lightcraft merge hdr|panorama|hdr-panorama|hdr-batch [OPTIONS] FILES…
       Photo Merge: writes <first>-HDR.dng / -Pano.dng / -HDR-Pano.dng next to the first file and
       prints the result as JSON. hdr-batch merges each bracket set among the files (photos taken
       less than a second apart at different exposures), e.g. a whole folder. Options:
@@ -89,9 +84,9 @@ USAGE:
         --projection auto|spherical|cylindrical|perspective   --boundary-warp 0..100
         --auto-crop   --fill-edges   --no-auto-settings
         --preview OUT.png   only render a ≤ 1024 px preview (nothing written next to the files)
-  lightcraft-cli synth-merge hdr|panorama -o DIR
+  lightcraft synth-merge hdr|panorama -o DIR
       Write synthetic merge inputs (procedural scene; bracketed DNGs or overlapping PNG views).
-  lightcraft-cli denoise-serve [OPTIONS]
+  lightcraft denoise-serve [OPTIONS]
       Run AI Denoise tiles for LightCraft on other computers (LIGHTCRAFT_DENOISE_URL=<this host>:7990 and
       LIGHTCRAFT_DENOISE_TOKEN there; see docs/denoise.md). Serves the installed model selected in Settings,
       on this computer's graphics card when it can run it, else the CPU. Plain TCP: listen on a VPN/LAN
@@ -103,25 +98,21 @@ USAGE:
                           (default LIGHTCRAFT_DENOISE_TOKEN)
         --run-on WHERE    auto (default), gpu or cpu
         --max-connections N   concurrent clients (default 8)
-  lightcraft-cli commands [--json]   list every command id with its parameters
-  lightcraft-cli controls [--json]   list every develop control id with its range
-  lightcraft-cli calibrate [--max N] [--out DIR] FOLDERS/FILES…
+  lightcraft commands [--json]   list every command id with its parameters
+  lightcraft controls [--json]   list every develop control id with its range
+  lightcraft calibrate [--max N] [--out DIR] FOLDERS/FILES…
       Fit a colour profile per camera model from raw files and their embedded camera JPEGs
       (Sony ARW, Nikon NEF, Fujifilm RAF): up to N files spread over the folders (default 300; 0 = all), pooled per
       model, written as <model>.json to DIR (default: the profiles folder LightCraft reads,
       <config>/camera-profiles, or $LIGHTCRAFT_CAMERA_PROFILES). Raws of a profiled model then
       take their colour from the profile and only their tone from their own JPEG.
-  lightcraft-cli --version | --help
+  lightcraft --version | --help
 ";
-
-#[cfg(feature = "dhat-heap")]
-#[global_allocator]
-static ALLOC: dhat::Alloc = dhat::Alloc;
 
 /// Why `--library DIR` can't be opened; for a library open in another program, how to work with
 /// that one instead (issue #99).
 /// Print the open library's warnings (an unlockable library, damaged settings files) on stderr:
-/// stdout carries command results / MCP protocol messages only.
+/// stdout carries command results only.
 fn library_warnings(session: &mut Session, who: &str) {
     for w in session.take_library_warnings() {
         eprintln!("{who}: warning: {w}");
@@ -131,7 +122,7 @@ fn library_warnings(session: &mut Session, who: &str) {
 fn library_error(dir: &str, e: lightcraft_engine::EngineError) -> String {
     match e {
         lightcraft_engine::EngineError::LibraryInUse(why) => format!(
-            "{dir}: {why}\nTo work with the library while the app has it open, start the app with `--control PORT` and use `lightcraft-cli mcp --connect 127.0.0.1:PORT`."
+            "{dir}: {why}\nTo work with the library while the app has it open, start the app with `--control PORT` and drive it over the control port (docs/control-protocol.md)."
         ),
         e @ lightcraft_engine::EngineError::LightroomCatalog { .. } => format!(
             "{e}\nOpen a LightCraft library with `--library DIR` (an empty folder makes a new one) and run `library.importLightroom` with the catalog's path."
@@ -140,51 +131,47 @@ fn library_error(dir: &str, e: lightcraft_engine::EngineError) -> String {
     }
 }
 
-fn main() -> ExitCode {
-    // `--features dhat-heap`: count allocations; the profile is written when `_heap` drops
-    // (LIGHTCRAFT_DHAT_FILE, default dhat-heap.json).
-    #[cfg(feature = "dhat-heap")]
-    let _heap = {
-        let file = std::env::var("LIGHTCRAFT_DHAT_FILE").unwrap_or_else(|_| "dhat-heap.json".into());
-        lightcraft_engine::memory::set_heap_stats(|| {
-            let s = dhat::HeapStats::get();
-            lightcraft_engine::memory::HeapUsage { current: s.curr_bytes as u64, peak: s.max_bytes as u64 }
-        });
-        dhat::Profiler::builder().file_name(file).build()
+/// The subcommands, by the first argument.
+const SUBCOMMANDS: &[&str] = &["run", "render", "snapshot", "commands", "merge", "synth-merge", "controls", "denoise-serve", "calibrate"];
+
+/// Whether `args` (the arguments after the program name) start with a subcommand: else they are the app's.
+pub fn is_subcommand(args: &[String]) -> bool {
+    args.first().is_some_and(|a| SUBCOMMANDS.contains(&a.as_str()))
+}
+
+/// Run the subcommand `args` start with ([`is_subcommand`]); its exit status.
+pub fn dispatch(args: &[String]) -> ExitCode {
+    let Some((first, rest)) = args.split_first() else {
+        print!("{USAGE}");
+        return ExitCode::FAILURE;
     };
-    alloc_release::install();
     // Warnings (a GPU render redone on the CPU, an unknown backend name) on stderr; LIGHTCRAFT_LOG
     // or RUST_LOG picks another level (#168).
-    lightcraft_engine::logging::install("lightcraft-cli");
-    let args: Vec<String> = std::env::args().skip(1).collect();
-    let r = match args.first().map(String::as_str) {
-        Some("run") => run(&args[1..]),
-        Some("mcp") => mcp(&args[1..]),
-        Some("render") => render(&args[1..]),
-        Some("snapshot") => snapshot(&args[1..]),
-        Some("commands") => commands(&args[1..]),
-        Some("merge") => merge(&args[1..]),
-        Some("synth-merge") => synth_merge(&args[1..]),
-        Some("controls") => controls(&args[1..]),
-        Some("denoise-serve") => denoise_serve(&args[1..]),
-        Some("calibrate") => calibrate(&args[1..]),
-        Some("--version" | "-V" | "version") => {
-            println!("lightcraft-cli {}", env!("CARGO_PKG_VERSION"));
-            Ok(())
-        }
-        Some("--help" | "-h" | "help") | None => {
-            print!("{USAGE}");
-            Ok(())
-        }
-        Some(other) => Err(format!("unknown subcommand `{other}`\n\n{USAGE}")),
+    lightcraft_engine::logging::install("lightcraft");
+    let r = match first.as_str() {
+        "run" => run(rest),
+        "render" => render(rest),
+        "snapshot" => snapshot(rest),
+        "commands" => commands(rest),
+        "merge" => merge(rest),
+        "synth-merge" => synth_merge(rest),
+        "controls" => controls(rest),
+        "denoise-serve" => denoise_serve(rest),
+        "calibrate" => calibrate(rest),
+        other => Err(format!("unknown subcommand `{other}`\n\n{USAGE}")),
     };
     match r {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
-            eprintln!("lightcraft-cli: {e}");
+            eprintln!("lightcraft {first}: {e}");
             ExitCode::FAILURE
         }
     }
+}
+
+/// The subcommands' help, for `lightcraft --help`.
+pub fn usage() -> &'static str {
+    USAGE
 }
 
 /// Raw files below `path` (or `path` itself), skipping hidden and NAS metadata (`@…`) folders.
@@ -291,80 +278,6 @@ fn calibrate(args: &[String]) -> Result<(), String> {
         return Err("no profile written".into());
     }
     Ok(())
-}
-
-fn mcp(args: &[String]) -> Result<(), String> {
-    let mut connect: Option<String> = None;
-    let mut demo = false;
-    let mut library: Option<String> = None;
-    let mut compact = false;
-    let mut files = Vec::new();
-    let mut i = 0;
-    while i < args.len() {
-        match args[i].as_str() {
-            "--connect" => {
-                // Optional address argument. A bare port (all digits) is taken as a port on the
-                // loopback default — matches the help's `--connect [ADDR]` hint alongside the
-                // `--control 7980` example. A non-numeric, non-`--`-prefixed token (e.g. a
-                // command id like `ui.inspect`) leaves the address at its default so the
-                // command is still consumed next. (#1178)
-                match args.get(i + 1).filter(|a| a.contains(':') || a.chars().all(|c| c.is_ascii_digit())) {
-                    Some(a) => {
-                        connect = Some(if a.contains(':') { a.clone() } else { format!("127.0.0.1:{a}") });
-                        i += 1;
-                    }
-                    None => connect = Some(DEFAULT_ADDR.to_string()),
-                }
-            }
-            a if a.starts_with("--connect=") => connect = Some(a["--connect=".len()..].to_string()),
-            "--headless" => connect = None,
-            "--demo" => demo = true,
-            "--compact" => compact = true,
-            "--library" => library = Some(take_value(args, &mut i, "--library")?.to_string()),
-            a if a.starts_with("--") => return Err(format!("unknown option `{a}`")),
-            f => files.push(f.to_string()),
-        }
-        i += 1;
-    }
-    let backend: Box<dyn Backend> = match connect {
-        Some(addr) => {
-            if !files.is_empty() || demo || library.is_some() {
-                return Err("FILES, --demo and --library apply to headless mode only (import through the `import` tool instead)".into());
-            }
-            match Remote::connect(&addr) {
-                Ok(r) => {
-                    eprintln!("lightcraft-cli mcp: connected to LightCraft at {addr}");
-                    Box::new(r)
-                }
-                Err(e) => {
-                    eprintln!("lightcraft-cli mcp: LightCraft is not reachable at {addr} yet ({e}); will retry on each call");
-                    Box::new(Remote::lazy(&addr))
-                }
-            }
-        }
-        None => {
-            let mut h = match &library {
-                Some(dir) => {
-                    let mut h = Headless::default();
-                    let r = h.session.open_library(dir, demo).map_err(|e| library_error(dir, e))?;
-                    eprintln!("lightcraft-cli mcp: opened library {dir} ({r:?})");
-                    library_warnings(&mut h.session, "lightcraft-cli mcp");
-                    h
-                }
-                None if demo => Headless::demo(),
-                None => Headless::default(),
-            };
-            if !files.is_empty() {
-                let paths = expand_paths(&files);
-                let r = h.session.execute("library.import", &json!({"paths": paths})).map_err(|e| e.to_string())?;
-                eprintln!("lightcraft-cli mcp: imported {} photo(s)", r["imported"].as_array().map_or(0, Vec::len));
-            }
-            Box::new(h)
-        }
-    };
-    eprintln!("lightcraft-cli mcp: serving MCP on stdio ({})", backend.describe());
-    let mut server = Server::new(backend).with_command_tools(!compact);
-    server.serve_stdio(std::io::stdout()).map_err(|e| e.to_string())
 }
 
 fn merge(args: &[String]) -> Result<(), String> {
@@ -478,7 +391,7 @@ fn synth_merge(args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
-/// One step of `lightcraft-cli run`: a command id (or control-protocol method) and its params.
+/// One step of `lightcraft run`: a command id (or an `engine.*` method) and its params.
 #[derive(Debug, PartialEq)]
 struct Step {
     id: String,
@@ -510,13 +423,12 @@ fn parse_steps(tokens: &[String]) -> Result<Vec<Step>, String> {
 
 /// Run one step: control-protocol methods (`ui.*`, `engine.*`) directly, everything else as a
 /// command through `engine.execute`.
-fn run_step(b: &mut dyn Backend, s: &Step) -> Result<Value, lightcraft_engine::CommandError> {
+fn run_step(h: &mut Headless, s: &Step) -> Result<Value, lightcraft_engine::CommandError> {
     let direct = s.id.starts_with("ui.") || s.id.starts_with("engine.") || s.id == "app.quit";
-    if direct { b.call(&s.id, s.params.clone()) } else { b.call("engine.execute", json!({"command": s.id, "params": s.params})) }
+    if direct { h.call(&s.id, s.params.clone()) } else { h.call("engine.execute", json!({"command": s.id, "params": s.params})) }
 }
 
 fn run(args: &[String]) -> Result<(), String> {
-    let mut connect: Option<String> = None;
     let mut demo = false;
     let mut library: Option<String> = None;
     let mut imports = Vec::new();
@@ -529,14 +441,6 @@ fn run(args: &[String]) -> Result<(), String> {
                 i += 1;
                 break;
             }
-            "--connect" => match args.get(i + 1).filter(|a| !a.contains('=') && (a.contains(':') || a.chars().all(|c| c.is_ascii_digit()))) {
-                Some(a) => {
-                    connect = Some(if a.contains(':') { a.clone() } else { format!("127.0.0.1:{a}") });
-                    i += 1;
-                }
-                None => connect = Some(DEFAULT_ADDR.to_string()),
-            },
-            a if a.starts_with("--connect=") => connect = Some(a["--connect=".len()..].to_string()),
             "--demo" => demo = true,
             "--library" => library = Some(take_value(args, &mut i, "--library")?.to_string()),
             "--import" => imports.push(take_value(args, &mut i, "--import")?.to_string()),
@@ -546,71 +450,50 @@ fn run(args: &[String]) -> Result<(), String> {
         }
         i += 1;
     }
-    let mut steps = parse_steps(&args[i..])?;
-    if let Some(path) = &script {
-        let text = if path == "-" {
-            let mut s = String::new();
-            std::io::Read::read_to_string(&mut std::io::stdin(), &mut s).map_err(|e| e.to_string())?;
-            s
-        } else {
-            std::fs::read_to_string(path).map_err(|e| format!("{path}: {e}"))?
-        };
-        for (n, line) in text.lines().enumerate().filter(|(_, l)| !l.trim().is_empty() && !l.trim_start().starts_with('#')) {
-            let v: Value = serde_json::from_str(line).map_err(|e| format!("{path}:{}: {e}", n + 1))?;
-            // `{"command": id, "params": …}` or a control request `{"method": m, "params": …}`
-            let id = v
-                .get("command")
-                .or(v.get("method"))
-                .and_then(Value::as_str)
-                .ok_or_else(|| format!("{path}:{}: needs `command` or `method`", n + 1))?;
-            let params = v.get("params").cloned().filter(|p| p.is_object()).unwrap_or_else(|| json!({}));
-            steps.push(Step { id: id.to_string(), params });
-        }
-    }
-    if steps.is_empty() {
-        return Err("run: no command given (see `lightcraft-cli commands`)".into());
-    }
-    let mut backend: Box<dyn Backend> = match connect {
-        Some(addr) => {
-            if demo || library.is_some() || !imports.is_empty() {
-                return Err("--demo, --library and --import apply to headless mode only".into());
-            }
-            Box::new(Remote::connect(&addr).map_err(|e| match e.kind() {
-                std::io::ErrorKind::PermissionDenied => {
-                    format!("LightCraft at {addr} refused the connection: {e}")
-                }
-                _ => format!("LightCraft is not reachable at {addr} ({e}); start it with `lightcraft --control {}`", connect_port(&addr)),
-            })?)
-        }
-        None => {
-            let mut h = match &library {
-                Some(dir) => {
-                    let mut h = Headless::default();
-                    h.session.open_library(dir, demo).map_err(|e| library_error(dir, e))?;
-                    library_warnings(&mut h.session, "lightcraft-cli");
-                    h
-                }
-                None if demo => Headless::demo(),
-                None => Headless::default(),
-            };
-            if !imports.is_empty() {
-                let paths = expand_paths(&imports);
-                let r = h.session.execute("library.import", &json!({"paths": paths})).map_err(|e| e.to_string())?;
-                // what follows acts on the imported photos (already-known files are reported as duplicates)
-                let mut ids: Vec<Value> = r["imported"].as_array().cloned().unwrap_or_default();
-                ids.extend(r["duplicates"].as_array().into_iter().flatten().filter_map(|d| d.get("existing").filter(|v| v.is_u64()).cloned()));
-                if let Some(first) = ids.first().cloned() {
-                    h.session.execute("library.select", &json!({"ids": ids, "active": first})).map_err(|e| e.to_string())?;
-                }
-            }
-            Box::new(h)
-        }
+    let steps = parse_steps(&args[i..])?;
+    let script_name = script.clone().unwrap_or_default();
+    // the script, read a line at a time: each line runs as it arrives (a pipe can feed one command after another)
+    let script: Box<dyn std::io::BufRead> = match script.as_deref() {
+        None => Box::new(std::io::empty()),
+        Some("-") => Box::new(std::io::stdin().lock()),
+        Some(path) => Box::new(std::io::BufReader::new(std::fs::File::open(path).map_err(|e| format!("{path}: {e}"))?)),
     };
+    if steps.is_empty() && script_name.is_empty() {
+        return Err("run: no command given (see `lightcraft commands`)".into());
+    }
+    let mut h = match &library {
+        Some(dir) => {
+            let mut h = Headless::default();
+            h.session.open_library(dir, demo).map_err(|e| library_error(dir, e))?;
+            library_warnings(&mut h.session, "lightcraft run");
+            h
+        }
+        None if demo => Headless::demo(),
+        None => Headless::default(),
+    };
+    if !imports.is_empty() {
+        let paths = expand_paths(&imports);
+        let r = h.session.execute("library.import", &json!({"paths": paths})).map_err(|e| e.to_string())?;
+        // what follows acts on the imported photos (already-known files are reported as duplicates)
+        let mut ids: Vec<Value> = r["imported"].as_array().cloned().unwrap_or_default();
+        ids.extend(r["duplicates"].as_array().into_iter().flatten().filter_map(|d| d.get("existing").filter(|v| v.is_u64()).cloned()));
+        if let Some(first) = ids.first().cloned() {
+            h.session.execute("library.select", &json!({"ids": ids, "active": first})).map_err(|e| e.to_string())?;
+        }
+    }
+    let script_steps = std::io::BufRead::lines(script).enumerate().filter_map(|(n, line)| {
+        let line = match line {
+            Ok(l) => l,
+            Err(e) => return Some(Err(format!("{script_name}: {e}"))),
+        };
+        (!line.trim().is_empty() && !line.trim_start().starts_with('#')).then(|| script_step(&script_name, n + 1, &line))
+    });
     let mut out = std::io::stdout().lock();
     let mut failed = 0;
-    for s in &steps {
+    for s in steps.into_iter().map(Ok).chain(script_steps) {
+        let s = s?;
         let t = std::time::Instant::now();
-        let line = match run_step(backend.as_mut(), s) {
+        let line = match run_step(&mut h, &s) {
             Ok(r) => json!({"command": s.id, "ok": true, "result": r, "ms": (t.elapsed().as_secs_f64() * 1e4).round() / 10.0}),
             Err(e) => {
                 failed += 1;
@@ -619,24 +502,26 @@ fn run(args: &[String]) -> Result<(), String> {
                 line
             }
         };
-        writeln!(out, "{line}").map_err(|e| e.to_string())?;
+        writeln!(out, "{line}").and_then(|()| out.flush()).map_err(|e| e.to_string())?;
         if failed > 0 && !keep_going {
             break;
         }
     }
-    drop(backend); // a library session is flushed here
+    drop(h); // a library session is flushed here
     if failed > 0 { Err(format!("{failed} command(s) failed")) } else { Ok(()) }
+}
+
+/// Line `n` of the script `path`: `{"command": id, "params": …}` or a control request `{"method": m, "params": …}`.
+fn script_step(path: &str, n: usize, line: &str) -> Result<Step, String> {
+    let v: Value = serde_json::from_str(line).map_err(|e| format!("{path}:{n}: {e}"))?;
+    let id = v.get("command").or(v.get("method")).and_then(Value::as_str).ok_or_else(|| format!("{path}:{n}: needs `command` or `method`"))?;
+    let params = v.get("params").cloned().filter(|p| p.is_object()).unwrap_or_else(|| json!({}));
+    Ok(Step { id: id.to_string(), params })
 }
 
 fn take_value<'a>(args: &'a [String], i: &mut usize, flag: &str) -> Result<&'a str, String> {
     *i += 1;
     args.get(*i).map(String::as_str).ok_or_else(|| format!("{flag} needs a value"))
-}
-
-/// The port an `--connect` address names, for the recovery hint. The whole address when it has
-/// no port, so a hint is never built from a guess.
-fn connect_port(addr: &str) -> &str {
-    addr.rsplit_once(':').map_or(addr, |(_, port)| port)
 }
 
 /// What `render --settings FILE` applies: a partial develop-settings object, or the one preset of
@@ -756,14 +641,14 @@ fn render(args: &[String]) -> Result<(), String> {
     lightcraft_engine::export::write_file(&output, &e.bytes)?;
     for (sc, bytes) in &sidecars {
         lightcraft_engine::export::write_file(sc, bytes)?;
-        eprintln!("lightcraft-cli: wrote {sc}");
+        eprintln!("lightcraft render: wrote {sc}");
     }
-    eprintln!("lightcraft-cli: wrote {output} ({}×{})", e.width, e.height);
+    eprintln!("lightcraft render: wrote {output} ({}×{})", e.width, e.height);
     if let Some(photos) = after.run(&[json!({"path": output})], false) {
         if let Some(err) = photos.get("error").and_then(Value::as_str) {
             return Err(format!("render: {output} was written, but {err}"));
         }
-        eprintln!("lightcraft-cli: added to Apple Photos: {photos}");
+        eprintln!("lightcraft render: added to Apple Photos: {photos}");
     }
     Ok(())
 }
@@ -818,7 +703,7 @@ fn snapshot(args: &[String]) -> Result<(), String> {
         let ti = Instant::now();
         let r = session.execute("library.import", &json!({"paths": expand_paths(&files)})).map_err(|e| e.to_string())?;
         let n = r["imported"].as_array().map_or(0, Vec::len);
-        eprintln!("lightcraft-cli snapshot: imported {n} files in {:.0} ms", ti.elapsed().as_secs_f64() * 1e3);
+        eprintln!("lightcraft snapshot: imported {n} files in {:.0} ms", ti.elapsed().as_secs_f64() * 1e3);
     }
     let services = lightcraft_ui_egui::Services {
         write_shared: Some(std::sync::Arc::new(lightcraft_engine::export::write_file)),
@@ -906,11 +791,7 @@ fn snapshot(args: &[String]) -> Result<(), String> {
             }
             writeln!(out, "{reply}").map_err(|e| e.to_string())?;
             if method == "ui.screenshot" {
-                eprintln!(
-                    "lightcraft-cli snapshot: {} ({:.0} ms)",
-                    reply["result"]["path"].as_str().unwrap_or("?"),
-                    ts.elapsed().as_secs_f64() * 1000.0
-                );
+                eprintln!("lightcraft snapshot: {} ({:.0} ms)", reply["result"]["path"].as_str().unwrap_or("?"), ts.elapsed().as_secs_f64() * 1000.0);
             }
             if h.quit_requested() {
                 break;
@@ -922,18 +803,18 @@ fn snapshot(args: &[String]) -> Result<(), String> {
         if r["ok"] != true {
             return Err(format!("screenshot failed: {}", r["error"]));
         }
-        eprintln!("lightcraft-cli snapshot: wrote {path} ({}×{})", r["result"]["width"], r["result"]["height"]);
+        eprintln!("lightcraft snapshot: wrote {path} ({}×{})", r["result"]["width"], r["result"]["height"]);
     }
     // a background export started by the script finishes before we exit (its files would be cut off)
     if h.app.export.is_some() {
-        eprintln!("lightcraft-cli snapshot: waiting for the background export");
+        eprintln!("lightcraft snapshot: waiting for the background export");
         let te = std::time::Instant::now();
         while h.app.export.is_some() && te.elapsed() < std::time::Duration::from_secs(3600) {
             h.step();
             std::thread::sleep(std::time::Duration::from_millis(20));
         }
     }
-    eprintln!("lightcraft-cli snapshot: done in {:.2} s ({} frames)", t0.elapsed().as_secs_f64(), h.frames());
+    eprintln!("lightcraft snapshot: done in {:.2} s ({} frames)", t0.elapsed().as_secs_f64(), h.frames());
     if failed > 0 { Err(format!("{failed} scripted request(s) failed")) } else { Ok(()) }
 }
 
@@ -1015,12 +896,12 @@ fn denoise_serve(args: &[String]) -> Result<(), String> {
     let token = std::env::var(&token_env).map_err(|_| format!("denoise-serve: set the shared token in ${token_env}"))?;
     let s = lightcraft_engine::denoise::serving(dir.as_deref().map(Path::new), model.as_deref(), run_on)?;
     let listener = std::net::TcpListener::bind(&listen).map_err(|e| format!("denoise-serve: {listen}: {e}"))?;
-    eprintln!("lightcraft-cli denoise-serve: {} {} ({}) on {listen} via {}", s.model.id, s.model.version, s.model.sha256, s.device);
+    eprintln!("lightcraft denoise-serve: {} {} ({}) on {listen} via {}", s.model.id, s.model.version, s.model.sha256, s.device);
     if listen.starts_with("0.0.0.0") || listen.starts_with("[::]") {
-        eprintln!("lightcraft-cli denoise-serve: listening on every interface; firewall the port to your VPN/LAN (the protocol is not encrypted)");
+        eprintln!("lightcraft denoise-serve: listening on every interface; firewall the port to your VPN/LAN (the protocol is not encrypted)");
     }
     let opts = ServerOptions { token, max_connections, ..Default::default() };
-    serve(listener, s.model, s.tile, s.device, s.run, opts, std::sync::Arc::new(|m: &str| eprintln!("lightcraft-cli denoise-serve: {m}")))
+    serve(listener, s.model, s.tile, s.device, s.run, opts, std::sync::Arc::new(|m: &str| eprintln!("lightcraft denoise-serve: {m}")))
 }
 
 #[cfg(not(feature = "denoise"))]

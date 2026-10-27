@@ -46,7 +46,7 @@ pub(crate) enum NoDetector {
 
 impl NoDetector {
     /// Command `cmd`'s error for it. The message reads as before kinds existed (an invalid-parameters
-    /// error), so control-channel and MCP clients see the same `error` text.
+    /// error), so control-channel clients see the same `error` text.
     pub(crate) fn into_error(self, cmd: &str) -> EngineError {
         match self {
             Self::NotInstalled => EngineError::ModelMissing { model: AiModel::FaceDetector, msg: bad(cmd, NOT_INSTALLED).to_string() },

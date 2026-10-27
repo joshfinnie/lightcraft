@@ -20,8 +20,8 @@ description: |-
   Open-source, native photo library and raw developer that works the way
   Lightroom users expect. Import, rate, keyword and organise photos; develop
   raw files non-destructively with exposure, tone, color grading, masks and
-  presets; GPU processing (wgpu). Includes lightcraft-cli, a headless renderer
-  and command runner.
+  presets; GPU processing (wgpu). `lightcraft render` and `lightcraft run`
+  develop and export from the command line.
 
 # The binaries link only glibc and libgcc_s directly. Windowing (X11/Wayland, xkbcommon) and the
 # GPU (Vulkan, EGL/GL) are loaded at runtime, so they are dependencies/recommendations here
@@ -65,9 +65,6 @@ overrides:
 contents:
   - src: ${STAGE}/usr/bin/lightcraft
     dst: /usr/bin/lightcraft
-    file_info: { mode: 0755 }
-  - src: ${STAGE}/usr/bin/lightcraft-cli
-    dst: /usr/bin/lightcraft-cli
     file_info: { mode: 0755 }
   - src: ${STAGE}/usr/share/
     dst: /usr/share/

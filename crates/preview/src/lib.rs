@@ -8,7 +8,7 @@
 //! - [`JobPool`]: worker threads with per-slot de-duplication and priorities (visible thumbnails
 //!   before off-screen prefetch); runs jobs inline on wasm.
 //!
-//! No UI dependencies (L3): the egui frontend, the CLI and the MCP server share it.
+//! No UI dependencies (L3): the egui frontend and the CLI share it.
 #![forbid(unsafe_code)]
 #![cfg_attr(test, allow(clippy::disallowed_methods))]
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]

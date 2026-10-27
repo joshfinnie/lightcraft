@@ -574,7 +574,7 @@ fn network(path: &Path, manifest: &DenoiserManifest, remote: Option<RemoteSide>)
     })
 }
 
-/// A model ready to be served to other computers (`lightcraft-cli denoise-serve`).
+/// A model ready to be served to other computers (`lightcraft denoise-serve`).
 #[cfg(feature = "denoise")]
 pub struct Serving {
     pub model: lightcraft_denoise::remote::ModelId,

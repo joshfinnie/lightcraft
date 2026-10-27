@@ -15,9 +15,12 @@
 //! `{"id":1,"method":"ui.inspect","params":{}}` → `{"id":1,"ok":true,"result":…}`.
 //! See `lightcraft_ui_egui::control` for the methods.
 //!
+//! `lightcraft <subcommand>` (`render`, `run`, `snapshot`, … see [`cli`]) works without a window.
+//!
 //! On Windows, release builds are GUI-subsystem programs: launching the app opens no console
-//! window (issue #7). Their `--help` / `--version` output and diagnostics then have no console to
-//! go to; use `lightcraft-cli` (a console program) from a terminal, or a debug build.
+//! window (issue #7). Their `--help` / `--version` output, subcommands and diagnostics then have no
+//! console to go to; from a terminal, `lightcraft` runs `lightcraft.com` (`apps/lightcraft-console`),
+//! which gives them the terminal's.
 #![cfg_attr(all(target_os = "windows", not(debug_assertions)), windows_subsystem = "windows")]
 #![forbid(unsafe_code)]
 #![cfg_attr(test, allow(clippy::disallowed_methods))]
@@ -25,6 +28,7 @@
 
 mod alloc_release;
 mod appearance;
+mod cli;
 #[cfg(target_os = "linux")]
 mod colord;
 mod control_server;
@@ -910,7 +914,37 @@ fn panic_log_path_with(env: impl Fn(&str) -> Option<std::ffi::OsString>, temp: s
     env("LIGHTCRAFT_CONFIG_DIR").filter(|value| !value.is_empty()).map(std::path::PathBuf::from).unwrap_or(temp).join("lightcraft-panics.log")
 }
 
-fn main() -> eframe::Result {
+#[cfg(feature = "dhat-heap")]
+#[global_allocator]
+static ALLOC: dhat::Alloc = dhat::Alloc;
+
+fn main() -> std::process::ExitCode {
+    // `--features dhat-heap`: count allocations; the profile is written when `_heap` drops
+    // (LIGHTCRAFT_DHAT_FILE, default dhat-heap.json).
+    #[cfg(feature = "dhat-heap")]
+    let _heap = {
+        let file = std::env::var("LIGHTCRAFT_DHAT_FILE").unwrap_or_else(|_| "dhat-heap.json".into());
+        lightcraft_engine::memory::set_heap_stats(|| {
+            let s = dhat::HeapStats::get();
+            lightcraft_engine::memory::HeapUsage { current: s.curr_bytes as u64, peak: s.max_bytes as u64 }
+        });
+        dhat::Profiler::builder().file_name(file).build()
+    };
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if cli::is_subcommand(&args) {
+        alloc_release::install();
+        return cli::dispatch(&args);
+    }
+    match run_app() {
+        Ok(()) => std::process::ExitCode::SUCCESS,
+        Err(e) => {
+            eprintln!("Error: {e:?}");
+            std::process::ExitCode::FAILURE
+        }
+    }
+}
+
+fn run_app() -> eframe::Result {
     // First, so every start-up record is kept for the log file (`logging`).
     let logger = logging::install();
     lightcraft_engine::guard::install_hook(panic_log_path_with(|name| std::env::var_os(name), std::env::temp_dir()));
@@ -937,7 +971,7 @@ fn main() -> eframe::Result {
                 return Ok(());
             }
             "-h" | "--help" => {
-                print!("{HELP}");
+                print!("{HELP}\n{}", cli::usage());
                 return Ok(());
             }
             o if o.starts_with("--") => {

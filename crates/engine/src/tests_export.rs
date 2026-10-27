@@ -320,7 +320,7 @@ fn export_never_overwrites_an_original() {
     assert!(err.to_string().contains("original of IMG_1.jpg"), "{err}");
     assert_eq!(std::fs::read(&src).unwrap(), original, "the original is byte-identical");
 
-    // the exact path of the control channel / MCP, also spelled another way
+    // the exact path of the control channel, also spelled another way
     std::fs::create_dir_all(dir.join("sub")).unwrap();
     for exact in [src.to_string_lossy().to_string(), dir.join("sub/../IMG_1.jpg").to_string_lossy().to_string()] {
         let to = Destination { dir: String::new(), exact: Some(exact) };
@@ -952,7 +952,7 @@ mod apple_photos {
         assert_eq!(s.execute("export.addToPhotos", &json!({"paths": paths})).unwrap()["imported"], 2);
     }
 
-    /// The desktop app, lightcraft-cli and the MCP server get the real runner from `with_fs`, on
+    /// The desktop app and the CLI get the real runner from `with_fs`, on
     /// macOS only. (Installed, never run here.)
     #[test]
     fn with_fs_installs_the_runner_on_macos_only() {

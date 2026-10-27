@@ -38,7 +38,6 @@ modules:
     buildsystem: simple
     build-commands:
       - install -Dm755 bin/lightcraft /app/bin/lightcraft
-      - install -Dm755 bin/lightcraft-cli /app/bin/lightcraft-cli
       - install -Dm644 share/applications/com.joshfinnie.lightcraft.desktop /app/share/applications/com.joshfinnie.lightcraft.desktop
       # The same MIME definitions the deb/rpm install.
       - install -Dm644 share/mime/packages/com.joshfinnie.lightcraft.xml /app/share/mime/packages/com.joshfinnie.lightcraft.xml

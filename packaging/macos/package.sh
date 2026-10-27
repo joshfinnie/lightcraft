@@ -2,7 +2,8 @@
 # Build, sign and (optionally) notarize the macOS release artifacts:
 #
 #   $DIST/lightcraft-<version>-macos-<arch>.dmg          LightCraft.app on a drag-to-Applications DMG
-#   $DIST/lightcraft-cli-<version>-macos-<arch>.zip      the headless CLI
+#
+# The app's executable is also the command line: `LightCraft.app/Contents/MacOS/LightCraft render …`.
 #
 # Usage: packaging/macos/package.sh [--arch universal|aarch64|x86_64] [--skip-build]
 #
@@ -41,7 +42,6 @@ SHORT_VERSION="${VERSION%%-*}"
 WORK="$CARGO_TARGET_DIR/macos-package"
 APP="$WORK/LightCraft.app"
 DMG="$DIST/lightcraft-$VERSION-macos-$ARCH.dmg"
-CLI_ZIP="$DIST/lightcraft-cli-$VERSION-macos-$ARCH.zip"
 
 NOTARIZE=0
 if [ "$IDENTITY" = "-" ]; then
@@ -58,12 +58,12 @@ echo "==> LightCraft $VERSION for macOS ($ARCH), identity: $IDENTITY, notarize: 
 if [ "$SKIP_BUILD" = 0 ]; then
   args=()
   for t in "${TARGETS[@]}"; do args+=(--target "$t"); done
-  (cd "$ROOT" && cargo build --release --locked -p lightcraft -p lightcraft-cli --features lightcraft/heif,lightcraft-cli/heif "${args[@]}")
+  (cd "$ROOT" && cargo build --release --locked -p lightcraft --features lightcraft/heif "${args[@]}")
 fi
 
 rm -rf "$WORK"
 mkdir -p "$WORK/bin"
-for bin in lightcraft lightcraft-cli; do
+for bin in lightcraft; do
   inputs=()
   for t in "${TARGETS[@]}"; do inputs+=("$CARGO_TARGET_DIR/$t/release/$bin"); done
   lipo -create -output "$WORK/bin/$bin" "${inputs[@]}"
@@ -204,22 +204,6 @@ if [ "$NOTARIZE" = 1 ]; then
   spctl --assess --type open --context context:primary-signature -vvv "$DMG"
 fi
 
-# ---- CLI ---------------------------------------------------------------------------------------
-echo "==> building $CLI_ZIP"
-CLI_DIR="$WORK/lightcraft-cli-$VERSION-macos-$ARCH"
-mkdir -p "$CLI_DIR"
-cp "$WORK/bin/lightcraft-cli" "$CLI_DIR/"
-copy_docs "$CLI_DIR"
-# Same entitlements as the app: `--opt addToPhotos=true` / `app.export {addToPhotos}` send Apple
-# Events to Photos through osascript too (macOS asks about the app that started the CLI, usually
-# the terminal).
-sign --options runtime --entitlements "$HERE/entitlements.plist" "$CLI_DIR/lightcraft-cli"
-codesign --verify --strict --verbose=2 "$CLI_DIR/lightcraft-cli"
-rm -f "$CLI_ZIP"
-ditto -c -k --keepParent "$CLI_DIR" "$CLI_ZIP"
-# A bare Mach-O can't carry a stapled ticket; Gatekeeper looks the notarization up online.
-if [ "$NOTARIZE" = 1 ]; then notarize "$CLI_ZIP"; fi
-
-"$WORK/bin/lightcraft-cli" --version
+"$APP/Contents/MacOS/LightCraft" --version
 echo "==> done"
-ls -lh "$DMG" "$CLI_ZIP"
+ls -lh "$DMG"

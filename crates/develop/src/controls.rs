@@ -1,5 +1,5 @@
 //! Control specs: one table describes every numeric develop slider — id, label, section, range,
-//! default, step, display precision and track style. The UI builds panels from it, MCP exposes it as
+//! default, step, display precision and track style. The UI builds panels from it, the control channel exposes it as
 //! a schema, and `get`/`set` address settings by id (e.g. `light.exposure`, `mixer.red.hue`).
 //!
 //! Settings that come in lists (Point Color samples) are *indexed* controls: one template spec in

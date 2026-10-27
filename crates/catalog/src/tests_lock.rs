@@ -32,7 +32,7 @@ fn second_opener_is_refused_until_the_first_lets_go() {
     let owner: LockOwner = serde_json::from_slice(&std::fs::read(dir.join(OWNER)).unwrap()).unwrap();
     assert_eq!((owner.pid, owner.program.as_str()), (std::process::id(), "LightCraft"));
 
-    let e = LibraryLock::acquire(&dir, "lightcraft-cli").unwrap_err();
+    let e = LibraryLock::acquire(&dir, "lightcraft-test").unwrap_err();
     let LockError::InUse(Some(who)) = &e else { panic!("{e:?}") };
     assert_eq!(who.pid, std::process::id());
     let msg = e.to_string();
@@ -41,7 +41,7 @@ fn second_opener_is_refused_until_the_first_lets_go() {
     drop(first);
     assert!(!dir.join(OWNER).exists(), "the owner note goes with the lock");
     assert!(dir.join(LOCK).exists(), "the lock file itself may stay: only a held lock refuses");
-    let again = LibraryLock::acquire(&dir, "lightcraft-cli").unwrap();
+    let again = LibraryLock::acquire(&dir, "lightcraft-test").unwrap();
     assert!(again.held());
     drop(again);
     let _ = std::fs::remove_dir_all(&dir);
@@ -101,7 +101,7 @@ fn lock_held_by_another_process_is_released_when_it_dies() {
 #[ignore = "helper process for lock_held_by_another_process_is_released_when_it_dies"]
 fn lock_holder_child() {
     let Some(dir) = std::env::var_os("LC_LOCK_CHILD_DIR") else { return };
-    let _l = LibraryLock::acquire(std::path::Path::new(&dir), "lightcraft-cli").unwrap();
+    let _l = LibraryLock::acquire(std::path::Path::new(&dir), "lightcraft-test").unwrap();
     std::fs::write(std::path::Path::new(&dir).join("child-locked"), b"").unwrap();
     std::thread::sleep(std::time::Duration::from_secs(120));
 }
@@ -118,7 +118,7 @@ fn the_library_is_free_once_dropped_even_if_a_child_holds_a_copy() {
     let first = LibraryLock::acquire(&dir, "LightCraft").unwrap();
     let copy = first.descriptor_copy().unwrap();
     drop(first);
-    let again = LibraryLock::acquire(&dir, "lightcraft-cli").expect("the library is free once its LibraryLock is dropped");
+    let again = LibraryLock::acquire(&dir, "lightcraft-test").expect("the library is free once its LibraryLock is dropped");
     assert!(again.held());
     drop((again, copy));
     let _ = std::fs::remove_dir_all(&dir);

@@ -20,7 +20,7 @@
 //! written leaves standard error as the only sink. Panics that escape everything are added to the
 //! file by [`AppLogger::record_panic`] (the default hook already printed them on standard error).
 //!
-//! This is the desktop app's logger only; `lightcraft-cli` doesn't share a process with it.
+//! This is the desktop app's logger only; the subcommands (`cli`) log to stderr alone.
 
 use std::fs::File;
 use std::io::Write;

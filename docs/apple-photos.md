@@ -5,7 +5,7 @@ An export can hand the files it wrote to Apple Photos, optionally into an album 
 `app.export`. The web build doesn't include it.
 
 > **Tested end to end** on macOS 26.6.2 with Photos 11.0, using the ad-hoc-signed packaged app and a new, empty
-> Photos library: the [manual test](#manual-test) below, except the two `lightcraft-cli` steps (11 and 12). Please
+> Photos library: the [manual test](#manual-test) below, except the two CLI steps (11 and 12). Please
 > run it again after changing the script or the packaging.
 
 ## Using it
@@ -14,10 +14,10 @@ An export can hand the files it wrote to Apple Photos, optionally into an album 
   name (empty = no album; see [Which album](#which-album)). The files are exported as usual, into the folder
   you chose, and then added to Photos. The toast says how many Photos took, or why it took none.
 - **Export with Previous** and saved export presets repeat it (the setting is part of the export options).
-- **Agents and scripts:** `app.export {…, addToPhotos: true, photosAlbum?: "Name"}` (desktop app, MCP `export`
-  tool, `lightcraft-cli run`); `lightcraft-cli render in.dng -o out.jpg --opt addToPhotos=true --opt
+- **Agents and scripts:** `app.export {…, addToPhotos: true, photosAlbum?: "Name"}` (desktop app,
+  `lightcraft run`); `lightcraft render in.dng -o out.jpg --opt addToPhotos=true --opt
   photosAlbum=Name`. The export's result carries `applePhotos` (below). The files are written either way: a
-  failed Photos step doesn't fail `app.export` (its `applePhotos` has the `error`), while `lightcraft-cli render`
+  failed Photos step doesn't fail `app.export` (its `applePhotos` has the `error`), while `lightcraft render`
   says the file was written and exits with the error.
 - **Files already on disk:** `export.addToPhotos {paths: [absolute paths], album?, wait?}`.
 - **How an import went:** `export.photosImports` lists this session's imports, oldest first;
@@ -41,11 +41,11 @@ count, as Photos reports none until it is done.
   `export.addToPhotos` answer at once with the running job (`running: true`); the app shows a toast when Photos
   is done, and `export.photosImports {job}` gives the outcome. (`export.addToPhotos {wait: true}` is refused there:
   the window's thread never waits for Photos.)
-- **Without a window** (the MCP server, `lightcraft-cli`, the headless snapshot) everything waits for Photos by
+- **Without a window** (`lightcraft run`, the headless snapshot) everything waits for Photos by
   default: `app.export` and `export.addToPhotos` return the finished job, so a one-shot command never ends in
   the middle of an import. `export.addToPhotos {wait: false}` returns the running job instead (for a
-  long-running MCP server that polls `export.photosImports`); a process that is about to end (the CLI after
-  its last command, the MCP server at end of input, a snapshot script, also when they end with an error)
+  script that polls `export.photosImports`); a process that is about to end (the CLI after
+  its last command, a snapshot script, also when they end with an error)
   first waits for such an import to finish. The wait follows the import: while an export is still writing the
   files it will add, up to an hour more of writing; once Photos is asked, the import's own time limit (see the
   table below) and half a minute; never more than three hours and one minute in all.
@@ -87,23 +87,22 @@ name that starts with `-` as one of its own options.
 
 The first time, macOS asks whether LightCraft may control Photos. The answer is kept in System Settings ▸
 Privacy & Security ▸ Automation. macOS asks about the app that started LightCraft's work: the LightCraft app
-when it was opened from the Finder or with `open`, but the **terminal** for `lightcraft-cli` and for a
-LightCraft started from a terminal (`cargo run`).
+when it was opened from the Finder or with `open`, but the **terminal** for the CLI
+(`lightcraft run`, `lightcraft render`) and for a LightCraft started from a terminal (`cargo run`).
 
 **Packaged app.** The release app is signed with the hardened runtime. For it to be allowed to ask, it carries
-the `com.apple.security.automation.apple-events` entitlement (`packaging/macos/entitlements.plist`, also used
-for `lightcraft-cli`), and its `Info.plist` has the `NSAppleEventsUsageDescription` text macOS shows in the
+the `com.apple.security.automation.apple-events` entitlement (`packaging/macos/entitlements.plist`; the
+CLI is the same signed executable), and its `Info.plist` has the `NSAppleEventsUsageDescription` text macOS shows in the
 prompt (`packaging/macos/Info.plist.in`). Without them macOS refuses the events (`-1743`) without asking.
 `cargo run` doesn't test this configuration; the manual test below uses the packaged app.
 
 **Who can add what.** `export.addToPhotos {paths}` adds any file LightCraft can read, given its absolute path,
-not only files it exported. So any client of the control port or the MCP server can put any readable image or
+not only files it exported. So any client of the control port, or any script run with `lightcraft run`, can put any readable image or
 video on the Mac into the user's Photos library, and from there into iCloud Photos when that is on. macOS asks
 for the Automation permission once per app, not per import, so after the first Allow nothing asks again. The
-control port listens on 127.0.0.1 only and has no authentication ([control-protocol.md](control-protocol.md)),
-so any program on this Mac that can connect to it can do this, including programs of other users logged in to
-the Mac. The MCP server talks only to the program that started it (stdio). Treat giving an agent the MCP server
-or the control port as giving it this too, and turn the control port on only when you need it.
+control port listens on 127.0.0.1 only and needs the run's token ([control-protocol.md](control-protocol.md#authentication)),
+which any program running as you can read from your settings folder. Treat giving an agent the control port or a
+shell as giving it this too, and turn the control port on only when you need it.
 
 ## When it doesn't work
 
@@ -145,16 +144,16 @@ new empty library first: hold ⌥ while opening Photos ▸ Create New).
 8. No album: keep Add to Apple Photos ticked, clear the Album field and export. Expected: the images land in the
    library, in no album.
 9. Hostile names: album `-e`, then `a\b`, and an export folder whose name contains `"` and `'`; a name with a
-   line break through the CLI: `lightcraft-cli run --demo app.export dir=/tmp/lc-photos addToPhotos=true
+   line break through the CLI: `lightcraft run --demo app.export dir=/tmp/lc-photos addToPhotos=true
    "photosAlbum=$(printf 'two\nlines')"`. Expected: albums named exactly so; nothing else happens.
 10. The window stays responsive: start the app with `open target/macos-package/LightCraft.app --args --demo
     --control 18999`, then send `{"method": "engine.execute", "params": {"command": "export.addToPhotos",
     "params": {"paths": ["/tmp/lc-photos/<file>.jpg"]}}}` to port 18999 (`docs/control-protocol.md`).
     Expected: an immediate `{"job": …, "running": true}`; the app keeps responding; a toast when Photos is done;
     `export.photosImports` then shows the outcome.
-11. Agents: `lightcraft-cli run --demo app.export dir=/tmp/lc-photos addToPhotos=true photosAlbum=CLI` (allow
+11. Agents: `lightcraft run --demo app.export dir=/tmp/lc-photos addToPhotos=true photosAlbum=CLI` (allow
     the terminal under Automation when asked). Expected: `applePhotos.imported` in the printed result.
-12. Files on disk: `lightcraft-cli run export.addToPhotos 'paths=["/tmp/lc-photos/<file>.jpg"]' album=CLI`.
+12. Files on disk: `lightcraft run export.addToPhotos 'paths=["/tmp/lc-photos/<file>.jpg"]' album=CLI`.
     Expected: the command waits for Photos and prints `{"job": …, "running": false, "imported": 1, …}`.
 
 Report the toast or JSON, and the macOS and Photos versions.

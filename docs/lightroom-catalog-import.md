@@ -6,13 +6,13 @@ and a C SQLite runtime are not required. The source database is read-only, inclu
 
 File → Open Library… given a Lightroom catalog folder (or an `.lrdata` / `.lrcat-data` folder, or the `.lrcat`)
 doesn't make a LightCraft library there: it offers this import instead, with the catalog found
-(`crates/engine/src/lightroom_folder.rs`, issue #891). `lightcraft-cli --library` refuses those places too.
+(`crates/engine/src/lightroom_folder.rs`, issue #891). `lightcraft --library` refuses those places too.
 
 Equivalent commands:
 
 ```text
-lightcraft-cli run --library "LightCraft Library" library.inspectLightroom path="Lightroom Catalog.lrcat"
-lightcraft-cli run --library "LightCraft Library" library.importLightroom path="Lightroom Catalog.lrcat"
+lightcraft run --library "LightCraft Library" library.inspectLightroom path="Lightroom Catalog.lrcat"
+lightcraft run --library "LightCraft Library" library.importLightroom path="Lightroom Catalog.lrcat"
 ```
 
 Import adds records to the currently open LightCraft library; it does not create a separate

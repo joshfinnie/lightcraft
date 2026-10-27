@@ -1,5 +1,5 @@
 //! Every way of setting the crop angle keeps the crop inside the photo (issue #742): the generic
-//! control path (`develop.set` on `crop.angle`, as MCP, the control channel and `lightcraft-cli
+//! control path (`develop.set` on `crop.angle`, as the control channel and `lightcraft
 //! render --set` use it, plus `develop.adjust`, `develop.quickAdjust`, `develop.resetControl`) gives
 //! the same crop as `crop.straighten` (the rotate handle, the Straighten slider, the Angle field)
 //! and `crop.set {angle}`.

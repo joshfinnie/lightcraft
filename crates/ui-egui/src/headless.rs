@@ -2,7 +2,7 @@
 //! the CPU ([`crate::softpaint`]) — no window, no GPU, no compositor.
 //!
 //! Two users:
-//! - [`Headless`]: a complete windowless app session (`lightcraft-cli snapshot`, tests). It plays
+//! - [`Headless`]: a complete windowless app session (`lightcraft snapshot`, tests). It plays
 //!   the role eframe plays for the desktop app: builds [`egui::RawInput`], runs `logic` + `ui`,
 //!   keeps a CPU mirror of the textures, executes viewport commands (`Screenshot` is answered with
 //!   a CPU-rendered frame, `InnerSize` resizes, `Close` quits). Control-protocol requests go
@@ -247,7 +247,7 @@ pub struct Headless {
     pub last_cursor: egui::CursorIcon,
 }
 
-/// A headless run (`lightcraft-cli snapshot`, tests) is a one-shot process: however it ends, it
+/// A headless run (`lightcraft snapshot`, tests) is a one-shot process: however it ends, it
 /// first waits for an Apple Photos import its script left running (`export.addToPhotos {wait:
 /// false}`), bounded, so it never abandons osascript or the import's result.
 impl Drop for Headless {
@@ -838,8 +838,8 @@ mod tests {
         assert_eq!(h.app.session.history.undo.len(), undo, "nothing was pasted");
     }
 
-    /// `ui.clickWidget` right-clicks with `button: "right"`, as `ui.click` does (MCP `click`
-    /// passes it on with a widget): a filmstrip photo's context menu opens.
+    /// `ui.clickWidget` right-clicks with `button: "right"`, as `ui.click` does: a
+    /// filmstrip photo's context menu opens.
     #[test]
     fn click_widget_right_clicks() {
         let mut h = demo([1200.0, 760.0]);

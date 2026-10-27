@@ -164,7 +164,7 @@ fn invalid_command_indices_leave_the_catalog_and_history_unchanged() {
     }
 }
 
-/// Whole floating-point JSON numbers remain valid for existing control and MCP callers.
+/// Whole floating-point JSON numbers remain valid for existing control-channel callers.
 #[test]
 fn whole_command_indices_accept_integer_and_float_numbers() {
     let (mut s, n) = three_edits();

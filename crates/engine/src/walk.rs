@@ -1,5 +1,5 @@
 //! Bounded folder walks (issue #374): every recursive listing of the disk — import, Local's
-//! Include Subfolders, Find Missing Photos, preset and LUT folders, MCP — goes through
+//! Include Subfolders, Find Missing Photos, preset and LUT folders, the CLI — goes through
 //! [`files_in`], which stops at a depth and a number of directory entries instead of walking a
 //! whole drive, follows a symbolic link or junction to a folder at most once (no loops), and
 //! decides what is a folder from the directory listing itself (no extra open per entry, which

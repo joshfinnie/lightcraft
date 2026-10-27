@@ -115,7 +115,7 @@ pub const KEPT_JOBS: usize = 32;
 /// Why there is no Photos runner in this session.
 pub fn unavailable() -> &'static str {
     if cfg!(target_os = "macos") {
-        "Apple Photos isn't connected in this session (it is in the desktop app and lightcraft-cli)"
+        "Apple Photos isn't connected in this session (it is in the desktop app and `lightcraft run`)"
     } else {
         "Apple Photos is only available on macOS"
     }
@@ -174,7 +174,7 @@ fn error_number(stderr: &str) -> Option<i64> {
 pub fn explain(out: &Output, album: &str) -> String {
     match error_number(&out.stderr) {
         Some(-1743 | -1744) => "LightCraft isn't allowed to control Photos. Allow it in System Settings › Privacy & Security › Automation \
-             (turn on Photos under LightCraft, or under your terminal app for lightcraft-cli), then try again."
+             (turn on Photos under LightCraft, or under your terminal app for `lightcraft run`), then try again."
             .into(),
         Some(-600 | -10810 | -10814) => "Apple Photos couldn't be found or opened on this Mac.".into(),
         Some(-128) => "The import was cancelled in Photos.".into(),
@@ -485,8 +485,8 @@ impl Imports {
         self.wait_idle_within(WaitLimits::default())
     }
 
-    /// Wait until no import is reserved or running: a process about to end (lightcraft-cli, an
-    /// MCP server at EOF, a snapshot script) calls this so it never abandons osascript or an
+    /// Wait until no import is reserved or running: a process about to end (`lightcraft run`, a
+    /// snapshot script) calls this so it never abandons osascript or an
     /// import's result. The deadline follows the job as it goes: while an export still writes
     /// the files it reserved the import for, `limits.writing` from the start of the wait; once
     /// Photos was asked, the import's own time limit (`limits.import`, the one osascript runs
@@ -526,7 +526,7 @@ pub struct WaitLimits {
 }
 
 impl Default for WaitLimits {
-    /// An hour of writing (what `lightcraft-cli snapshot` gives a background export), then the
+    /// An hour of writing (what `lightcraft snapshot` gives a background export), then the
     /// import's osascript limit ([`timeout_for`], at most two hours) and half a minute; three hours
     /// and a minute in all.
     fn default() -> Self {
@@ -535,7 +535,7 @@ impl Default for WaitLimits {
 }
 
 impl crate::Session {
-    /// Before a front end without a window ends (lightcraft-cli, the MCP server, a headless
+    /// Before a front end without a window ends (`lightcraft run`, a headless
     /// snapshot), on every exit path: wait for an Apple Photos import still reserved or running
     /// (`export.addToPhotos {wait: false}`, a background export still writing), bounded
     /// ([`Imports::wait_idle`], [`WaitLimits::default`]), so the process never abandons osascript

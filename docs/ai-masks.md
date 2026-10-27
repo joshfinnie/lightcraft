@@ -97,7 +97,7 @@ when complete and verified — `model.safetensors` must have the exact size and 
 official checkpoint; a file that doesn't match is deleted, never used. If no location works, the
 dialog says why and LightCraft carries on without the model.
 
-Agents and scripts use the same commands (control channel, `lightcraft-cli mcp --connect`):
+Agents and scripts use the same commands (control channel, `lightcraft run`):
 `segment.model.status`, `segment.model.download {"acknowledged": true}` (refused without the
 explicit `acknowledged`: pass it only after the user agreed to the download and the licence),
 `segment.model.cancel`.
@@ -176,7 +176,7 @@ Therefore:
 - Whoever hosts a mirror redistributes the SAM Materials and must follow the licence (ship it
   next to the files).
 
-## Commands (control channel, MCP)
+## Commands (control channel, CLI)
 
 | Command | Params | |
 |---|---|---|
@@ -205,8 +205,8 @@ installed" that says how to get it.
 In the desktop app the commands don't wait for the model: `mask.objectPoint` returns
 `{pending: true}` and the selection is applied when it's computed (one undo step per settled
 selection); `mask.add {kind: "prompt"}` returns `{pending: true}` and the mask appears when
-something is found (or a message says nothing was). `lightcraft-cli` and the headless MCP server
-wait and return the result (when built with the `sam` feature; the default CLI has no AI masks).
+something is found (or a message says nothing was). `lightcraft run` waits
+and returns the result.
 
 ## Implementation notes
 

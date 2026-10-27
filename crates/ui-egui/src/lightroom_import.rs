@@ -819,7 +819,7 @@ mod tests {
     }
 
     /// The status, wait and cancel the docs give for a running task work through `app.run` (the control channel and
-    /// MCP), not only from inside the app: the engine's check of the params must accept them.
+    /// CLI), not only from inside the app: the engine's check of the params must accept them.
     #[test]
     fn status_wait_and_cancel_work_through_the_command_path() {
         let mut h = demo();

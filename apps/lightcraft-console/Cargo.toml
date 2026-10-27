@@ -1,0 +1,10 @@
+[package]
+name = "lightcraft-console"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+description = "lightcraft.com on Windows: runs lightcraft.exe (a GUI program, no console) from a terminal with the terminal's input and output"
+
+[lints]
+workspace = true

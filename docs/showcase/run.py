@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """run.py FILE.jsonl [PORT] — run control requests from a JSON-lines file ({"method":..., "params":...} or {"sleep": s}).
 
-PORT is the app's control port (default 7980; agents use their own, 18000–19999). Authenticates like
-lightcraft-cli: $LIGHTCRAFT_CONTROL_TOKEN, else the token the app wrote to control-token-PORT in its
+PORT is the app's control port (default 7980; agents use their own, 18000–19999). Authenticates with
+$LIGHTCRAFT_CONTROL_TOKEN, else the token the app wrote to control-token-PORT in its
 settings folder (docs/control-protocol.md → Authentication)."""
 import json, os, socket, sys, time
 from pathlib import Path

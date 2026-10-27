@@ -16,7 +16,7 @@ zooms to it, so checking whether the subject is sharp takes one key while cullin
   centres on the active photo's point; per-pane focus zoom is a follow-up.
 - **Info panel**: a *Focus* row says how the camera focused, e.g. `AF-C · Wide · Animal Eye Tracking` (focus mode,
   the AF area set on the camera, and what it tracked when the camera says).
-- **Agents**: `photo.inspect` (and the MCP `lightcraft://photo/active` resource) returns it as `meta.focus`:
+- **Agents**: `photo.inspect` returns it as `meta.focus`:
   `{rect: {x0, y0, x1, y1}, mode?, area?, tracking?}`, the box normalized to the upright (EXIF-oriented) photo, y down.
   Photos without one have no `focus` key. `view.zoomToggle` replies `{focus: [x, y]}` (the pan it centred on) when it
   zoomed to one.
@@ -58,7 +58,7 @@ re-reads and hashes whole files and runs while you wait, so it is for a few phot
 - **Resuming**: quitting mid-run keeps what was committed; the next launch reads the rest.
 - **Agents**: `photo.readFocusPoints {ids?, wait?}` — without `ids`, every photo not looked at yet; with `ids`, those
   photos, looked at again even if listed. `wait: true` returns when done with `{last: {total, done, found, none,
-  unavailable, bytesRead, seconds, cancelled}}` (`lightcraft-cli run --library DIR photo.readFocusPoints wait=true`).
+  unavailable, bytesRead, seconds, cancelled}}` (`lightcraft run --library DIR photo.readFocusPoints wait=true`).
   The app's frame loop calls `focus.pump {pace}`, which also starts the job once per library opening.
 
 ## Cameras

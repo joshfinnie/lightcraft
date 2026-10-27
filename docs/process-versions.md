@@ -74,5 +74,5 @@ saved as V1.
 
 The process is saved as `"process": <number>` in the settings JSON, except V1, which is left out.
 Settings made before process versions existed are therefore saved exactly as before, and their
-preview-cache keys (`DevelopSettings::hash64`) don't change. `develop.get` (MCP `get_develop`) always
+preview-cache keys (`DevelopSettings::hash64`) don't change. `develop.get` always
 states the process.

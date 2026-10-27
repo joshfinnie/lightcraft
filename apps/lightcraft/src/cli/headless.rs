@@ -1,5 +1,4 @@
-//! An in-process [`Session`] that answers the control-channel methods the MCP tools use, so the
-//! MCP server (and the CLI) work without a window.
+//! An in-process [`Session`] answering the control-channel methods `lightcraft run` takes, without a window.
 
 use std::path::Path;
 
@@ -8,12 +7,9 @@ use lightcraft_engine::{CommandError, Session};
 use lightcraft_raster::Rgba8;
 use serde_json::{Value, json};
 
-use crate::backend::{Backend, ProgressHook};
-
 /// Headless backend: a [`Session`] with filesystem hooks.
 pub struct Headless {
     pub session: Session,
-    progress: Option<ProgressHook>,
 }
 
 impl Drop for Headless {
@@ -36,7 +32,7 @@ impl Default for Headless {
 
 impl Headless {
     pub fn new(session: Session) -> Self {
-        Self { session, progress: None }
+        Self { session }
     }
 
     /// A headless session with the procedurally generated demo library.
@@ -85,27 +81,8 @@ impl Headless {
         // Add to Apple Photos: refused before anything is written when it can't be done
         let after = self.session.after_export(&opts)?;
         let items = prepare_batch(&mut self.session, &ids, &opts)?;
-        let total = items.len();
-        let mut hook = self.progress.take();
-        let mut cancelled = false;
-        let files = run_batch(
-            items,
-            &opts,
-            &Destination { dir: dir.to_string(), exact: exact.map(str::to_string) },
-            write,
-            &|path| Path::new(path).exists(),
-            true,
-            &mut |done, name| {
-                cancelled = hook.as_mut().is_some_and(|h| !h(done, total, name));
-                !cancelled
-            },
-        )?;
-        if !cancelled && let Some(hook) = hook.as_mut() {
-            cancelled = !hook(total, total, "");
-        }
-        if cancelled {
-            return Err(lightcraft_engine::EngineError::Cancelled("cancelled".into()).into());
-        }
+        let to = Destination { dir: dir.to_string(), exact: exact.map(str::to_string) };
+        let files = run_batch(items, &opts, &to, write, &|path| Path::new(path).exists(), true, &mut |_, _| true)?;
         // Single-photo exports also report path/width/height at the top level (back-compat).
         let mut out = files.first().cloned().unwrap_or_else(|| json!({}));
         if let Some(photos) = after.run(&files, false) {
@@ -114,14 +91,9 @@ impl Headless {
         out["files"] = json!(files);
         Ok(out)
     }
-}
 
-impl Backend for Headless {
-    fn set_progress(&mut self, hook: Option<ProgressHook>) {
-        self.progress = hook;
-    }
-
-    fn call(&mut self, method: &str, params: Value) -> Result<Value, CommandError> {
+    /// Answer the control-channel request `method` (`engine.execute` and `engine.commands`, `ui.render`, `app.export`).
+    pub fn call(&mut self, method: &str, params: Value) -> Result<Value, CommandError> {
         let p = if params.is_null() { json!({}) } else { params };
         match method {
             "engine.execute" | "ui.menu.invoke" | "command" => {
@@ -151,19 +123,12 @@ impl Backend for Headless {
                 }
             }
             "app.export" => self.export(&p),
-            m if m.starts_with("ui.") || m == "app.quit" => {
-                Err(format!("`{m}` needs the desktop app: start `lightcraft --control 7980` and run the MCP server with `--connect`").into())
-            }
+            m if m.starts_with("ui.") || m == "app.quit" => Err(format!(
+                "`{m}` needs the app's window: script it with `lightcraft snapshot --script`, or over the control port of `lightcraft --control PORT`"
+            )
+            .into()),
             other => Err(format!("unknown method `{other}`").into()),
         }
-    }
-
-    fn has_ui(&self) -> bool {
-        false
-    }
-
-    fn describe(&self) -> String {
-        "headless".into()
     }
 }
 
@@ -212,7 +177,7 @@ mod tests {
         let dir = lightcraft_engine::config::default_sam3_dir();
         assert_eq!(Headless::default().session.segmenter.dir, dir);
         assert_eq!(Headless::demo().session.segmenter.dir, dir);
-        let dir = std::env::temp_dir().join("lc-mcp-sam3-dir");
+        let dir = std::env::temp_dir().join("lc-cli-sam3-dir");
         let mut session = Session::new();
         session.segmenter.dir = Some(dir.clone());
         let mut h = Headless::new(session);
@@ -223,7 +188,7 @@ mod tests {
     /// `--import <folder>` picks up every extension `library.import` takes, HEIC included (issue #1080).
     #[test]
     fn expand_paths_takes_the_engine_extensions() {
-        let dir = std::env::temp_dir().join(format!("lc-mcp-expand-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("lc-cli-expand-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         for e in lightcraft_engine::import::EXTENSIONS {
@@ -252,7 +217,7 @@ mod tests {
     /// `app.export` without `ids` exports the selection (as the desktop app does), else the active photo.
     #[test]
     fn export_follows_the_selection() {
-        let dir = std::env::temp_dir().join(format!("lc-mcp-export-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("lc-cli-export-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         let mut h = Headless::demo();
         let ids: Vec<u64> = h.session.visible_cloned().iter().take(3).map(|p| p.0).collect();
@@ -273,7 +238,7 @@ mod tests {
     /// The export file-name template takes the Rename Photos tokens.
     #[test]
     fn export_naming_tokens() {
-        let dir = std::env::temp_dir().join(format!("lc-mcp-export-naming-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("lc-cli-export-naming-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         let mut h = Headless::demo();
         let ids: Vec<u64> = h.session.visible_cloned().iter().take(2).map(|p| p.0).collect();

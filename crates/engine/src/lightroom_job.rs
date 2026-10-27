@@ -25,7 +25,7 @@ fn error(message: impl Into<String>) -> crate::EngineError {
 }
 
 /// The import was cancelled ([`crate::ErrorKind::Cancelled`]: not a failure). The message is the
-/// one it always had, so control-channel and MCP clients see the same `error` text.
+/// one it always had, so control-channel clients see the same `error` text.
 fn cancelled() -> crate::EngineError {
     crate::EngineError::Cancelled(error("Lightroom import cancelled").to_string())
 }

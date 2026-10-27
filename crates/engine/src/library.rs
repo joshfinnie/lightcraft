@@ -326,7 +326,7 @@ fn same_dir(a: &Path, b: &Path) -> bool {
     }
 }
 
-/// This program, for the lock owner note ("LightCraft", "lightcraft-cli").
+/// This program, for the lock owner note ("LightCraft", or a test binary's name).
 fn program_name() -> String {
     let exe = std::env::current_exe().ok().and_then(|p| p.file_stem().map(|s| s.to_string_lossy().to_string()));
     match exe.as_deref() {
@@ -781,7 +781,7 @@ impl Session {
     }
 
     /// Warnings about the open library not handed out yet: its settings files, and a lock that
-    /// couldn't be taken (the UI shows each once; the CLI and MCP print them on stderr).
+    /// couldn't be taken (the UI shows each once; the CLI prints them on stderr).
     pub fn take_library_warnings(&mut self) -> Vec<String> {
         let Some(lib) = self.library.as_mut() else { return vec![] };
         let new = lib.settings_warnings[lib.warnings_reported..].to_vec();

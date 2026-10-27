@@ -14,14 +14,14 @@ All algorithms are our own implementations from published papers (cited in the m
   merges many brackets in one go with the last HDR options: one HDR per stack among the selected photos, then per
   bracket (photos taken less than a second apart, after the shutter time, at exposures at least ½ EV apart; a burst at
   one exposure is skipped), one after the other in the activity stack.
-- **Commands** (CLI, MCP, control channel):
+- **Commands** (CLI, control channel):
   - `merge.hdr {ids?, align=true, deghost=none|low|medium|high, autoSettings=true, stack=false, preview=false, showOverlay=false, previewPath?}`
   - `merge.panorama {ids?, projection=auto|spherical|cylindrical|perspective, boundaryWarp=0..100, autoCrop=false, fillEdges=false, autoSettings=true, maxMegapixels (default: the photos' own resolution), preview, previewPath?}`
   - `merge.hdrPanorama {ids?, bracket=0 (from EXIF), …both sets of options}`
   - `merge.hdrBatch {ids?, align, deghost, autoSettings, stack}` → `{merged: [{id, path, …}], failed: [{photos, error}]}`
-- **CLI:** `lightcraft-cli merge hdr|panorama|hdr-panorama|hdr-batch [options] FILES…` (`hdr-batch` finds the brackets
+- **CLI:** `lightcraft merge hdr|panorama|hdr-panorama|hdr-batch [options] FILES…` (`hdr-batch` finds the brackets
   among the files, e.g. a whole folder);
-  `lightcraft-cli synth-merge hdr|panorama -o DIR` writes synthetic inputs (procedural scene).
+  `lightcraft synth-merge hdr|panorama -o DIR` writes synthetic inputs (procedural scene).
 
 ## What it does
 

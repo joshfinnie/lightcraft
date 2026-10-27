@@ -29,7 +29,7 @@
 //!   when its rating, flag, label or metadata did: a sidecar another app saved, followed by such
 //!   a change made here (with auto-write off), is listed as an update, and reading it puts the
 //!   older value back. Reading updates is therefore never the default;
-//! - times are compared as the clock the session runs with; headless sessions (CLI, MCP) start
+//! - times are compared as the clock the session runs with; headless sessions (CLI) start
 //!   with a fixed clock, so their own times say little;
 //! - a sidecar is found as Read Metadata from File finds it, including the other naming
 //!   scheme's file (`IMG_1.xmp` for `IMG_1.JPG` beside `IMG_1.CR3`).

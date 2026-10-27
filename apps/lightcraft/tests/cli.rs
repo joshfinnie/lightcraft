@@ -1,11 +1,11 @@
-//! End-to-end tests of the `lightcraft-cli` binary: `mcp` over real stdio pipes, `render`, `commands`.
+//! End-to-end tests of the `lightcraft` subcommands (`render`, `run`, `snapshot`, `commands`…) through the real binary.
 
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Command, Stdio};
 
 use serde_json::{Value, json};
 
-const BIN: &str = env!("CARGO_BIN_EXE_lightcraft-cli");
+const BIN: &str = env!("CARGO_BIN_EXE_lightcraft");
 
 #[test]
 fn contact_sheet_exports_pdf_and_protects_originals() {
@@ -90,7 +90,7 @@ fn print_commands_chain_into_a_picture_package_pdf() {
 }
 
 fn tmp(name: &str) -> std::path::PathBuf {
-    let d = std::env::temp_dir().join(format!("lightcraft-cli-test-{}", std::process::id()));
+    let d = std::env::temp_dir().join(format!("lightcraft-subcommand-test-{}", std::process::id()));
     std::fs::create_dir_all(&d).unwrap();
     d.join(name)
 }
@@ -145,43 +145,6 @@ fn mean(path: &std::path::Path) -> f64 {
     let d = lightcraft_codecs::decode(&std::fs::read(path).unwrap(), Default::default()).unwrap();
     let img = d.to_srgb8();
     img.data.iter().map(|p| (p[0] as u32 + p[1] as u32 + p[2] as u32) as f64).sum::<f64>() / (3 * img.data.len()) as f64
-}
-
-#[test]
-fn mcp_over_stdio_sets_exposure_and_renders() {
-    let input = tmp("in.png");
-    gradient_png(&input);
-    let mut child =
-        Command::new(BIN).args(["mcp", input.to_str().unwrap()]).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::null()).spawn().unwrap();
-    let mut stdin = child.stdin.take().unwrap();
-    let mut stdout = BufReader::new(child.stdout.take().unwrap());
-    let mut rpc = |id: u64, method: &str, params: Value| -> Value {
-        writeln!(stdin, "{}", json!({"jsonrpc": "2.0", "id": id, "method": method, "params": params})).unwrap();
-        stdin.flush().unwrap();
-        let mut line = String::new();
-        stdout.read_line(&mut line).unwrap();
-        let v: Value = serde_json::from_str(&line).unwrap();
-        assert_eq!(v["id"], id);
-        v
-    };
-    let init = rpc(1, "initialize", json!({"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "cli-test", "version": "0"}}));
-    assert_eq!(init["result"]["protocolVersion"], "2025-06-18");
-    let tools = rpc(2, "tools/list", json!({}));
-    assert!(tools["result"]["tools"].as_array().unwrap().len() > 50);
-    let base = tmp("base.png");
-    let bright = tmp("bright.png");
-    let r = rpc(3, "tools/call", json!({"name": "render_photo", "arguments": {"path": base.to_str().unwrap()}}));
-    assert_eq!(r["result"]["isError"], false, "{r}");
-    let r = rpc(4, "tools/call", json!({"name": "set_develop", "arguments": {"values": {"light.exposure": 1.0}}}));
-    assert_eq!(r["result"]["isError"], false, "{r}");
-    let r = rpc(5, "tools/call", json!({"name": "render_photo", "arguments": {"path": bright.to_str().unwrap()}}));
-    assert_eq!(r["result"]["isError"], false, "{r}");
-    assert_eq!(r["result"]["content"][0]["type"], "image");
-    drop(stdin);
-    assert!(child.wait().unwrap().success());
-    let (a, b) = (mean(&base), mean(&bright));
-    println!("cli mcp: mean sRGB exposure 0 → {a:.1}, +1 → {b:.1}");
-    assert!(b > a + 10.0, "{a} → {b}");
 }
 
 #[test]
@@ -615,27 +578,34 @@ fn devices_are_listed_and_imported_from() {
     assert_eq!(line["result"]["candidates"].as_array().map(Vec::len), Some(1), "{line}");
 }
 
-/// Issue #99: a library open in one process (here `mcp --library`) is refused by a second one,
-/// with who has it and how to drive the running app instead; free again once the first exits.
+/// Issue #99: a library open in one process (here a `run` reading its script from a pipe) is refused by a
+/// second one, with who has it; free again once the first exits.
 #[test]
 fn a_library_open_in_another_process_is_refused() {
     let lib = tmp("locked-lib");
     let _ = std::fs::remove_dir_all(&lib);
     let lib_s = lib.to_str().unwrap();
-    let mut holder =
-        Command::new(BIN).args(["mcp", "--library", lib_s]).stdin(Stdio::piped()).stdout(Stdio::null()).stderr(Stdio::piped()).spawn().unwrap();
-    let mut err = BufReader::new(holder.stderr.take().unwrap());
+    let mut holder = Command::new(BIN)
+        .args(["run", "--library", lib_s, "--script", "-"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    let mut stdin = holder.stdin.take().unwrap();
+    let mut out = BufReader::new(holder.stdout.take().unwrap());
+    // a script line runs as it arrives: once its reply is back, the library is open
+    writeln!(stdin, "{}", json!({"command": "library.info"})).unwrap();
+    stdin.flush().unwrap();
     let mut line = String::new();
-    while !line.contains("opened library") {
-        line.clear();
-        assert!(err.read_line(&mut line).unwrap() > 0, "mcp exited before opening the library");
-    }
+    assert!(out.read_line(&mut line).unwrap() > 0, "run exited before opening the library");
+    assert!(line.contains("\"ok\":true"), "{line}");
     let (ok, _, stderr) = run_cli(&["--library", lib_s, "library.info"], None);
     assert!(!ok);
-    assert!(stderr.contains("already open in lightcraft-cli") && stderr.contains(&format!("process {}", holder.id())), "{stderr}");
-    assert!(stderr.contains("mcp --connect"), "{stderr}");
+    assert!(stderr.contains("already open in LightCraft") && stderr.contains(&format!("process {}", holder.id())), "{stderr}");
+    assert!(stderr.contains("--control PORT"), "how to work with it instead: {stderr}");
 
-    drop(holder.stdin.take()); // EOF: the server exits and lets go of the library
+    drop(stdin); // EOF: the script ends and the library is let go
     assert!(holder.wait().unwrap().success());
     let (ok, lines, stderr) = run_cli(&["--library", lib_s, "library.info"], None);
     assert!(ok, "{stderr}");
@@ -643,39 +613,7 @@ fn a_library_open_in_another_process_is_refused() {
     let _ = std::fs::remove_dir_all(&lib);
 }
 
-/// Issue #167: when `--connect ADDR` cannot reach the app, the recovery hint must name the port
-/// ADDR actually names — following the old fixed "7980" left the retry connecting elsewhere.
-#[test]
-fn connect_failure_hint_names_the_attempted_port() {
-    let (ok, _lines, err) = run_cli(&["--connect", "127.0.0.1:18437", "ui.inspect"], None);
-    assert!(!ok);
-    assert!(err.contains("--control 18437"), "the hint must name the port it tried: {err}");
-    assert!(!err.contains("--control 7980"), "{err}");
-}
-
-/// Issue #1178: `--connect 7980 ui.inspect` (after `lightcraft --control 7980`) was leaving
-/// `7980` unconsumed so it parsed as a command id and produced "unknown command `7980`".
-/// A bare port is now taken as `127.0.0.1:<port>`; the same address used with `:port` still
-/// works; non-numeric, non-`ADDR`-shaped tokens (e.g. a real command id) keep falling through.
-#[test]
-fn connect_bare_port_is_treated_as_loopback_port() {
-    // Bare port: the failure hint names that port.
-    let (ok, _lines, err) = run_cli(&["--connect", "18437", "ui.inspect"], None);
-    assert!(!ok);
-    assert!(err.contains("--control 18437"), "bare port must reach the hint: {err}");
-    assert!(!err.contains("--control 7980"), "{err}");
-    // `<host>:<port>` still works (issue #167 case).
-    let (ok, _lines, err) = run_cli(&["--connect", "127.0.0.1:18437", "ui.inspect"], None);
-    assert!(!ok);
-    assert!(err.contains("--control 18437"), "{err}");
-    // `--connect=<bare-port>` already worked (the `a.starts_with("--connect=")` arm); spot-check
-    // the hint matches its port too.
-    let (ok, _lines, err) = run_cli(&["--connect=18437", "ui.inspect"], None);
-    assert!(!ok);
-    assert!(err.contains("--control 18437"), "{err}");
-}
-
-/// The CLI logs warnings on stderr (#168): with `RUST_LOG=warn` an unknown GPU backend name is
+/// The subcommands log warnings on stderr (#168): with `RUST_LOG=warn` an unknown GPU backend name is
 /// reported, and `RUST_LOG=off` silences it. Before, no logger was installed and nothing appeared.
 #[test]
 fn warnings_are_logged_on_stderr() {

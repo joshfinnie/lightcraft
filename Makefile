@@ -60,8 +60,8 @@ seeds: ## starting files for the fuzzers (fuzz/corpus/), the samples among them
 	@if [ -d "$(SAMPLES_DIR)" ]; then for t in raw_decode raw_probe; do \
 	  find "$(SAMPLES_DIR)" -path '*/.git' -prune -o -type f ! -name '*.md' -exec cp -f {} fuzz/corpus/$$t/ \; ; done; fi
 
-build: ## release build of the desktop app and the CLI
-	cargo build --release -p lightcraft -p lightcraft-cli
+build: ## release build of the app (its subcommands are the CLI)
+	cargo build --release -p lightcraft
 
 run: ## open the app (release build)
 	cargo run --release -p lightcraft

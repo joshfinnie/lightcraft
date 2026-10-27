@@ -2,7 +2,7 @@
 //! DNG, each with the edits in XMP) in sRGB, Display P3, Adobe RGB
 //! (1998) compatible, ProPhoto RGB or Rec. 2020 with an embedded ICC profile we generate from the
 //! published primaries and curves, optional output sharpening and a JPEG file-size limit. Pure (bytes in, bytes out) so the desktop
-//! app, CLI, MCP and the web build share it; writing the file is the caller's job.
+//! app, CLI and the web build share it; writing the file is the caller's job.
 
 use lightcraft_codecs::{ChromaSubsampling, EncodeImage, EncodeMeta, JxlColour, JxlOptions, NamedSpace, Samples, encode, icc};
 pub use lightcraft_codecs::{JxlEffort, TiffCompression};
@@ -1844,7 +1844,7 @@ impl AfterExport {
 
     /// Do it now for an export's per-photo results ([`run_batch`]'s: only the files written
     /// count), waiting for Photos: for a worker thread (the app's background export) or a caller
-    /// without a window (MCP, lightcraft-cli). `None` when there was nothing to do, else the
+    /// without a window (the CLI). `None` when there was nothing to do, else the
     /// outcome to report as the export's `applePhotos`: the finished job (`{job, running: false,
     /// requested, album}` with `{imported, ids, warning?}`, `{error}`, or `{skipped}` when the
     /// export was cancelled or wrote nothing). Never fails the export: its files are written
@@ -1923,7 +1923,7 @@ pub fn export_batch(
 /// replaced atomically ([`lightcraft_catalog::safe_file::write_atomic_nosync`]: a temp file
 /// renamed into place), so a failure part-way leaves any previous file intact and no truncated
 /// one. Not synced to disk (issue #134): an export can always be made again from the original.
-/// The native writer behind exports, renders and screenshots (app, CLI, MCP).
+/// The native writer behind exports, renders and screenshots (app, CLI).
 pub fn write_file(path: &str, bytes: &[u8]) -> crate::Result<()> {
     write_with(path, bytes, false)
 }
@@ -3271,7 +3271,7 @@ mod tests {
         assert_eq!((o.metadata, o.remove_location), (MetadataPolicy::AllExceptCamera, true));
         // stored settings (lenient `from_json`) read the same spellings
         assert_eq!(ExportOptions::from_json(&json!({"metadata": "None"})).metadata, MetadataPolicy::None);
-        // and `to_json` still writes what the MCP schema lists
+        // and `to_json` still writes what the command's params list
         let j = ExportOptions { metadata: MetadataPolicy::AllExceptCamera, conflict: Conflict::Skip, ..Default::default() }.to_json();
         assert_eq!((j["metadata"].as_str(), j["conflict"].as_str()), (Some("allExceptCamera"), Some("skip")));
     }

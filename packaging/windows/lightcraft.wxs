@@ -203,8 +203,9 @@
         <RegistryValue Root="HKLM" Key="Software\LightCraft" Name="InstallFolder" Value="[INSTALLFOLDER]" Type="string" />
       </Component>
 
-      <Component Id="LightcraftCli">
-        <File Id="LightcraftCliExe" Source="$(var.BinDir)\lightcraft-cli.exe" KeyPath="yes" />
+      <!-- lightcraft.com: runs lightcraft.exe from a terminal with the terminal's input and output -->
+      <Component Id="LightcraftConsole">
+        <File Id="LightcraftConsoleCom" Source="$(var.BinDir)\lightcraft.com" KeyPath="yes" />
       </Component>
       <Component Id="LightcraftFontLicence">
         <File Id="LightcraftFontLicenceFile" Source="$(var.BinDir)\OFL-Inter.txt" KeyPath="yes" />

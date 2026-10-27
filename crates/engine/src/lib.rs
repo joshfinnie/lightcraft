@@ -2,7 +2,7 @@
 //!
 //! Every user-visible action is a command with a stable id (`photo.rate`, `develop.set`,
 //! `album.create`, `mask.add`…) and JSON parameters. The egui UI, the CLI, the control channel and
-//! the MCP server all go through [`Session::execute`].
+//! the CLI all go through [`Session::execute`].
 //!
 //! State: a [`Catalog`] (mutated only by ops, so every change is undoable and journaled), the
 //! library view (filter/sort/source), the selection, the develop clipboard, presets, and caches
@@ -112,7 +112,7 @@ pub enum EngineError {
     /// be written. They stay queued and are written by the next successful save.
     #[error("saved in memory but not written to disk: {0}; LightCraft will retry")]
     NotSaved(String),
-    /// Another process (the app, `lightcraft-cli`, another computer) has the library open.
+    /// Another process (the app, `lightcraft run`, another computer) has the library open.
     #[error("{0}")]
     LibraryInUse(String),
     /// The folder (or file) asked for is a Lightroom Classic catalog or part of one, not a
@@ -212,7 +212,7 @@ pub struct Session {
     /// Identity of current library opening; refreshed only after a successful open.
     pub(crate) library_identity: Arc<()>,
     /// The Print module's current layout, image settings, page, guides and job (`print.*`). Lives
-    /// with the session, so the app, CLI, control channel and MCP all see the same print.
+    /// with the session, so the app, CLI and control channel all see the same print.
     pub print: print::template::PrintSettings,
     /// Look-alike signatures by content key (Find Similar).
     pub signatures: std::collections::HashMap<String, [f32; 64]>,
@@ -257,7 +257,7 @@ pub struct Session {
     /// Apple Photos imports run on a worker by default (`export.addToPhotos` without `wait`,
     /// `app.export` without `background`): set by the desktop app, which answers control requests
     /// on its UI thread. Off (the default), they wait for Photos, so a one-shot process
-    /// (lightcraft-cli, a script) never ends in the middle of one.
+    /// (the CLI, a script) never ends in the middle of one.
     #[cfg(not(target_arch = "wasm32"))]
     pub apple_photos_background: bool,
 }

@@ -4,7 +4,7 @@
 //! The numbers are the caches' own bookkeeping (pixels held), not the process's resident size: the
 //! allocator keeps freed pages for reuse and the GPU driver maps device buffers, so `ps`/`time -l`
 //! report more. A binary built with a heap profiler installs [`set_heap_stats`] (e.g.
-//! `lightcraft-cli` with `--features dhat-heap`) to add live/peak heap bytes.
+//! `lightcraft` with `--features dhat-heap`) to add live/peak heap bytes.
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Condvar, Mutex, OnceLock};

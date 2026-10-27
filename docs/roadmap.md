@@ -12,7 +12,7 @@ LightCraft has no `cargo xtask scorecard`; the measured checklist is
 Toward **beta** (~340–600 Opus 5.5 agent hours; ranked, each a gap in [gaps.md](gaps.md)):
 
 1. **Camera colour of our own** (gap 1, 50–90 h): chart-based calibration for the most-used models,
-   building on the per-file JPEG fits and pooled profiles (`lightcraft-cli calibrate`); never Adobe
+   building on the per-file JPEG fits and pooled profiles (`lightcraft calibrate`); never Adobe
    data.
 2. **CR3 for every Canon body** (gap 2, 25–45 h): the remaining CRX variants, sRAW / mRAW, HEIF CR3;
    clean-room from prose descriptions (decided 2026-10-05; compressed NEF is the template).
@@ -39,7 +39,7 @@ against the code, tests, issues and [gaps.md](gaps.md).
 | 3. Develop raws non-destructively (global sliders, crop, masks, heal) | yes for most cameras (partial: Canon CR3 outside the verified variants, compressed ORF, HE NEF open as embedded previews) | Sony, Nikon (except HE), Fujifilm, Panasonic, Pentax, CR2, DNG decode from sensor data (raw-parity.md); every Edit slider, crop / Upright, brush / gradient / range masks, heal / clone (checklist F, H, K); colour estimated per file rather than measured, gaps 1–3 | 0 (coverage and colour gaps are beta blockers 1–3, 6–7) |
 | 4. Save, quit and reopen the work | yes | crash-safe journal + snapshots, torn-append and crash tests (`crates/catalog/src/journal.rs`, `tests_journal.rs`, `tests_torn_append.rs`); XMP sidecars read / write; failed saves reported | 0 |
 | 5. Batch-apply a look: presets, copy / paste / sync settings | yes | presets (incl. `.xmp` / `.lrtemplate` import), copy / paste / sync, auto sync (checklist L 86%, N 100%) | 0 |
-| 6. Export deliverables (JPEG / TIFF, size, sharpening, metadata, watermark, naming) | yes | one encoder for app, CLI and MCP (`crates/engine/src/export.rs`, `tests_export.rs`); checklist S 89% | 0 |
+| 6. Export deliverables (JPEG / TIFF, size, sharpening, metadata, watermark, naming) | yes | one encoder for app, CLI and web (`crates/engine/src/export.rs`, `tests_export.rs`); checklist S 89% | 0 |
 
 **Result: passes.** Every core workflow runs end to end on macOS and the work survives quit and
 reopen; the partial rows degrade fidelity for some cameras and large files but don't stop the

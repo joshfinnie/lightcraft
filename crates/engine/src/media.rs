@@ -1580,7 +1580,7 @@ impl crate::Session {
         }
     }
 
-    /// Synchronous render (CLI, MCP, tests).
+    /// Synchronous render (CLI, tests).
     pub fn render_now(&mut self, id: PhotoId, max_w: usize, max_h: usize) -> crate::Result<Rendered> {
         let job = self.render_job(id, max_w, max_h, false, true).ok_or(lightcraft_catalog::CatalogError::NoPhoto(id))?;
         let r = job.run();

@@ -13,7 +13,7 @@
 //! descriptions, detail passes) runs on one worker thread ([`worker`]); the session talks to it
 //! over channels and never waits on a lock. With [`Segmenter::background`] (the desktop app)
 //! commands return at once and [`Session::segment_poll`] applies the results; without it (CLI,
-//! MCP, tests) they wait for the worker.
+//! tests) they wait for the worker.
 
 #[cfg(feature = "sam")]
 mod download;
@@ -37,7 +37,7 @@ pub const LICENSE_NAME: &str = "SAM License (Meta)";
 pub const LICENSE_URL: &str = "https://github.com/facebookresearch/sam3/blob/main/LICENSE";
 /// How errors about a missing model start (frontends decide on [`crate::ErrorKind::ModelMissing`], not on this text).
 pub const NOT_INSTALLED: &str = "The SAM 3 model is not installed";
-/// Longest a waiting command (CLI, MCP) waits for the model (loading on a CPU can take minutes).
+/// Longest a waiting command (CLI) waits for the model (loading on a CPU can take minutes).
 #[cfg_attr(not(feature = "sam"), allow(dead_code))]
 const WAIT: std::time::Duration = std::time::Duration::from_secs(15 * 60);
 /// Most clicks one Object selection takes (the model's prompt grows with each).
@@ -123,7 +123,7 @@ pub struct Segmenter {
     /// The user's list of download mirrors (one base URL per line), if any.
     pub mirrors_file: Option<PathBuf>,
     /// Run requests in the background and apply them in [`Session::segment_poll`] (the
-    /// desktop app); otherwise commands wait for their result (CLI, MCP, tests).
+    /// desktop app); otherwise commands wait for their result (CLI, tests).
     pub background: bool,
     pending: Option<PendingClicks>,
     messages: Vec<String>,
@@ -433,7 +433,7 @@ impl Session {
         Ok(worker::Job { dir, key: if region.is_some() { 0 } else { key }, render: Some(render), missing, kind, tag, reply })
     }
 
-    /// Send a request and wait for its result (CLI, MCP, tests; or when not in background mode).
+    /// Send a request and wait for its result (CLI, tests; or when not in background mode).
     #[cfg(feature = "sam")]
     fn segment_wait(&mut self, id: PhotoId, kind: worker::Kind, region: Option<[f64; 4]>) -> Result<Option<SegMask>, String> {
         let (tx, rx) = std::sync::mpsc::channel();

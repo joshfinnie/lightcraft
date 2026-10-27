@@ -1,7 +1,7 @@
 //! Build previews ahead of time: each photo's grid thumbnail and its loupe view (standard size,
 //! or 1:1), rendered into the memory + disk preview cache so browsing and the loupe are instant.
 //! Runs on a background thread (the app keeps working; progress / cancel by command, and a row in
-//! the activity stack, issue #345), or inline with `wait` (CLI, MCP, tests).
+//! the activity stack, issue #345), or inline with `wait` (CLI, tests).
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};

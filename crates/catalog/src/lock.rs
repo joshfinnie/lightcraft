@@ -1,7 +1,7 @@
 //! One process per library: an exclusive OS lock on `<library>/catalog.lock`, held for as long as
 //! the library is open (issue #99).
 //!
-//! Two processes on the same library (the app and `lightcraft-cli --library`, two app instances,
+//! Two processes on the same library (the app and `lightcraft run --library`, two app instances,
 //! two computers on a shared folder) would each keep their own catalog and `seq` counter, and
 //! whichever wrote the last snapshot would silently drop the other's edits. So opening a library
 //! takes the lock first, and a second opener gets [`LockError::InUse`] instead.
@@ -40,7 +40,7 @@ pub struct LockOwner {
     pub pid: u32,
     /// Computer name, if known.
     pub host: String,
-    /// The program (`LightCraft`, `lightcraft-cli`…) and its version.
+    /// The program (`LightCraft`, a test binary…) and its version.
     pub program: String,
     pub version: String,
     /// When it opened the library (seconds since 1970).

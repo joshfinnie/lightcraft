@@ -34,10 +34,8 @@ or wrong token, or a line that isn't a request gets one error reply (`authentica
   Without a settings folder (`LIGHTCRAFT_CONFIG_DIR` set empty) a fresh token is printed on stderr.
   The file is written only once the app has the port (a second app started on a port another one
   serves leaves that app's token alone), and removed when the app quits.
-- **Clients:** `lightcraft-cli run --connect` and `lightcraft-cli mcp --connect` send
-  `LIGHTCRAFT_CONTROL_TOKEN` if set, else the token in that file for the port they connect to, and
-  report a refused token as such. [`docs/showcase/run.py`](showcase/run.py) does the same.
-  Implementation: `crates/engine/src/control_auth.rs`; PhotoCraft's control port uses the same
+- **Clients** send `LIGHTCRAFT_CONTROL_TOKEN` if set, else the token in that file for the port they
+  connect to, as [`docs/showcase/run.py`](showcase/run.py) does. Implementation: `crates/engine/src/control_auth.rs`; PhotoCraft's control port uses the same
   `auth` request.
 
 Anyone who can read your settings folder can drive the app, so only enable the port when you need it.
@@ -47,7 +45,7 @@ if the app has not started it and draws no frame for 5 s. The reply is then `{"o
 and the app never runs that request later, so a retry doesn't do it twice. This happens on
 Wayland when the window is on a hidden workspace or minimized: the compositor sends no frame
 callbacks, so the app's loop is paused. Keep the window on screen while you drive it, or use
-headless snapshots or `lightcraft-cli mcp` without `--connect`. A request that has already started
+headless snapshots or `lightcraft run`. A request that has already started
 (a long command blocks frames) still gets the full 60 s.
 
 Connections close after five minutes without incoming bytes while the server is waiting for
@@ -58,9 +56,8 @@ This is a socket read inactivity limit, not a total connection lifetime: a peer 
 sending bytes can keep it open. Waiting for an already-dispatched command's reply does not
 count as idle reading and retains the request timeout above.
 
-Reconnect before sending another request after an idle close. MCP connect mode detects closed
-connections before sending and reconnects; if a connection is lost after sending a request,
-its outcome remains unknown and the client must not blindly replay it.
+Reconnect before sending another request after an idle close. If a connection is lost after
+sending a request, its outcome is unknown: the client must not blindly replay it.
 
 **Only requests are read.** Every line must be a JSON object with a string `method` (`id` and `params` are
 optional; blank lines are skipped). Anything else — text that isn't JSON, a JSON array or number, an object without
@@ -69,8 +66,7 @@ optional; blank lines are skipped). Anything else — text that isn't JSON, a JS
 it on that connection runs. This keeps an HTTP request (for example a web page's cross-origin `fetch` to
 `127.0.0.1:<port>`) from smuggling a command in its body: its request line is rejected first. Junk never reaches the
 UI thread, and at most 16 connections are served at once (further ones get an error line and are closed). Clients
-that hit an error reply should reconnect (and authenticate again). The MCP server's connect
-mode ([mcp.md](mcp.md)) is a thin layer over this channel. Implementation:
+that hit an error reply should reconnect (and authenticate again). Implementation:
 `crates/ui-egui/src/control.rs` (methods) and `apps/lightcraft/src/control_server.rs` (transport).
 
 ## Error codes
@@ -153,7 +149,7 @@ filmstrip is visible.
 | `ui.resize` | `{width, height}` | Resize the window |
 | `ui.zoomFactor` | `{factor}` | Set the interface scale (0.5–3; egui's zoom keys are off, Cmd+= / Cmd+- zoom the photo) |
 | `ui.screenshot` | `{path?, headless?}` | `{path, width, height}` once the frame (with finished renders) is captured. `headless: true` draws the UI on the CPU (no compositor needed); a windowed capture that gets no frame within 2 s falls back to headless automatically. While the loupe still waits for a render, `ui.widgets {filter: "loupe:rendering"}` lists its "Rendering…" pill; `loupe:renderFailed` is the pill saying a render failed behind a stand-in; Compare and Reference panes have their own (`compare:rendering:<pane>`, `compare:renderFailed:<pane>`) |
-| `engine.execute {command: "app.export", params}` | export params (see `docs/mcp.md`), plus `preset`, `dir` / `path`, `ids`, `background`; `destinationMode: "sameAsOriginal"` writes each photo into its original's folder (+ `subfolder`) instead of `dir` | Writes the files and returns `{files}` (one `{path, width, height, bytes, sidecars}` per file, plus `gpuFallback` — why that render fell back from the GPU to the CPU — when it did; see `docs/gpu-pipeline.md`); with `background: true` (what the Export dialog and menus use) it returns `{background: true, total}` at once and the batch runs on a worker thread — poll `ui.inspect` → `export` |
+| `engine.execute {command: "app.export", params}` | export params (`engine.commands` lists them; [cli.md](cli.md#lightcraft-run)), plus `preset`, `dir` / `path`, `ids`, `background`; `destinationMode: "sameAsOriginal"` writes each photo into its original's folder (+ `subfolder`) instead of `dir` | Writes the files and returns `{files}` (one `{path, width, height, bytes, sidecars}` per file, plus `gpuFallback` — why that render fell back from the GPU to the CPU — when it did; see `docs/gpu-pipeline.md`); with `background: true` (what the Export dialog and menus use) it returns `{background: true, total}` at once and the batch runs on a worker thread — poll `ui.inspect` → `export` |
 | `engine.execute {command: "activity.list"}` | — | The long-running tasks in flight (imports, exports, preview builds, downloads, the face scan…), oldest first: `{tasks: [{id, kind, label, done, total, unit, detail, cancellable, cancelling, ageMs}]}`; `total` 0 = not known yet; `unit` is `count`, `bytes` or `percent`; `label` is English (the app shows it translated) |
 | `engine.execute {command: "activity.cancel"}` | `{id}` or `{all: true}` | Asks the task (or every cancellable one) to stop at its next file or photo → `{cancelled: n}`; an unknown id (it may have just finished) or a task that can't be cancelled is an error |
 | `ui.render` | `{id?, size?, path?}` | Render a photo (PNG to `path`), `{width, height}` |
@@ -237,7 +233,7 @@ its `-wal` / `-shm` / `.lock` files, it keeps the library open now and returns `
 `ui.dialog.confirm`) runs `file.importLightroom` with that catalog (no catalog found: it asks for one) and
 `button:dialogCancel` (`ui.dialog.cancel`) does nothing. A folder that is a LightCraft library (`catalog.snap` / `catalog.log`) always
 opens as one. With no library open (the library problem window) it is an error instead. The engine refuses the same
-places (`EngineError::LightroomCatalog`, so `lightcraft-cli --library` and `mcp --library` too). `library.importLightroom
+places (`EngineError::LightroomCatalog`, so `lightcraft run --library` too). `library.importLightroom
 {status: true}` reports the catalog's `path` after the task ends as well as while it runs.
 
 ## External controllers
@@ -302,18 +298,8 @@ discard cached photo mappings and re-read state; matching photo ids alone do not
 For persistent libraries, poll `library.info` for the current `path` as well. Polling observes the state
 at each read, not every intermediate change.
 
-The same queries and edits are available through the connected CLI:
-
-```sh
-lightcraft-cli run --connect 127.0.0.1:7980 library.state photo.inspect develop.controls section=light
-lightcraft-cli run --connect 127.0.0.1:7980 develop.adjust control=light.exposure delta=0.1 photo.inspect
-```
-
-For MCP, use `lightcraft-cli mcp --connect 127.0.0.1:7980`: `run_command` reaches the commands above,
-`list_controls` / `set_develop` provide slider helpers, and `resources/read` polls
-`lightcraft://library`, `lightcraft://photo/active`, `lightcraft://develop/active` and
-`lightcraft://controls` ([mcp.md](mcp.md#resources)). Headless CLI/MCP mode owns a separate engine
-session; use connect mode for feedback from edits in the desktop app.
+`lightcraft run` ([cli.md](cli.md)) takes the same commands, but in a session of its own: for feedback from
+edits in the desktop app, use this channel.
 
 ## Headless rendering (no window, no GPU)
 
@@ -324,15 +310,15 @@ scissor clipping as egui's GPU backends, so the image matches the window (minus 
 - **In the running app:** `{"method": "ui.screenshot", "params": {"path": "a.png", "headless": true}}`.
   The UI is drawn into an offscreen context from the app's logic tick, which keeps running when the
   window is occluded or the display sleeps/locks. Windowed screenshots fall back to this after 2 s.
-- **Without any app window:** `lightcraft-cli snapshot` runs a whole app session headlessly.
+- **Without any app window:** `lightcraft snapshot` runs a whole app session headlessly.
   Photo development also defaults to the CPU, so the initial frames do not discover a GPU adapter
   or load a graphics driver. `LIGHTCRAFT_GPU=1` does not opt snapshots back into GPU rendering.
   This applies only to the snapshot session: even `--library DIR` leaves the desktop app's saved
   `ui.json` preferences untouched. It answers the same control requests (same handler) from a JSON-lines script:
 
 ```text
-lightcraft-cli snapshot --demo -o grid.png --size 1600x1000 [--scale 2]
-lightcraft-cli snapshot --library DIR --script tour.jsonl -o shot.png
+lightcraft snapshot --demo -o grid.png --size 1600x1000 [--scale 2]
+lightcraft snapshot --library DIR --script tour.jsonl -o shot.png
 ```
 
 Headless screenshot dimensions must be finite and at least one logical point, with a finite,

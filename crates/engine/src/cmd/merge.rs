@@ -1,6 +1,6 @@
 //! Photo Merge commands: `merge.hdr`, `merge.panorama`, `merge.hdrPanorama`, `merge.hdrBatch`.
 //!
-//! Run synchronously here (CLI, MCP, control channel); the desktop UI plans the same job with
+//! Run synchronously here (CLI, control channel); the desktop UI plans the same job with
 //! [`Session::plan_merge`] and runs it on a worker thread. `preview: true` merges ≤ 1024 px frames
 //! and (with `previewPath`) writes the rendered preview as PNG instead of adding a photo.
 

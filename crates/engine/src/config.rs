@@ -10,7 +10,7 @@
 //! 3. The platform convention: macOS `~/Library/Application Support/LightCraft`, Windows
 //!    `%APPDATA%\LightCraft`, Linux `$XDG_CONFIG_HOME/lightcraft` or `~/.config/lightcraft`.
 //!
-//! Hosts that have a file system (the desktop app, the CLI, the MCP server) share these defaults so a model
+//! Hosts that have a file system (the desktop app, the CLI) share these defaults so a model
 //! installed from one is there for the others. Nothing here is applied automatically: a [`Session`] has no
 //! face-, denoise- or SAM 3 model folder until a host asks for one ([`Session::with_default_face_models`],
 //! [`Session::with_default_denoise_models`], [`Session::with_default_sam3_model`]), so tests stay hermetic.

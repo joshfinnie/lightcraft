@@ -104,7 +104,7 @@ pub enum ErrorKind {
 }
 
 impl ErrorKind {
-    /// The kind's stable name in an error reply's `code` field (control channel, MCP, CLI `--json`).
+    /// The kind's stable name in an error reply's `code` field (control channel, CLI `run`, the web build's `command()`).
     pub fn code(self) -> &'static str {
         match self {
             Self::UnknownCommand => "unknownCommand",

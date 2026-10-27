@@ -369,7 +369,7 @@ fn export(s: &mut Session, p: Patch) -> Result<Value> {
     const C: &str = "slideshow.export";
     let p = &p.value();
     if cfg!(target_arch = "wasm32") {
-        return Err(bad(C, "slideshow export needs the desktop app or lightcraft-cli"));
+        return Err(bad(C, "slideshow export needs the desktop app or `lightcraft run`"));
     }
     if s.slideshow_export.as_ref().is_some_and(|r| r.running()) {
         return Err(bad(C, "a slideshow export is already running (activity.cancel stops it)"));

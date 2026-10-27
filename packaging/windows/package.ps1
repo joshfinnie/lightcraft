@@ -5,7 +5,11 @@
 .DESCRIPTION
   Produces, in $env:DIST (default: dist/release):
     lightcraft-<version>-windows-<arch>.msi            per-machine installer (WiX v5)
-    lightcraft-<version>-windows-<arch>-portable.zip   lightcraft.exe + lightcraft-cli.exe
+    lightcraft-<version>-windows-<arch>-portable.zip   lightcraft.exe + lightcraft.com
+
+  lightcraft.exe is the app (a GUI program, no console). lightcraft.com (apps/lightcraft-console)
+  runs it from a terminal with the terminal's input and output, for `lightcraft render …`: a
+  terminal that names `lightcraft` runs the .com (PATHEXT lists .COM before .EXE).
 
   The binaries link the C runtime statically (+crt-static), so neither the MSI nor the portable
   zip needs the Visual C++ redistributable. Signing is delegated to sign.ps1 (skipped with a
@@ -87,22 +91,22 @@ if (-not $SkipBuild) {
   [Environment]::SetEnvironmentVariable($flagVar, '-C target-feature=+crt-static')
   # Fail the build (rather than warn) if the icon/VERSIONINFO can't be embedded.
   $env:LIGHTCRAFT_REQUIRE_WINRES = '1'
-  Invoke-Native "cargo build ($Target)" { cargo build --release --locked -p lightcraft -p lightcraft-cli --features lightcraft/heif,lightcraft-cli/heif --target $Target }
+  Invoke-Native "cargo build ($Target)" { cargo build --release --locked -p lightcraft -p lightcraft-console --features lightcraft/heif --target $Target }
 }
 
 $Bin = Join-Path $TargetDir "$Target\release"
 
 # Check both binaries' PE headers before packaging. Machine (COFF header) must match -Arch, so an
 # x64 build can never ship labelled arm64. Subsystem (optional header): 2 = Windows GUI, 3 = console.
-# The app must be GUI (no console window opens with it); the CLI must stay console so its output
-# reaches the terminal.
+# The app must be GUI (no console window opens with it); the console launcher must stay console so
+# the terminal's input and output reach the app's subcommands.
 function Get-PeHeader([string] $Path) {
   $bytes = [System.IO.File]::ReadAllBytes($Path)
   $pe = [BitConverter]::ToInt32($bytes, 0x3C)
   return @{ Machine = [BitConverter]::ToUInt16($bytes, $pe + 4); Subsystem = [BitConverter]::ToUInt16($bytes, $pe + 0x5C) }
 }
 $Machine = switch ($Arch) { 'x64' { 0x8664 } 'x86' { 0x14C } 'arm64' { 0xAA64 } }
-foreach ($check in @(@('lightcraft.exe', 2), @('lightcraft-cli.exe', 3))) {
+foreach ($check in @(@('lightcraft.exe', 2), @('lightcraft-console.exe', 3))) {
   $h = Get-PeHeader (Join-Path $Bin $check[0])
   if ($h.Machine -ne $Machine) { throw "$($check[0]) is for machine 0x$('{0:X}' -f $h.Machine), expected 0x$('{0:X}' -f $Machine) ($Arch)" }
   if ($h.Subsystem -ne $check[1]) { throw "$($check[0]) has PE subsystem $($h.Subsystem), expected $($check[1])" }
@@ -111,11 +115,13 @@ foreach ($check in @(@('lightcraft.exe', 2), @('lightcraft-cli.exe', 3))) {
 $Stage = Join-Path $TargetDir "windows-package\$Arch"
 Remove-Item -Recurse -Force $Stage -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force -Path $Stage | Out-Null
-Copy-Item (Join-Path $Bin 'lightcraft.exe'), (Join-Path $Bin 'lightcraft-cli.exe') $Stage
+Copy-Item (Join-Path $Bin 'lightcraft.exe'), (Join-Path $Bin 'lightcraft-console.exe') $Stage
 # The embedded Inter font's OFL goes with both the installer and the portable zip.
 Copy-Item (Join-Path $Root 'assets\fonts\OFL-Inter.txt') $Stage
 
-& (Join-Path $PSScriptRoot 'sign.ps1') (Join-Path $Stage 'lightcraft.exe') (Join-Path $Stage 'lightcraft-cli.exe')
+# signed under its .exe name (signtool picks the PE signer by extension), then named lightcraft.com
+& (Join-Path $PSScriptRoot 'sign.ps1') (Join-Path $Stage 'lightcraft.exe') (Join-Path $Stage 'lightcraft-console.exe')
+Move-Item (Join-Path $Stage 'lightcraft-console.exe') (Join-Path $Stage 'lightcraft.com')
 
 # ---- MSI ---------------------------------------------------------------------------------------
 # Extensions must match the WiX tool version (5.0.2, as packaging-lint.yml installs). Re-adding is harmless.
@@ -170,8 +176,9 @@ $HostArch = switch ($nativeArchitecture) {
   default { 'unknown' }
 }
 if ($Arch -ne 'arm64' -or $HostArch -eq 'arm64') {
-  Invoke-Native 'lightcraft-cli --version' { & (Join-Path $Stage 'lightcraft-cli.exe') --version }
+  # through the launcher: the app's own output reaches this console only that way
+  Invoke-Native 'lightcraft.com commands' { & (Join-Path $Stage 'lightcraft.com') commands | Select-Object -First 1 }
 } else {
-  Write-Output "skipping lightcraft-cli --version: an $Arch build doesn't run on this $HostArch machine"
+  Write-Output "skipping lightcraft.com commands: an $Arch build doesn't run on this $HostArch machine"
 }
 Get-Item $Msi, $Zip | Format-Table Name, Length

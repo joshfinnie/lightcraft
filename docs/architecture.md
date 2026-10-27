@@ -18,8 +18,8 @@ L5 depends on egui, eframe, winit or rfd, and that each crate only uses lower la
 | L2 | `pipeline` (9.8k) | The develop pipeline: scene-referred float, resolution independent; the CPU reference (oracle) for everything else |
 | L3 | `catalog` (11.0k), `gpu` (5.1k), `preview` (1.3k), `merge` (3.8k), `segment` (2.3k) | Library model and persistence; wgpu compute twin of the pipeline; thumbnail/preview cache and job pool; HDR and panorama merge; SAM 3 segmentation |
 | L4 | `engine` (53.2k) | Session, command registry (everything is a command), history, render and export jobs, import, Lightroom catalog and preset import, faces index, view-models |
-| L5 | `ui-egui` (46.9k), `mcp` (2.3k) | The Lightroom-style egui interface (swappable); the MCP server |
-| L6 | `apps/lightcraft` (2.8k), `apps/lightcraft-cli` (1.5k), `apps/lightcraft-web` (3.4k), `xtask` (3.4k), `testkit` (0.2k, dev-dependency only) | Desktop app (eframe + wgpu, native menus, control server), CLI (render, commands, calibrate, snapshot, MCP), WASM build, tooling; test helpers (skips the CI report lists) |
+| L5 | `ui-egui` (46.9k) | The Lightroom-style egui interface (swappable) |
+| L6 | `apps/lightcraft` (4.3k), `apps/lightcraft-console` (0.1k), `apps/lightcraft-web` (3.4k), `xtask` (3.4k), `testkit` (0.2k, dev-dependency only) | Desktop app (eframe + wgpu, native menus, control server) and its CLI subcommands (run, render, snapshot, commands, calibrate…; `docs/cli.md`), Windows console launcher (`lightcraft.com`), WASM build, tooling; test helpers (skips the CI report lists) |
 
 ## Data model
 
@@ -48,12 +48,12 @@ L5 depends on egui, eframe, winit or rfd, and that each crate only uses lower la
 3. **GPU** (`gpu`): the same stages in WGSL on Metal / DX12 / Vulkan, checked against the CPU path
    (within 1/255); GPU errors fall back to the CPU (`docs/gpu-pipeline.md`).
 4. **Display and export**: display-profile conversion (`docs/display-profiles.md`); export through
-   one encoder for app, CLI, MCP and web (`lightcraft_engine::export`).
+   one encoder for app, CLI and web (`lightcraft_engine::export`).
 
 ## Agent control
 
 Every action is an engine command (id, label, menu path, shortcut, params, enabled, run). The UI,
-the CLI, the JSON-lines control channel (`docs/control-protocol.md`) and MCP (`docs/mcp.md`) all
+the CLI (`docs/cli.md`) and the JSON-lines control channel (`docs/control-protocol.md`) all
 dispatch by id, and headless snapshots render the UI without a window.
 
 ## Quality gates

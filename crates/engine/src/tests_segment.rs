@@ -177,7 +177,7 @@ fn background_requests_never_wait_and_failures_come_back_as_messages() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// CLI / MCP (waiting mode): a damaged model is an error from the command, quickly.
+/// CLI (waiting mode): a damaged model is an error from the command, quickly.
 #[test]
 fn waiting_requests_with_a_damaged_model_are_errors() {
     if !Segmenter::AVAILABLE {
@@ -283,7 +283,7 @@ fn a_running_model_download_shows_in_activity_and_cancels() {
 }
 
 /// Frontends decide on the error's kind, not its words (#1046): a missing model is
-/// `ModelMissing(Sam3)` whether the app queues requests (background) or a command waits (CLI, MCP);
+/// `ModelMissing(Sam3)` whether the app queues requests (background) or a command waits (CLI);
 /// a build without AI masks is not a missing model (there is nothing to download).
 #[test]
 fn a_missing_model_is_model_missing_by_kind() {

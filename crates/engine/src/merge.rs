@@ -1,7 +1,7 @@
 //! Photo Merge (HDR, Panorama, HDR Panorama) in the library.
 //!
 //! A merge is planned from the session ([`crate::Session::plan_merge`] → [`MergeJob`], which is
-//! `Send` and self-contained), run anywhere (a worker thread in the app, inline for the CLI/MCP:
+//! `Send` and self-contained), run anywhere (a worker thread in the app, inline for the CLI:
 //! [`MergeJob::run`], with progress and cancellation), and finished on the session
 //! ([`crate::Session::finish_merge`]): the DNG is written next to the first source photo
 //! (`<name>-HDR.dng`, `-Pano.dng`, `-HDR-Pano.dng`), imported, selected, and given Auto Settings /
@@ -514,7 +514,7 @@ impl Session {
         Ok(info)
     }
 
-    /// Plan, run and finish a merge synchronously (CLI, MCP, control channel).
+    /// Plan, run and finish a merge synchronously (CLI, control channel).
     pub fn merge_now(&mut self, kind: MergeKind, finish: MergeFinish, ids: &[PhotoId]) -> Result<Value> {
         let job = self.plan_merge(kind, finish, ids, false)?;
         let out = job.run(&|_, _| true).map_err(EngineError::Other)?;

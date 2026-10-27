@@ -3158,11 +3158,14 @@ dependencies = [
 name = "lightcraft"
 version = "0.10.0"
 dependencies = [
+ "dhat",
  "eframe",
  "egui",
  "getrandom 0.3.4",
  "lightcraft-codecs",
+ "lightcraft-denoise",
  "lightcraft-engine",
+ "lightcraft-merge",
  "lightcraft-raster",
  "lightcraft-sysmem",
  "lightcraft-testkit",
@@ -3195,22 +3198,6 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.21",
  "web-time",
-]
-
-[[package]]
-name = "lightcraft-cli"
-version = "0.10.0"
-dependencies = [
- "dhat",
- "lightcraft-codecs",
- "lightcraft-denoise",
- "lightcraft-engine",
- "lightcraft-mcp",
- "lightcraft-merge",
- "lightcraft-raster",
- "lightcraft-sysmem",
- "lightcraft-ui-egui",
- "serde_json",
 ]
 
 [[package]]
@@ -3253,6 +3240,10 @@ dependencies = [
  "proptest",
  "serde",
 ]
+
+[[package]]
+name = "lightcraft-console"
+version = "0.10.0"
 
 [[package]]
 name = "lightcraft-denoise"
@@ -3427,18 +3418,6 @@ dependencies = [
  "lightcraft-develop",
  "lightcraft-geom",
  "quick-xml 0.38.4",
-]
-
-[[package]]
-name = "lightcraft-mcp"
-version = "0.10.0"
-dependencies = [
- "lightcraft-codecs",
- "lightcraft-engine",
- "lightcraft-raster",
- "lightcraft-testkit",
- "log",
- "serde_json",
 ]
 
 [[package]]

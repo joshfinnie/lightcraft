@@ -1095,7 +1095,7 @@ fn file_modified(path: &str) -> Option<String> {
 }
 
 impl crate::Session {
-    /// Install the filesystem file hooks (desktop, CLI, MCP headless), and on macOS the Apple Photos
+    /// Install the filesystem file hooks (desktop, CLI), and on macOS the Apple Photos
     /// runner ([`crate::apple_photos::osascript`]; installed, not run).
     pub fn with_fs(mut self) -> Self {
         let (l, p) = fs_hooks();

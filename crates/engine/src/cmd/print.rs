@@ -1,7 +1,7 @@
 //! `print.*`: the Print module as commands.
 //!
 //! The module's state is [`Session::print`] (layout, image settings, page, guides, job), so the
-//! app, CLI, control channel and MCP share one print. Lengths are inches in page space (origin at
+//! app, CLI and control channel share one print. Lengths are inches in page space (origin at
 //! the top-left of the page as printed); cell ids and photo ids are numbers. Nothing here touches
 //! the catalog, so none of it is journaled or undoable; saved templates live in prefs.json.
 //!

@@ -64,11 +64,10 @@ pub const TABLE: &[(&str, Class)] = &[
     // vendored from craft-libs (NOTICE)
     ("craft-ui", Class::Layer(5)),
     ("craft-docpath", Class::Standalone),
-    ("mcp", Class::Layer(5)),
     ("testkit", Class::Testkit),
     // L6 apps and tooling
     ("lightcraft", Class::Exempt),
-    ("cli", Class::Exempt),
+    ("console", Class::Exempt),
     ("web", Class::Exempt),
     ("xtask", Class::Exempt),
 ];
@@ -345,7 +344,7 @@ mod tests {
             c("lightcraft-develop", &[("lightcraft-geom", Normal, true)]),
             c("lightcraft-engine", &[("lightcraft-develop", Normal, true), ("lightcraft-testkit", Dev, true)]),
             c("lightcraft-ui-egui", &[("lightcraft-engine", Normal, true), ("egui", Normal, false)]),
-            c("lightcraft-cli", &[("lightcraft-ui-egui", Normal, true)]),
+            c("lightcraft", &[("lightcraft-ui-egui", Normal, true)]),
         ];
         assert!(check(&g).is_empty(), "{:?}", check(&g));
     }
@@ -374,7 +373,7 @@ mod tests {
             let v = check(&[c("lightcraft-engine", &[(dep, Normal, false)])]);
             assert!(matches!(v[..], [Violation::UiBelowL5 { .. }]), "{dep}");
         }
-        assert!(check(&[c("lightcraft-mcp", &[("winit", Normal, false)])]).is_empty());
+        assert!(check(&[c("lightcraft-ui-egui", &[("winit", Normal, false)])]).is_empty());
     }
 
     #[test]
@@ -387,7 +386,7 @@ mod tests {
 
     #[test]
     fn apps_exempt() {
-        for app in ["lightcraft", "lightcraft-cli", "lightcraft-web", "xtask"] {
+        for app in ["lightcraft", "lightcraft-console", "lightcraft-web", "xtask"] {
             assert!(check(&[c(app, &[("egui", Normal, false), ("lightcraft-ui-egui", Normal, true)])]).is_empty());
         }
     }

@@ -164,7 +164,7 @@ are the same in every version, so serve them with `Cache-Control: no-cache` (not
   storage until the site's data is cleared; backups larger than 4 GB need zip64, which isn't
   written yet.
 - **Preset files** (import/export `.json`) aren't wired to browser pickers yet.
-- **Control channel / MCP.** These are desktop-only, because they need a TCP socket.
+- **Control channel.** It is desktop-only, because it needs a TCP socket.
 - **AVIF export** is untested in the browser; it's the one encoder that may not be wasm-safe.
 - **JPEG XL export** is native only: the encoder (`jixel`) starts threads of its own, which wasm32 has not got; the
   web build reports "not available in this build". JPEG XL import works.

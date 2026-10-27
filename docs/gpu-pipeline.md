@@ -125,7 +125,7 @@ walks the drive.
 
 ## Where it is used
 - `lightcraft_engine::media::develop` (called by every `RenderJob`): loupe / before / compare views,
-  `render_now` (CLI, MCP, control channel renders) and exports render on the GPU when one is
+  `render_now` (CLI and control channel renders) and exports render on the GPU when one is
   available; grid/filmstrip thumbnails (many small jobs in parallel) stay on the CPU.
 - Anything the GPU path cannot do returns `None` and the CPU renders instead: no adapter (CI
   machines, software-only adapters), `LIGHTCRAFT_GPU=0` or `LIGHTCRAFT_GPU_BACKEND=off` (whole
@@ -167,7 +167,7 @@ walks the drive.
 
 ## Limits, failures and the CPU fallback
 Issue #78: on an Intel UHD (ICL GT1) iGPU with Mesa/Vulkan, exports from the desktop app came out
-as valid JPEGs that were entirely black, while previews, `lightcraft-cli render` and
+as valid JPEGs that were entirely black, while previews, `lightcraft render` and
 `LIGHTCRAFT_GPU=0` were fine — and the GPU export took ~15 s against ~3 s on the CPU. The readback
 returned a buffer the per-pixel stage had never written, with no error. The likeliest cause: the
 whole export was recorded as one command submission lasting seconds on that GPU, and the driver
@@ -295,11 +295,11 @@ A view's stages keep an uploaded source only up to 96 MB (a Preview-level source
   sources, rendered previews) and the GPU renderer's device buffers (allocated, of which pooled
   and retired); `ui.inspect` → `memory` adds the loupe's stage caches (CPU images, GPU buffers)
   and the textures.
-- Heap profile: build `lightcraft-cli` with `--features dhat-heap`; `library.memory` then also
+- Heap profile: build `lightcraft` with `--features dhat-heap`; `library.memory` then also
   reports live/peak heap bytes and the run writes `dhat-heap.json` (`LIGHTCRAFT_DHAT_FILE`), whose
   allocation sites at the peak (`t-gmax`) show who holds the memory.
 - Measuring the scenario (import 14 raws from `corpus/raw`, open the loupe, step 12 times):
-  `/usr/bin/time -l lightcraft-cli snapshot <files> --script steps.jsonl -o out.png` → "maximum
+  `/usr/bin/time -l lightcraft snapshot <files> --script steps.jsonl -o out.png` → "maximum
   resident set size" and "peak memory footprint". Run it several times: the high-water mark is
   noisy (allocator caching, scheduling). On Apple silicon GPU buffers count in the footprint.
 - Imports read raw headers only (`lightcraft_raw::probe_info`): no pixel data is decompressed,
