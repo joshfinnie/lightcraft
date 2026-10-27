@@ -93,6 +93,14 @@ impl crate::Session {
         }
         self.original_guard().check(path)
     }
+
+    /// Write a file the person named (keywords, presets, effects, templates… exported by `cmd`):
+    /// refused when it would replace a catalogued original or its sidecar, else written
+    /// atomically, never truncated in place (`durable`: synced to disk too).
+    pub fn write_user_file(&self, cmd: &str, path: &str, bytes: &[u8], durable: bool) -> crate::Result<()> {
+        self.check_write_target(path).map_err(|e| crate::cmd::bad(cmd, e))?;
+        if durable { crate::export::write_file_durable(path, bytes) } else { crate::export::write_file(path, bytes) }
+    }
 }
 
 #[cfg(test)]

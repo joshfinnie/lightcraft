@@ -322,28 +322,7 @@ fn load_prefs_at(path: &std::path::Path, set_aside_damaged: bool) -> (Option<UiS
     }
 }
 
-/// Write `bytes` to `path` atomically: a temp file, fsynced, renamed over it (a crash or a full
-/// disk leaves the old file or the new one, never a truncated one).
-fn write_atomic(path: &std::path::Path, bytes: &[u8]) -> std::io::Result<()> {
-    use std::io::Write;
-    let tmp = path.with_extension("json.tmp");
-    let written = (|| {
-        let mut f = std::fs::File::create(&tmp)?;
-        f.write_all(bytes)?;
-        f.sync_all()
-    })();
-    if let Err(e) = written {
-        let _ = std::fs::remove_file(&tmp);
-        return Err(e);
-    }
-    std::fs::rename(&tmp, path)?;
-    if let Some(dir) = path.parent()
-        && let Ok(d) = std::fs::File::open(dir)
-    {
-        let _ = d.sync_all();
-    }
-    Ok(())
-}
+use lightcraft_engine::catalog::safe_file::write_atomic;
 
 /// Saves `ui.json` (app settings, incl. the library to open at launch): as soon as the library
 /// changes, every few seconds when anything else changed, and at exit.

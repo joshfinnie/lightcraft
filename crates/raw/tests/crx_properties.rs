@@ -967,6 +967,7 @@ fn every_qp_value_in_the_supported_band_dequantizes_within_the_bit_depth() {
 // --- determinism (property 5) ---
 
 #[test]
+#[allow(clippy::disallowed_methods)] // a test: a thread the OS refuses fails it
 fn decoding_is_deterministic_across_repeated_and_parallel_invocations() {
     let craw = craw_roundtrip_file((24, 16, 2), 4, 7, &lcg_values(7, MAX_PLANE_VALUES));
     let lossless = lossless_file((8, 6), &lcg_values(11, 4 * 4 * 3));

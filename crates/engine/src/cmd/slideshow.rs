@@ -357,9 +357,8 @@ fn tpl_export(s: &mut Session, p: ExportTemplate) -> Result<Value> {
     let id = id_param(p.id.as_deref(), C)?;
     let path = p.path.as_deref().map(str::trim).filter(|x| !x.is_empty()).ok_or_else(|| bad(C, "missing `path`"))?;
     let t = s.slide_template(id).map_err(|e| bad(C, e))?;
-    s.check_write_target(path).map_err(|e| bad(C, e))?;
     let bytes = serde_json::to_vec_pretty(&t.to_doc()).map_err(|e| crate::EngineError::Other(e.to_string()))?;
-    crate::export::write_file(path, &bytes)?;
+    s.write_user_file(C, path, &bytes, false)?;
     Ok(json!({"id": t.id, "name": t.name, "path": path}))
 }
 

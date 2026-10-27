@@ -540,23 +540,28 @@ fn probe_all(
             let mut results: Vec<Option<crate::Result<ProbeInfo>>> = std::iter::repeat_with(|| None).take(paths.len()).collect();
             let next = std::sync::atomic::AtomicUsize::new(0);
             let out = std::sync::Mutex::new(&mut results);
-            std::thread::scope(|sc| {
-                for _ in 0..n {
-                    sc.spawn(|| {
-                        loop {
-                            let i = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                            if i >= paths.len() {
-                                break;
-                            }
-                            if cancel.load(Relaxed) {
-                                break;
-                            }
-                            let r = probe(&paths[i]);
-                            done.fetch_add(1, Relaxed);
-                            out.lock().unwrap_or_else(|e| e.into_inner())[i] = Some(r);
-                        }
-                    });
+            let work = || {
+                loop {
+                    let i = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    let Some(path) = paths.get(i) else { break };
+                    if cancel.load(Relaxed) {
+                        break;
+                    }
+                    let r = probe(path);
+                    done.fetch_add(1, Relaxed);
+                    if let Some(slot) = out.lock().unwrap_or_else(|e| e.into_inner()).get_mut(i) {
+                        *slot = Some(r);
+                    }
                 }
+            };
+            std::thread::scope(|sc| {
+                // this thread probes too: the files are all probed even when no thread can be started
+                for k in 1..n {
+                    if std::thread::Builder::new().name(format!("lc-import-probe-{k}")).spawn_scoped(sc, work).is_err() {
+                        break;
+                    }
+                }
+                work();
             });
             return results.into_iter().map(|r| r.unwrap_or_else(|| Err(crate::EngineError::Cancelled("not probed".into())))).collect();
         }

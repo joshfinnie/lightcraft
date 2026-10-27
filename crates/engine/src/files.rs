@@ -1041,15 +1041,32 @@ fn quick_image_srgb(header: &[u8], window: &[u8], adobe_rgb: bool, max_edge: usi
     Some(d.to_srgb8().oriented(preview_orientation(header, d.orientation)))
 }
 
+/// The whole file at `path`, refused ([`FileProblem::TooLarge`]) when it is larger than `cap` bytes.
+fn read_capped(path: &str, cap: u64) -> crate::Result<Vec<u8>> {
+    let len = std::fs::metadata(path).map_err(|e| EngineError::io(path, &e))?.len();
+    if len > cap {
+        return Err(EngineError::file(
+            FileProblem::TooLarge,
+            format!("{path}: {} MB is more than this computer can open ({} MB at most)", len >> 20, cap >> 20),
+        ));
+    }
+    std::fs::read(path).map_err(|e| EngineError::io(path, &e))
+}
+
+/// [`read_capped`] at [`crate::memory::max_file_read`].
+fn read_file(path: &str) -> crate::Result<Vec<u8>> {
+    read_capped(path, crate::memory::max_file_read())
+}
+
 /// The filesystem-backed [`PairLoader`]: the file is read and decoded once, and developed as usual and from the photo's
 /// denoised picture. It holds two pictures at once, so it counts for more at the memory gate than a plain load.
 pub fn fs_pair_loader() -> PairLoader {
     Arc::new(|path: &str, max_edge: usize, spec: &DenoiseSpec| {
-        let len = std::fs::metadata(path).map(|m| m.len() as usize).unwrap_or(0);
-        let weight = len * if max_edge <= crate::media::SourceLevel::Thumb.max_edge() { 4 } else { 10 };
+        let len = std::fs::metadata(path).map(|m| usize::try_from(m.len()).unwrap_or(usize::MAX)).unwrap_or(0);
+        let weight = len.saturating_mul(if max_edge <= crate::media::SourceLevel::Thumb.max_edge() { 4 } else { 10 });
         let gate = crate::memory::work_gate();
         let _permit = if crate::memory::is_background() { gate.acquire(weight) } else { gate.acquire_urgent(weight) };
-        let bytes = std::fs::read(path).map_err(|e| EngineError::io(path, &e))?;
+        let bytes = read_file(path)?;
         let r = load_vec_pair(bytes, max_edge, spec);
         crate::memory::release();
         r
@@ -1066,10 +1083,10 @@ pub fn fs_pair_loader() -> PairLoader {
 pub fn fs_hooks() -> (FileLoader, FileProbe) {
     let loader: FileLoader = Arc::new(|path: &str, max_edge: usize| {
         let len = std::fs::metadata(path).map(|m| usize::try_from(m.len()).unwrap_or(usize::MAX)).unwrap_or(0);
-        let weight = len * if max_edge <= crate::media::SourceLevel::Thumb.max_edge() { 3 } else { 6 };
+        let weight = len.saturating_mul(if max_edge <= crate::media::SourceLevel::Thumb.max_edge() { 3 } else { 6 });
         let gate = crate::memory::work_gate();
         let _permit = if crate::memory::is_background() { gate.acquire(weight) } else { gate.acquire_urgent(weight) };
-        let bytes = std::fs::read(path).map_err(|e| EngineError::io(path, &e))?;
+        let bytes = read_file(path)?;
         let r = load_vec(bytes, max_edge);
         // the file, the samples and the intermediate images are gone: give their pages back
         crate::memory::release();
@@ -1078,7 +1095,7 @@ pub fn fs_hooks() -> (FileLoader, FileProbe) {
     let probe: FileProbe = Arc::new(|path: &str| {
         let len = std::fs::metadata(path).map(|m| usize::try_from(m.len()).unwrap_or(usize::MAX)).unwrap_or(0);
         let _permit = crate::memory::work_gate().acquire(len);
-        let bytes = std::fs::read(path).map_err(|e| EngineError::io(path, &e))?;
+        let bytes = read_file(path)?;
         let mut info = probe_bytes(path, &bytes)?;
         info.file_modified = file_modified(path);
         Ok(info)
@@ -1113,6 +1130,22 @@ impl crate::Session {
 
 #[cfg(test)]
 pub(crate) mod tests {
+
+    /// A file bigger than the machine can hold is refused before it is read: reading it whole
+    /// could fail to allocate, which aborts the process instead of reporting an error.
+    #[test]
+    fn a_file_too_large_to_hold_is_refused_unread() {
+        let d = std::env::temp_dir().join(format!("lc-read-capped-{}", std::process::id()));
+        std::fs::create_dir_all(&d).unwrap();
+        let f = d.join("huge.tif");
+        std::fs::write(&f, vec![0u8; 4096]).unwrap();
+        let path = f.to_string_lossy();
+        let e = super::read_capped(&path, 1024).unwrap_err();
+        assert_eq!(crate::CommandError::from(e).fields()["code"], "tooLarge");
+        assert_eq!(super::read_capped(&path, 4096).unwrap().len(), 4096);
+        assert!(crate::memory::max_file_read() >= 256 << 20);
+        let _ = std::fs::remove_dir_all(&d);
+    }
     /// Keywords from a file keep their hierarchy: the paths of `lr:hierarchicalSubject`, not the
     /// flat names of `dc:subject` that LightCraft's exports (and Lightroom Classic) write besides
     /// them; an exported `travel|Italy|Rome` comes back as itself.

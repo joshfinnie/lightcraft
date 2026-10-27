@@ -135,13 +135,13 @@ fn import(s: &mut Session, p: Import) -> Result<Value> {
         let file = match &dir {
             Some(d) => {
                 let f = d.join(format!("{}.cube", id.trim_start_matches("lut:")));
-                std::fs::write(&f, &text).map_err(|e| bad(C, format!("{}: {e}", f.display())))?;
+                crate::export::write_file_durable(&f.to_string_lossy(), text.as_bytes())?;
                 f.to_string_lossy().to_string()
             }
             None => {
                 // no library on disk: remember the original (the in-memory session ends with the app)
                 let f = std::env::temp_dir().join(format!("lightcraft-{}.cube", id.trim_start_matches("lut:")));
-                std::fs::write(&f, &text).map_err(|e| bad(C, e.to_string()))?;
+                crate::export::write_file(&f.to_string_lossy(), text.as_bytes())?;
                 f.to_string_lossy().to_string()
             }
         };

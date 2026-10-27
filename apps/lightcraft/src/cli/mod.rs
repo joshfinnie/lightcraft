@@ -227,25 +227,26 @@ fn calibrate(args: &[String]) -> Result<(), String> {
     let workers = std::thread::available_parallelism().map_or(4, |n| n.get()).clamp(1, 6);
     let next = std::sync::atomic::AtomicUsize::new(0);
     let done = std::sync::atomic::AtomicUsize::new(0);
+    let worker = || {
+        let mut pool = lightcraft_engine::camera_profiles::Pool::default();
+        while let Some(path) = files.get(next.fetch_add(1, std::sync::atomic::Ordering::Relaxed)) {
+            let result = std::fs::read(path).map_err(|e| e.to_string()).and_then(|bytes| pool.add(&bytes));
+            let n = done.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+            match result {
+                Ok(Some(model)) => eprintln!("[{n}/{}] {} ({model})", files.len(), path.display()),
+                Ok(None) => eprintln!("[{n}/{}] {}: skipped (no usable camera JPEG or colour)", files.len(), path.display()),
+                Err(e) => eprintln!("[{n}/{}] {}: {e}", files.len(), path.display()),
+            }
+        }
+        pool
+    };
     let pools: Vec<lightcraft_engine::camera_profiles::Pool> = std::thread::scope(|scope| {
-        let handles: Vec<_> = (0..workers)
-            .map(|_| {
-                scope.spawn(|| {
-                    let mut pool = lightcraft_engine::camera_profiles::Pool::default();
-                    while let Some(path) = files.get(next.fetch_add(1, std::sync::atomic::Ordering::Relaxed)) {
-                        let result = std::fs::read(path).map_err(|e| e.to_string()).and_then(|bytes| pool.add(&bytes));
-                        let n = done.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
-                        match result {
-                            Ok(Some(model)) => eprintln!("[{n}/{}] {} ({model})", files.len(), path.display()),
-                            Ok(None) => eprintln!("[{n}/{}] {}: skipped (no usable camera JPEG or colour)", files.len(), path.display()),
-                            Err(e) => eprintln!("[{n}/{}] {}: {e}", files.len(), path.display()),
-                        }
-                    }
-                    pool
-                })
-            })
-            .collect();
-        handles.into_iter().filter_map(|h| h.join().ok()).collect()
+        // this thread reads files too: all of them are read even when no thread can be started
+        let handles: Vec<_> =
+            (1..workers).filter_map(|k| std::thread::Builder::new().name(format!("calibrate-{k}")).spawn_scoped(scope, worker).ok()).collect();
+        let mine = worker();
+        // (a worker that panicked loses only its own files' samples)
+        handles.into_iter().filter_map(|h| h.join().ok()).chain(std::iter::once(mine)).collect()
     });
     let mut pool = lightcraft_engine::camera_profiles::Pool::default();
     for p in pools {

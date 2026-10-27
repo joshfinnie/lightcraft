@@ -237,7 +237,12 @@ fn library_with_jpeg(tag: &str) -> (Session, lightcraft_catalog::PhotoId, std::p
 }
 
 fn preset_export_preserves_originals(command: &str, selection: serde_json::Value, tag: &str) {
+    preset_export_preserves_originals_with(command, selection, tag, |_| {});
+}
+
+fn preset_export_preserves_originals_with(command: &str, selection: serde_json::Value, tag: &str, setup: impl Fn(&mut crate::Session)) {
     let (mut s, _, dir, src, original) = library_with_jpeg(tag);
+    setup(&mut s);
     let sidecar = src.with_extension("xmp");
     let appended_sidecar = dir.join("IMG_1.jpg.xmp");
     std::fs::write(&sidecar, b"existing sidecar").unwrap();
@@ -274,6 +279,20 @@ fn preset_export_never_overwrites_originals_or_sidecars() {
 #[test]
 fn curve_preset_export_never_overwrites_originals_or_sidecars() {
     preset_export_preserves_originals("curve.exportPresets", json!({"names": ["Linear"]}), "curve-export-guard");
+}
+
+/// Keyword and mask-effect exports wrote with a plain `fs::write`: a path from a script or agent
+/// could truncate an original in place.
+#[test]
+fn keyword_export_never_overwrites_originals_or_sidecars() {
+    preset_export_preserves_originals("keyword.export", json!({}), "keyword-export-guard");
+}
+
+#[test]
+fn mask_effect_export_never_overwrites_originals_or_sidecars() {
+    preset_export_preserves_originals_with("mask.exportEffects", json!({}), "effect-export-guard", |s| {
+        s.prefs.mask_effects.push(serde_json::from_value(json!({"name": "Glow"})).unwrap());
+    });
 }
 
 #[test]

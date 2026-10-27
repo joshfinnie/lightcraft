@@ -65,6 +65,14 @@ pub fn set_physical_memory_hook(f: fn() -> Option<u64>) {
     let _ = PHYSICAL.set(f);
 }
 
+/// The largest file read into memory to open it: a quarter of the machine's memory (2 GiB when
+/// that isn't known). Reading a bigger one whole could fail to allocate, which aborts the process
+/// instead of reporting an error.
+pub fn max_file_read() -> u64 {
+    static CAP: OnceLock<u64> = OnceLock::new();
+    *CAP.get_or_init(|| total_ram().map_or(2 << 30, |ram| ram as u64 / 4))
+}
+
 /// Peak memory of developing a raw, in bytes per pixel (measured: a 64 MP DNG peaked at 5.7 GB).
 pub const PEAK_BYTES_PER_PIXEL: u64 = 85;
 
@@ -153,16 +161,18 @@ impl WorkGate {
     /// Hold `bytes`, waiting until they fit (or nothing else is held).
     pub fn acquire(&self, bytes: usize) -> Permit<'_> {
         let mut g = self.lock();
-        while g.0 > 0 && g.0 + bytes > g.1 {
+        while g.0 > 0 && g.0.saturating_add(bytes) > g.1 {
             g = self.cv.wait(g).unwrap_or_else(|e| e.into_inner());
         }
-        g.0 += bytes;
+        g.0 = g.0.saturating_add(bytes);
         Permit { gate: self, bytes }
     }
 
     /// Hold `bytes` without waiting (interactive work): counted, so background work waits for it.
     pub fn acquire_urgent(&self, bytes: usize) -> Permit<'_> {
-        self.lock().0 += bytes;
+        let mut g = self.lock();
+        g.0 = g.0.saturating_add(bytes);
+        drop(g);
         Permit { gate: self, bytes }
     }
 }

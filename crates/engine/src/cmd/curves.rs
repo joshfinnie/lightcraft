@@ -385,7 +385,6 @@ fn export_presets(s: &mut Session, p: ExportPresets) -> Result<Value> {
         return Err(bad(C, "no curve presets to export (save one first, or pass names)"));
     }
     let target = path.to_string_lossy();
-    s.check_write_target(&target).map_err(|e| bad(C, e))?;
-    crate::export::write_file_durable(&target, to_file(&chosen).as_bytes())?;
+    s.write_user_file(C, &target, to_file(&chosen).as_bytes(), true)?;
     Ok(json!({"path": path.display().to_string(), "count": chosen.len()}))
 }

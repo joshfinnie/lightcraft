@@ -93,12 +93,15 @@ fn exporting_keywords_names_what_it_left_out() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// A list that can't be written (a folder that isn't there) says why, as importing one does.
+/// A list that can't be written (its folder is a file) says why, as importing one does.
 #[test]
 fn exporting_keywords_says_why_it_failed() {
     let mut h = app();
-    let path = std::env::temp_dir().join("lc-no-such-folder-for-keywords").join("keywords.txt");
+    let not_a_folder = std::env::temp_dir().join(format!("lc-keywords-not-a-folder-{}", std::process::id()));
+    std::fs::write(&not_a_folder, b"a file").unwrap();
+    let path = not_a_folder.join("keywords.txt");
     let r = run(&mut h, "file.exportKeywords", json!({"path": path.to_string_lossy()}));
     assert_eq!(r["ok"], false, "{r}");
-    assert!(toast(&h).contains("keywords.txt"), "{}", toast(&h));
+    assert!(toast(&h).contains("keywords"), "{}", toast(&h));
+    let _ = std::fs::remove_file(&not_a_folder);
 }

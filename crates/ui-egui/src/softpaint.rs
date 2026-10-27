@@ -194,16 +194,26 @@ pub fn paint(primitives: &[ClippedPrimitive], textures: &dyn TextureSource, size
             groups[i % threads].push(b);
         }
         #[cfg(not(target_arch = "wasm32"))]
-        std::thread::scope(|s| {
-            for g in groups {
-                let prepared = &prepared;
-                s.spawn(move || {
+        {
+            // the groups are taken by whichever thread is free; this one paints too, so the
+            // picture is complete even when no thread can be started
+            let queue = std::sync::Mutex::new(groups);
+            let work = || {
+                while let Some(g) = queue.lock().unwrap_or_else(std::sync::PoisonError::into_inner).pop() {
                     for (y0, band) in g {
-                        paint_band(prepared, band, y0, w);
+                        paint_band(&prepared, band, y0, w);
                     }
-                });
-            }
-        });
+                }
+            };
+            std::thread::scope(|s| {
+                for k in 1..threads {
+                    if std::thread::Builder::new().name(format!("softpaint-{k}")).spawn_scoped(s, work).is_err() {
+                        break;
+                    }
+                }
+                work();
+            });
+        }
         #[cfg(target_arch = "wasm32")]
         for g in groups {
             for (y0, band) in g {

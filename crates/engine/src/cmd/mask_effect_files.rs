@@ -508,12 +508,9 @@ pub fn export_effects(s: &mut Session, p: ExportEffects) -> Result<Value> {
     if chosen.is_empty() {
         return Err(bad(C, "no effect presets to export"));
     }
-    if let Some(dir) = path.parent().filter(|d| !d.as_os_str().is_empty()) {
-        std::fs::create_dir_all(dir).map_err(|e| crate::EngineError::Other(format!("{}: {e}", dir.display())))?;
-    }
     let text = serde_json::to_string_pretty(&json!({"format": FILE_FORMAT, "version": 2, "effects": chosen}))
         .map_err(|e| crate::EngineError::Other(e.to_string()))?;
-    std::fs::write(&path, text).map_err(|e| crate::EngineError::Other(format!("{}: {e}", path.display())))?;
+    s.write_user_file(C, &path.to_string_lossy(), text.as_bytes(), true)?;
     Ok(json!({"path": path.display().to_string(), "count": chosen.len()}))
 }
 

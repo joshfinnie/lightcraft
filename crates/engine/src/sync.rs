@@ -224,10 +224,15 @@ pub fn scan_with(input: SyncInput, progress: &SyncProgress) -> FolderChanges {
     let (out, checks) = std::thread::scope(|sc| {
         let photos = &photos;
         let labels = &labels;
-        let checks = sc.spawn(move || check_photos(photos, labels, listing, progress));
+        let checks = std::thread::Builder::new().name("sync-checks".into()).spawn_scoped(sc, move || check_photos(photos, labels, listing, progress));
         let out = crate::import::scan_files(scan, files, &progress.files);
-        // (a check that panicked counts as nothing found; the scan still reports the rest)
-        (out, checks.join().unwrap_or_default())
+        // (a check that panicked counts as nothing found; the scan still reports the rest).
+        // Without a thread for them the checks run after the scan.
+        let checks = match checks {
+            Ok(h) => h.join().unwrap_or_default(),
+            Err(_) => check_photos(photos, labels, listing, progress),
+        };
+        (out, checks)
     });
     log::debug!(
         "synchronize: {} folders listed; the disk was asked {} times about the library's photos",
@@ -510,19 +515,24 @@ fn check_photos(photos: &[(Arc<Photo>, SidecarNaming)], labels: &Catalog, listin
         if n > 1 {
             let next = std::sync::atomic::AtomicUsize::new(0);
             let found = std::sync::Mutex::new(vec![Check::Nothing; photos.len()]);
-            std::thread::scope(|sc| {
-                for _ in 0..n {
-                    sc.spawn(|| {
-                        while !cancel.load(Relaxed) {
-                            let i = next.fetch_add(1, Relaxed);
-                            let Some((p, naming)) = photos.get(i) else { break };
-                            let c = check(p, *naming);
-                            if let Some(slot) = found.lock().unwrap_or_else(std::sync::PoisonError::into_inner).get_mut(i) {
-                                *slot = c;
-                            }
-                        }
-                    });
+            let work = || {
+                while !cancel.load(Relaxed) {
+                    let i = next.fetch_add(1, Relaxed);
+                    let Some((p, naming)) = photos.get(i) else { break };
+                    let c = check(p, *naming);
+                    if let Some(slot) = found.lock().unwrap_or_else(std::sync::PoisonError::into_inner).get_mut(i) {
+                        *slot = c;
+                    }
                 }
+            };
+            std::thread::scope(|sc| {
+                // this thread checks too: every photo is checked even when no thread can be started
+                for k in 1..n {
+                    if std::thread::Builder::new().name(format!("sync-check-{k}")).spawn_scoped(sc, work).is_err() {
+                        break;
+                    }
+                }
+                work();
             });
             return found.into_inner().unwrap_or_else(std::sync::PoisonError::into_inner);
         }

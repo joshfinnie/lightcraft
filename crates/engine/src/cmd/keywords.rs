@@ -577,7 +577,7 @@ pub fn specs() -> Vec<CommandSpec> {
                 let mut r = json!({"keywords": file.written.len(), "captureOneRefuses": refuses, "unwritable": file.unwritable});
                 match p.path.as_deref().map(str::trim).filter(|x| !x.is_empty()) {
                     Some(path) => {
-                        std::fs::write(path, &file.text).map_err(|e| crate::EngineError::Other(format!("{path}: {e}")))?;
+                        s.write_user_file("keyword.export", path, file.text.as_bytes(), true)?;
                         r["path"] = json!(path);
                     }
                     None => r["text"] = json!(file.text),

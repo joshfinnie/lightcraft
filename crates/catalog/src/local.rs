@@ -270,9 +270,19 @@ fn untouched_of(photos: &[&Photo]) -> HashSet<PhotoId> {
         if threads > 1 && photos.len() >= 256 {
             let size = photos.len().div_ceil(threads);
             return std::thread::scope(|sc| {
-                let jobs: Vec<_> = photos.chunks(size).map(|c| sc.spawn(move || check(c))).collect();
+                // a chunk no thread could be started for is checked on this one
+                let jobs: Vec<_> = photos
+                    .chunks(size)
+                    .map(|c| std::thread::Builder::new().name("untouched".into()).spawn_scoped(sc, move || check(c)).map_err(|_| c))
+                    .collect();
                 // a job that panicked (it can't) leaves its photos out: they are kept
-                jobs.into_iter().filter_map(|j| j.join().ok()).flatten().collect()
+                jobs.into_iter()
+                    .filter_map(|j| match j {
+                        Ok(j) => j.join().ok(),
+                        Err(c) => Some(check(c)),
+                    })
+                    .flatten()
+                    .collect()
             });
         }
     }

@@ -122,8 +122,7 @@ fn export(s: &mut Session, p: Export) -> Result<Value> {
         return Err(bad("preset.export", "no presets to export (create one first, or pass ids/group)"));
     }
     let target = path.to_string_lossy();
-    s.check_write_target(&target).map_err(|e| bad("preset.export", e))?;
-    crate::export::write_file_durable(&target, to_lcpreset(&chosen).as_bytes())?;
+    s.write_user_file("preset.export", &target, to_lcpreset(&chosen).as_bytes(), true)?;
     Ok(json!({"path": path.display().to_string(), "count": chosen.len()}))
 }
 

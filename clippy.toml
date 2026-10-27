@@ -6,4 +6,5 @@ allow-indexing-slicing-in-tests = true
 # std::thread::Builder and handles the error (never-crash rule). Tests may spawn freely.
 disallowed-methods = [
     { path = "std::thread::spawn", reason = "panics if the OS refuses a thread: use std::thread::Builder::spawn and handle the error" },
+    { path = "std::thread::Scope::spawn", reason = "panics if the OS refuses a thread: use std::thread::Builder::spawn_scoped and handle the error (e.g. do the work on this thread)" },
 ]

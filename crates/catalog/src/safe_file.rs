@@ -107,6 +107,23 @@ pub fn sync_dir(dir: &Path) {
     }
 }
 
+/// Remove this module's temp files in `dir` last changed more than `age` ago: left by a save a
+/// crash or a power cut cut short (a save in progress is never that old). Errors are ignored.
+pub fn sweep_stale_temps(dir: &Path, age: std::time::Duration) {
+    let Ok(entries) = fs::read_dir(dir) else { return };
+    for e in entries.flatten() {
+        let name = e.file_name();
+        let name = name.to_string_lossy();
+        if !(name.starts_with(".lightcraft-") && name.ends_with(".tmp")) {
+            continue;
+        }
+        let old = e.metadata().and_then(|m| m.modified()).ok().and_then(|t| t.elapsed().ok()).is_some_and(|d| d > age);
+        if old {
+            let _ = fs::remove_file(e.path());
+        }
+    }
+}
+
 /// A new, empty temp file next to `path` (hidden, unique in this process and folder).
 pub fn create_temp(path: &Path) -> io::Result<(PathBuf, File)> {
     static N: AtomicU64 = AtomicU64::new(0);
