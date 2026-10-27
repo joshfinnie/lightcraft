@@ -19,14 +19,23 @@
 //! - Who holds it (process id, computer, program, version) is written to `catalog.lock.owner`, for
 //!   the error message. It's a separate file because a Windows lock also blocks reading the
 //!   locked file. It's only a hint: it may be missing or left over from a crash.
-//! - File systems without lock support (some network shares): the library opens unlocked, with a
-//!   warning — refusing it would lock the user out of their own library. Locks over SMB/NFS are
-//!   advisory and depend on the server; the owner file is then the only hint.
+//! - File systems without lock support (some network shares): the owner note becomes a **lease**.
+//!   The holder rewrites its `beat` every [`BEAT`]; a note from another process whose beat is
+//!   younger than [`LEASE`] refuses the open ([`LockError::Leased`]), an older one (its program
+//!   crashed or its computer went to sleep) is taken over. The library still opens with a warning:
+//!   a lease is only as good as the share's view of time and files, and refusing every unlockable
+//!   share would lock the user out of their own library.
 //! - Browser storage (OPFS) has no file locks: see the web host for its own guard.
 
 use std::fs::{File, OpenOptions, TryLockError};
 use std::io;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
+
+/// How often a lease holder rewrites its note (file systems that can't lock).
+pub const BEAT: Duration = Duration::from_secs(30);
+/// A lease note whose beat is older than this is left from a program that is gone.
+pub const LEASE: Duration = Duration::from_secs(120);
 
 /// The lock file in the library directory.
 pub const LOCK: &str = "catalog.lock";
@@ -45,6 +54,13 @@ pub struct LockOwner {
     pub version: String,
     /// When it opened the library (seconds since 1970).
     pub since: u64,
+    /// When it last said it still has the library open (seconds since 1970; only on file systems
+    /// that can't lock, see the module docs). 0: not a lease.
+    pub beat: u64,
+}
+
+fn now_secs() -> u64 {
+    web_time::SystemTime::now().duration_since(web_time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
 }
 
 impl LockOwner {
@@ -55,7 +71,8 @@ impl LockOwner {
             host: host_name(),
             program: program.to_string(),
             version: env!("CARGO_PKG_VERSION").to_string(),
-            since: web_time::SystemTime::now().duration_since(web_time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0),
+            since: now_secs(),
+            beat: 0,
         }
     }
 
@@ -74,6 +91,17 @@ impl LockOwner {
     }
 }
 
+/// The owner note in `dir`, if there is a readable one.
+fn read_owner(dir: &Path) -> Option<LockOwner> {
+    std::fs::read(dir.join(OWNER)).ok().and_then(|b| serde_json::from_slice::<LockOwner>(&b).ok())
+}
+
+/// Write the owner note atomically: a reader never sees half of it.
+fn write_owner(dir: &Path, owner: &LockOwner) -> io::Result<()> {
+    let json = serde_json::to_vec_pretty(owner).map_err(io::Error::other)?;
+    crate::safe_file::write_atomic_nosync(&dir.join(OWNER), &json)
+}
+
 /// The computer's name, best effort (empty if unknown).
 fn host_name() -> String {
     let env = ["COMPUTERNAME", "HOSTNAME"].iter().find_map(|k| std::env::var(k).ok().filter(|h| !h.trim().is_empty()));
@@ -85,6 +113,13 @@ pub enum LockError {
     /// Another process has the library open.
     #[error("This library is already open in {}. Close it there first.", .0.as_ref().map(LockOwner::describe).unwrap_or_else(|| "another LightCraft program".into()))]
     InUse(Option<LockOwner>),
+    /// Another process holds the lease on a library whose file system can't lock.
+    #[error(
+        "This library is already open in {} (it is stored where files can't be locked, so LightCraft goes by the note the other program keeps up to date). Close it there first; if that program isn't running any more, try again in {} minutes.",
+        .0.describe(),
+        LEASE.as_secs() / 60
+    )]
+    Leased(LockOwner),
 }
 
 /// The exclusive lock on a library directory; released on drop (and by the OS if the process
@@ -92,37 +127,84 @@ pub enum LockError {
 #[derive(Debug)]
 pub struct LibraryLock {
     dir: PathBuf,
-    /// `None` when the file system can't lock (the library is open unlocked).
+    /// `None` when the file system can't lock (the library is open under a lease).
     file: Option<File>,
     held: bool,
+    /// The lease's heartbeat (file systems that can't lock): stops when this is dropped.
+    lease: Option<Lease>,
+}
+
+/// A heartbeat thread rewriting the owner note; dropping the sender stops it at once.
+#[derive(Debug)]
+struct Lease {
+    stop: Option<std::sync::mpsc::Sender<()>>,
+    thread: Option<std::thread::JoinHandle<()>>,
+    owner: LockOwner,
 }
 
 impl LibraryLock {
-    /// Lock `dir` (which must exist) for this process. Fails only when another process holds it.
+    /// Lock `dir` (which must exist) for this process. Fails only when another process holds it
+    /// (or, where the file system can't lock, holds a live lease on it).
     pub fn acquire(dir: &Path, program: &str) -> Result<LibraryLock, LockError> {
-        let unlocked = |why: io::Error| {
-            log::warn!("library {}: can't lock {LOCK} ({why}); opening it without protection against a second program", dir.display());
-            LibraryLock { dir: dir.to_path_buf(), file: None, held: false }
-        };
-        let file = match OpenOptions::new().read(true).write(true).create(true).truncate(false).open(dir.join(LOCK)) {
-            Ok(f) => f,
-            Err(e) => return Ok(unlocked(e)),
+        Self::acquire_with(dir, program, false, BEAT)
+    }
+
+    /// [`Self::acquire`]; `no_os_lock` behaves as a file system that can't lock (tests), and the
+    /// lease is renewed every `beat`.
+    pub(crate) fn acquire_with(dir: &Path, program: &str, no_os_lock: bool, beat: Duration) -> Result<LibraryLock, LockError> {
+        let file = OpenOptions::new().read(true).write(true).create(true).truncate(false).open(dir.join(LOCK));
+        let file = match file {
+            Ok(f) if !no_os_lock => f,
+            Ok(_) => return Self::leased(dir, program, io::Error::from(io::ErrorKind::Unsupported), beat),
+            Err(e) => return Self::leased(dir, program, e, beat),
         };
         match file.try_lock() {
             Ok(()) => {}
-            Err(TryLockError::WouldBlock) => {
-                let owner = std::fs::read(dir.join(OWNER)).ok().and_then(|b| serde_json::from_slice::<LockOwner>(&b).ok());
-                return Err(LockError::InUse(owner));
-            }
-            Err(TryLockError::Error(e)) => return Ok(unlocked(e)),
+            Err(TryLockError::WouldBlock) => return Err(LockError::InUse(read_owner(dir))),
+            Err(TryLockError::Error(e)) => return Self::leased(dir, program, e, beat),
         }
         let owner = LockOwner::this_process(program);
-        if let Ok(json) = serde_json::to_vec_pretty(&owner)
-            && let Err(e) = std::fs::write(dir.join(OWNER), json)
-        {
+        if let Err(e) = write_owner(dir, &owner) {
             log::warn!("library {}: can't write {OWNER}: {e}", dir.display());
         }
-        Ok(LibraryLock { dir: dir.to_path_buf(), file: Some(file), held: true })
+        Ok(LibraryLock { dir: dir.to_path_buf(), file: Some(file), held: true, lease: None })
+    }
+
+    /// `dir` can't be locked (`why`): open it under a lease on the owner note, unless another
+    /// process holds a live one.
+    fn leased(dir: &Path, program: &str, why: io::Error, beat: Duration) -> Result<LibraryLock, LockError> {
+        log::warn!("library {}: can't lock {LOCK} ({why}); going by the owner note instead", dir.display());
+        let me = LockOwner::this_process(program);
+        if let Some(other) = read_owner(dir)
+            && other.beat > 0
+            && !(other.pid == me.pid && other.host == me.host)
+            && now_secs().saturating_sub(other.beat) < LEASE.as_secs()
+        {
+            return Err(LockError::Leased(other));
+        }
+        let owner = LockOwner { beat: now_secs(), ..me };
+        if let Err(e) = write_owner(dir, &owner) {
+            log::warn!("library {}: can't write {OWNER}: {e}", dir.display());
+        }
+        let (stop, ticks) = std::sync::mpsc::channel::<()>();
+        let (note_dir, mine) = (dir.to_path_buf(), owner.clone());
+        let thread = std::thread::Builder::new()
+            .name("library-lease".into())
+            .spawn(move || {
+                while let Err(std::sync::mpsc::RecvTimeoutError::Timeout) = ticks.recv_timeout(beat) {
+                    // another program took the library over (this one was asleep past the lease)
+                    if read_owner(&note_dir).is_some_and(|o| o.pid != mine.pid || o.host != mine.host || o.since != mine.since) {
+                        log::error!("library {}: another program took it over; changes made here may be lost", note_dir.display());
+                        return;
+                    }
+                    if let Err(e) = write_owner(&note_dir, &LockOwner { beat: now_secs(), ..mine.clone() }) {
+                        log::warn!("library {}: can't renew {OWNER}: {e}", note_dir.display());
+                    }
+                }
+            })
+            .map_err(|e| log::warn!("library {}: no thread to renew the lease ({e})", dir.display()))
+            .ok();
+        Ok(LibraryLock { dir: dir.to_path_buf(), file: None, held: false, lease: Some(Lease { stop: Some(stop), thread, owner }) })
     }
 
     /// The OS lock is held (`false`: the file system can't lock; opened unprotected).
@@ -151,6 +233,16 @@ impl Drop for LibraryLock {
     /// copy of every descriptor until it execs (issue #680). If the unlock fails the handle still
     /// closes right after, which releases the lock once every copy is gone, as before.
     fn drop(&mut self) {
+        if let Some(mut lease) = self.lease.take() {
+            drop(lease.stop.take());
+            if let Some(t) = lease.thread.take() {
+                let _ = t.join();
+            }
+            // only our own note: another program may have taken the library over meanwhile
+            if read_owner(&self.dir).is_some_and(|o| o.pid == lease.owner.pid && o.host == lease.owner.host && o.since == lease.owner.since) {
+                let _ = std::fs::remove_file(self.dir.join(OWNER));
+            }
+        }
         if self.held {
             let _ = std::fs::remove_file(self.dir.join(OWNER));
             if let Some(f) = &self.file

@@ -112,8 +112,8 @@ are the same in every version, so serve them with `Cache-Control: no-cache` (not
     new library folder (`library-restored-<time>/`; originals already stored are skipped, every
     entry's checksum is verified, and each restored original must match its content hash) and
     only then switches to it (`active-library` names the folder in use) and reloads: the previous
-    library stays in storage. Both are web-only (`file.backupLibrary`, `file.restoreLibrary`; the
-    desktop library is a folder).
+    library stays in storage. Restore is web-only (`file.restoreLibrary`); on the desktop Back Up
+    Library writes a dated library folder (`library.backup`), restored with File ▸ Open Library….
   - A failed save (quota exceeded, storage cleared) is not silent: the catalog then refuses new
     writes, so commands report `saved in memory but not written`, the top bar shows the unsaved
     warning (as on the desktop, see `docs/control-protocol.md`), and saving is retried every

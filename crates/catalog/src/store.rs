@@ -37,6 +37,13 @@ pub trait Store: Send {
     fn truncate(&mut self, name: &str, len: u64) -> io::Result<()>;
     /// Human-readable location (diagnostics).
     fn describe(&self) -> String;
+    /// Keep the file `name` as it is now under `as_name` too (replacing `as_name`), cheaply when
+    /// the store can (a hard link). `Ok(false)`: `name` doesn't exist, or the store keeps no
+    /// copies (the default: older catalog generations are a native feature).
+    fn keep_copy(&mut self, name: &str, as_name: &str) -> io::Result<bool> {
+        let _ = (name, as_name);
+        Ok(false)
+    }
     /// Another handle on the same files that a worker thread can write `catalog.snap` through
     /// while this one keeps appending to the log (background compaction). `None` (the default):
     /// snapshots are written synchronously.
@@ -137,6 +144,29 @@ impl Store for FsStore {
         self.dir.display().to_string()
     }
 
+    fn keep_copy(&mut self, name: &str, as_name: &str) -> io::Result<bool> {
+        let (from, to) = (self.path(name), self.path(as_name));
+        if std::fs::symlink_metadata(&from).is_err() {
+            return Ok(false);
+        }
+        // a second name for the same bytes, made under a temp name and renamed into place, so
+        // `as_name` is always a whole file; a copy where the volume has no hard links
+        let (tmp, _) = crate::safe_file::create_temp(&to)?;
+        let _ = std::fs::remove_file(&tmp);
+        let linked = std::fs::hard_link(&from, &tmp);
+        let r = match linked {
+            Ok(()) => std::fs::rename(&tmp, &to),
+            Err(_) => {
+                let bytes = std::fs::read(&from)?;
+                crate::safe_file::write_atomic(&to, &bytes)
+            }
+        };
+        if r.is_err() {
+            let _ = std::fs::remove_file(&tmp);
+        }
+        r.map(|()| true)
+    }
+
     #[cfg(not(target_arch = "wasm32"))]
     fn background_writer(&self) -> Option<Box<dyn Store>> {
         Some(Box::new(FsStore { dir: self.dir.clone(), appender: None }))
@@ -183,6 +213,11 @@ impl Store for MemStore {
     }
     fn describe(&self) -> String {
         "memory".into()
+    }
+    fn keep_copy(&mut self, name: &str, as_name: &str) -> io::Result<bool> {
+        let Some(bytes) = self.get(name) else { return Ok(false) };
+        self.set(as_name, bytes);
+        Ok(true)
     }
     fn background_writer(&self) -> Option<Box<dyn Store>> {
         self.background.then(|| Box::new(self.clone()) as Box<dyn Store>)

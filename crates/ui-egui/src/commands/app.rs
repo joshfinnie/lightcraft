@@ -54,7 +54,15 @@ pub(crate) fn file_backup_library(app: &mut LightcraftApp, c: &Call, _: NoParams
     let action = if id == "file.backupLibrary" { app.services.backup_library.as_mut() } else { app.services.restore_library.as_mut() };
     match action {
         Some(f) => f(&mut app.session),
-        None => Err("not available here: on the desktop the library is a folder; back it up with your other files".into()),
+        // the desktop: a dated copy of the catalog and settings in the library's Backups folder
+        None if id == "file.backupLibrary" => {
+            let r = app.session.execute("library.backup", &json!({})).map_err(|e| e.to_string())?;
+            let ctx = app.tasks.repaint.clone().unwrap_or_default();
+            let path = r["path"].as_str().unwrap_or_default().to_string();
+            app.toast_for(&ctx, format!("Library backed up to {path}. To restore it, open that folder with File ▸ Open Library…"), 8.0);
+            Ok(r)
+        }
+        None => Err("not available here: a backup is a library folder; restore it with File ▸ Open Library…".into()),
     }
 }
 

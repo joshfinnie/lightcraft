@@ -258,6 +258,13 @@ fn step(s: &mut Session, d: isize) -> Result<Value> {
 }
 
 params! {
+    /// `library.backup`
+    struct Backup {
+        dir: Option<String>,
+    }
+}
+
+params! {
     /// `library.up` / `library.down`
     struct Rows {
         rows: Option<u64>,
@@ -1978,9 +1985,24 @@ pub fn specs() -> Vec<CommandSpec> {
                     "replayed": lib.report.replayed,
                     "tornBytes": lib.report.torn_bytes,
                     "damaged": lib.report.damaged,
+                    "restored": lib.report.restored,
+                    "checksumMismatch": lib.report.checksum_mismatch,
                 },
             }))
         }),
+        cmd!(
+            "library.backup",
+            "Back Up Library",
+            ["File"],
+            None,
+            "{dir?: folder the backup folder is made in (default: the library's Backups folder)} → {path, photos}: a new folder `LightCraft Library <date time>` holding the catalog (unsaved changes included), presets, preferences and view; it opens as a library (File ▸ Open Library), which is how it is restored. Originals are not copied.",
+            Backup,
+            has_library,
+            |s, p| {
+                let path = s.backup_library(p.dir.as_deref().map(str::trim).filter(|d| !d.is_empty()).map(std::path::PathBuf::from))?;
+                Ok(json!({"path": path.display().to_string(), "photos": s.catalog.len()}))
+            }
+        ),
         cmd!("library.compact", "Optimize Library", ["File"], None, "{}", NoParams, has_library, |s, _| {
             s.compact_library()?;
             ok()

@@ -1153,6 +1153,8 @@ mod tests_folders;
 #[cfg(test)]
 mod tests_format_version;
 #[cfg(test)]
+mod tests_generations;
+#[cfg(test)]
 mod tests_index;
 #[cfg(test)]
 mod tests_journal;

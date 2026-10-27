@@ -177,3 +177,44 @@ fn dropping_the_lock_frees_the_library_while_another_thread_spawns_processes() {
         &refused[..refused.len().min(3)]
     );
 }
+
+/// Where the file system can't lock (some network shares), the owner note is a lease: a second
+/// opener is turned away while the holder keeps it fresh, and a note left by a crash stops
+/// counting once it is older than [`crate::lock::LEASE`].
+#[test]
+fn an_unlockable_library_is_guarded_by_a_lease() {
+    use crate::lock::LEASE;
+    use std::time::Duration;
+    let dir = temp_dir("lease");
+    let fresh = |host: &str, beat: u64| format!(r#"{{"pid":4242,"host":"{host}","program":"LightCraft","version":"0.9.0","since":1,"beat":{beat}}}"#);
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+    // another computer's live lease: refused, the note untouched
+    std::fs::write(dir.join(OWNER), fresh("studio-mac", now)).unwrap();
+    let e = LibraryLock::acquire_with(&dir, "LightCraft", true, Duration::from_millis(20)).unwrap_err();
+    assert!(matches!(&e, LockError::Leased(o) if o.host == "studio-mac"), "{e:?}");
+    assert!(e.to_string().contains("try again in 2 minutes"), "{e}");
+    assert_eq!(std::fs::read_to_string(dir.join(OWNER)).unwrap(), fresh("studio-mac", now));
+    // a lease older than LEASE (its program crashed): taken over
+    std::fs::write(dir.join(OWNER), fresh("studio-mac", now - LEASE.as_secs() - 5)).unwrap();
+    let l = LibraryLock::acquire_with(&dir, "LightCraft", true, Duration::from_millis(20)).unwrap();
+    assert!(!l.held(), "no OS lock");
+    let read = || serde_json::from_slice::<LockOwner>(&std::fs::read(dir.join(OWNER)).unwrap()).unwrap();
+    let mine = read();
+    assert_eq!(mine.pid, std::process::id());
+    assert!(mine.beat >= now);
+    // the holder keeps it fresh: a stale-looking beat is rewritten
+    let mut aged = mine.clone();
+    aged.beat = 7;
+    std::fs::write(dir.join(OWNER), serde_json::to_vec(&aged).unwrap()).unwrap();
+    let t = std::time::Instant::now();
+    while read().beat == 7 {
+        assert!(t.elapsed() < Duration::from_secs(10), "the lease is renewed");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    drop(l);
+    assert!(!dir.join(OWNER).exists(), "the note goes with the lease");
+    // a note without a beat (a build before leases, or a held OS lock's note) is no lease
+    std::fs::write(dir.join(OWNER), br#"{"pid":4242,"host":"studio-mac","program":"LightCraft","version":"0.2.0","since":1}"#).unwrap();
+    drop(LibraryLock::acquire_with(&dir, "LightCraft", true, Duration::from_millis(20)).unwrap());
+    let _ = std::fs::remove_dir_all(&dir);
+}

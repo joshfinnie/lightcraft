@@ -1,9 +1,16 @@
 //! Crash-safe catalog persistence: an append-only op log plus periodic snapshots.
 //!
 //! Files (in a [`Store`]):
-//! - `catalog.snap` — `{"format":"lightcraft-catalog","version":V,"seq":N,"catalog":{…}}`, the
-//!   state after op `N` in catalog format `V` ([`VERSION`]); replaced atomically (temp + fsync +
-//!   rename).
+//! - `catalog.snap` — `{"format":"lightcraft-catalog","version":V,"seq":N,"catalog":{…},"crc":C}`,
+//!   the state after op `N` in catalog format `V` ([`VERSION`]); replaced atomically (temp +
+//!   fsync + rename). `C` is the CRC-32 of the catalog's JSON text: a snapshot whose bytes changed
+//!   on disk (a bit flip that still parses) is caught. Snapshots written before the checksum have
+//!   none and load as they are.
+//! - `catalog.snap.1`, `catalog.snap.2` — the two snapshots before the current one ([`GENERATIONS`],
+//!   on stores that keep copies: native libraries). A `catalog.snap` that is unreadable or fails
+//!   its checksum is kept as `catalog.snap.damaged-<seq>` and the newest good generation is loaded
+//!   instead; the log is kept as `catalog.log.before-restore` first, since its records follow the
+//!   damaged snapshot ([`LoadReport::restored`]).
 //! - `catalog.log` — JSON lines, one per op applied after the snapshot:
 //!   `{"seq":N,"crc":C,"op":{…}}` where `C` is the CRC-32 of the op's JSON text. Appends are
 //!   fsynced before [`Journal::append`] returns.
@@ -72,6 +79,8 @@ use crate::store::Store;
 use crate::{Catalog, CatalogError, Op, Result};
 
 pub const SNAPSHOT: &str = "catalog.snap";
+/// The previous snapshots, newest first (see the module docs).
+pub const GENERATIONS: [&str; 2] = ["catalog.snap.1", "catalog.snap.2"];
 pub const LOG: &str = "catalog.log";
 const FORMAT: &str = "lightcraft-catalog";
 /// The catalog format this build writes (and the newest it reads). See the module docs →
@@ -116,6 +125,12 @@ pub struct LoadReport {
     pub upgraded_from: Option<u32>,
     /// What [`Catalog::repair`] changed in a damaged snapshot (empty for a sound one).
     pub repaired: Vec<String>,
+    /// `catalog.snap` was damaged and an older generation was loaded instead: what happened, for
+    /// the person (edits made after that generation may be missing).
+    pub restored: Option<String>,
+    /// `catalog.snap` failed its checksum and no older generation could be loaded: it was loaded
+    /// as it is.
+    pub checksum_mismatch: bool,
 }
 
 /// Where persistence time goes (reported by `library.info` → `persistence`; printed to stderr
@@ -282,6 +297,12 @@ fn resync(line: &[u8], last: u64) -> Option<(usize, (u64, Op))> {
 fn write_snapshot(store: &mut dyn Store, seq: u64, catalog: &Catalog) -> std::io::Result<SnapshotTiming> {
     let t0 = web_time::Instant::now();
     let mut serialize_ms = 0.0;
+    // the snapshots before this one stay, newest first: a damaged catalog.snap falls back to them
+    for (from, to) in [(GENERATIONS[0], GENERATIONS[1]), (SNAPSHOT, GENERATIONS[0])] {
+        if let Err(e) = store.keep_copy(from, to) {
+            log::warn!("catalog: can't keep {from} as {to}: {e}");
+        }
+    }
     let bytes = store.write_atomic_with(SNAPSHOT, &mut |w| {
         use std::io::Write;
         let t = web_time::Instant::now();
@@ -289,14 +310,104 @@ fn write_snapshot(store: &mut dyn Store, seq: u64, catalog: &Catalog) -> std::io
         // 1 MiB chunks go through the store's `dyn Write`
         let mut b = std::io::BufWriter::with_capacity(1 << 20, w);
         write!(b, "{{\"format\":\"{FORMAT}\",\"version\":{VERSION},\"seq\":{seq},\"catalog\":")?;
-        serde_json::to_writer(&mut b, catalog).map_err(std::io::Error::other)?;
-        b.write_all(b"}\n")?;
+        let mut summed = Crc { inner: &mut b, hasher: crc32fast::Hasher::new() };
+        serde_json::to_writer(&mut summed, catalog).map_err(std::io::Error::other)?;
+        let crc = summed.hasher.finalize();
+        writeln!(b, ",\"crc\":{crc}}}")?;
         b.flush()?;
         serialize_ms = ms_since(t);
         Ok(())
     })?;
     Ok(SnapshotTiming { serialize_ms, write_sync_ms: (ms_since(t0) - serialize_ms).max(0.0), bytes, ..Default::default() })
 }
+
+/// Write the catalog as a new library's `catalog.snap` (op 0, no log) into `store`: a backup that
+/// opens as a library of its own. Returns its size.
+pub fn write_backup(store: &mut dyn Store, catalog: &Catalog) -> std::io::Result<u64> {
+    write_snapshot(store, 0, catalog).map(|t| t.bytes)
+}
+
+/// Writes through to `inner`, summing what passes.
+struct Crc<W> {
+    inner: W,
+    hasher: crc32fast::Hasher,
+}
+
+impl<W: std::io::Write> std::io::Write for Crc<W> {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        let n = self.inner.write(buf)?;
+        self.hasher.update(buf.get(..n).unwrap_or(buf));
+        Ok(n)
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.inner.flush()
+    }
+}
+
+/// Whether the snapshot `bytes` holds the checksum its catalog's text has: `None` when it has no
+/// checksum (written before there was one, or not by [`write_snapshot`]).
+fn checksum_ok(bytes: &[u8]) -> Option<bool> {
+    const KEY: &[u8] = b"\"catalog\":";
+    const TRAILER: &[u8] = b",\"crc\":";
+    let text = bytes.trim_ascii_end();
+    let body = text.strip_suffix(b"}")?;
+    let at = body.windows(TRAILER.len()).rposition(|w| w == TRAILER)?;
+    let digits = body.get(at + TRAILER.len()..)?;
+    if digits.is_empty() || !digits.iter().all(u8::is_ascii_digit) {
+        return None;
+    }
+    let crc: u32 = std::str::from_utf8(digits).ok()?.parse().ok()?;
+    let start = text.windows(KEY.len()).position(|w| w == KEY)? + KEY.len();
+    Some(crc32fast::hash(text.get(start..at)?) == crc)
+}
+
+/// A snapshot read: the catalog, its `seq` and format version, and [`checksum_ok`].
+type Loaded = (Catalog, u64, u32, Option<bool>);
+
+/// Read the snapshot file `name` (`catalog.snap` or a generation).
+fn load_snapshot(name: &str, bytes: &[u8]) -> Result<Loaded> {
+    // the header first: a newer snapshot may not parse as this version's catalog
+    let h: SnapHeader = serde_json::from_slice(bytes).map_err(|e| CatalogError::Corrupt(format!("{name}: {e}")))?;
+    if h.format != FORMAT {
+        return Err(CatalogError::Corrupt(format!("{name}: not a LightCraft catalog (format {:?})", h.format)));
+    }
+    if h.version > VERSION {
+        return Err(newer(format!("{name} is catalog format v{}", h.version)));
+    }
+    let s: SnapFile = serde_json::from_slice(bytes).map_err(|e| CatalogError::Corrupt(format!("{name}: {e}")))?;
+    // a seq this high can't come from real use; the next record's seq would wrap
+    if s.seq > MAX_SEQ {
+        return Err(CatalogError::Corrupt(format!("{name}: seq {} is out of range", s.seq)));
+    }
+    Ok((s.catalog, s.seq, h.version, checksum_ok(bytes)))
+}
+
+/// `catalog.snap` (`bytes`, op `seq` when it could be read) is damaged (`why`): keep it and the log
+/// aside, and load the newest generation that is sound. `Ok(None)`: none is (nothing was changed).
+/// The generation becomes `catalog.snap` again, so later snapshots rotate sound copies.
+fn restore_generation(store: &mut dyn Store, bytes: &[u8], seq: u64, why: &str) -> Result<Option<(Loaded3, String)>> {
+    for name in GENERATIONS {
+        let Some(old) = store.read(name).map_err(io)? else { continue };
+        let Ok((catalog, gen_seq, version, sum)) = load_snapshot(name, &old) else { continue };
+        if sum == Some(false) {
+            continue;
+        }
+        let damaged = format!("{SNAPSHOT}.damaged-{seq}");
+        store.write_atomic(&damaged, bytes).map_err(io)?;
+        let log_kept = format!("{LOG}.before-restore-{seq}");
+        store.keep_copy(LOG, &log_kept).map_err(io)?;
+        store.write_atomic(SNAPSHOT, &old).map_err(io)?;
+        let msg = format!(
+            "The library's catalog file was damaged ({why}); it was kept as {damaged}, and the previous copy ({name}, saved before the last compaction) was opened instead. Changes made after it may be missing; the log of them was kept as {log_kept}."
+        );
+        log::error!("{msg}");
+        return Ok(Some(((catalog, gen_seq, version), msg)));
+    }
+    Ok(None)
+}
+
+/// A snapshot's catalog, `seq` and format version.
+type Loaded3 = (Catalog, u64, u32);
 
 /// The highest `seq` a snapshot may hold; beyond it the counter is treated as corrupt, far from overflow.
 const MAX_SEQ: u64 = u64::MAX / 2;
@@ -325,28 +436,38 @@ impl Journal {
         report.created = snap.is_none() && log.is_none();
         let (mut catalog, snapshot_seq, snapshot_version) = match snap {
             Some(bytes) => {
-                // the header first: a newer snapshot may not parse as this version's catalog
-                let h: SnapHeader = serde_json::from_slice(&bytes).map_err(|e| CatalogError::Corrupt(format!("{SNAPSHOT}: {e}")))?;
-                if h.format != FORMAT {
-                    return Err(CatalogError::Corrupt(format!("{SNAPSHOT}: not a LightCraft catalog (format {:?})", h.format)));
-                }
-                if h.version > VERSION {
-                    return Err(newer(format!("{SNAPSHOT} is catalog format v{}", h.version)));
-                }
-                let s: SnapFile = serde_json::from_slice(&bytes).map_err(|e| CatalogError::Corrupt(format!("{SNAPSHOT}: {e}")))?;
-                // a seq this high can't come from real use; the next record's seq would wrap
-                if s.seq > MAX_SEQ {
-                    return Err(CatalogError::Corrupt(format!("{SNAPSHOT}: seq {} is out of range", s.seq)));
-                }
-                let mut catalog = s.catalog;
+                let (mut catalog, seq, version) = match load_snapshot(SNAPSHOT, &bytes) {
+                    Ok((c, seq, v, Some(false))) => match restore_generation(store.as_mut(), &bytes, seq, "it doesn't match its checksum")? {
+                        Some((loaded, why)) => {
+                            report.restored = Some(why);
+                            loaded
+                        }
+                        None => {
+                            log::warn!("{SNAPSHOT} doesn't match its checksum, and no older snapshot loads: loaded as it is");
+                            report.checksum_mismatch = true;
+                            (c, seq, v)
+                        }
+                    },
+                    Ok((c, seq, v, _)) => (c, seq, v),
+                    Err(e @ CatalogError::Newer(_)) => return Err(e),
+                    Err(e) => match restore_generation(store.as_mut(), &bytes, 0, &e.to_string())? {
+                        Some((loaded, why)) => {
+                            report.restored = Some(why);
+                            loaded
+                        }
+                        None => return Err(e),
+                    },
+                };
                 report.repaired = catalog.repair();
                 for r in &report.repaired {
                     log::warn!("{SNAPSHOT}: {r}");
                 }
-                (catalog, s.seq, Some(h.version))
+                (catalog, seq, Some(version))
             }
             None => (Catalog::new(), 0, None),
         };
+        // the log follows the damaged snapshot: read again after it was set aside
+        let log = if report.restored.is_some() { store.read(LOG).map_err(io)? } else { log };
         report.snapshot_seq = snapshot_seq;
         let mut j = Journal {
             store,
@@ -459,7 +580,14 @@ impl Journal {
                 log::warn!("catalog: can't write the new library's snapshot: {e}");
             }
         } else if report.damaged.is_none() && snapshot_version != Some(VERSION) {
-            report.upgraded_from = Some(snapshot_version.unwrap_or(0));
+            let old = snapshot_version.unwrap_or(0);
+            report.upgraded_from = Some(old);
+            // what an older build can still open, kept before this format replaces it
+            for name in [SNAPSHOT, LOG] {
+                if let Err(e) = j.store.keep_copy(name, &format!("{name}.v{old}")) {
+                    log::warn!("catalog: can't keep {name} before the upgrade: {e}");
+                }
+            }
             match j.snapshot(&catalog) {
                 Ok(()) => {
                     if let Some(v) = report.upgraded_from {

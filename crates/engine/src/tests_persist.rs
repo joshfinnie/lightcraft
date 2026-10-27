@@ -191,3 +191,33 @@ fn close_fails_when_nothing_can_be_saved() {
     s.close_library().unwrap();
     assert_eq!(s.unsaved(), None);
 }
+
+/// Back Up Library (desktop): a dated folder holding the catalog as it is in memory, presets and
+/// preferences, that opens as a library itself (which is how a backup is restored).
+#[test]
+fn a_backup_opens_as_the_library_it_was_made_from() {
+    let dir = std::env::temp_dir().join(format!("lc-backup-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let mut s = Session::new().with_fs();
+    s.clock = Box::new(|| "2026-10-27T14:05:09".to_string());
+    s.open_library(dir.join("Library"), true).unwrap();
+    let id = s.catalog.photos().next().map(|p| p.id).unwrap();
+    s.execute("photo.rate", &json!({"ids": [id.0], "rating": 4})).unwrap();
+    let r = s.execute("library.backup", &json!({})).unwrap();
+    let at = std::path::PathBuf::from(r["path"].as_str().unwrap());
+    assert_eq!(at, dir.join("Library").join("Backups").join("LightCraft Library 2026-10-27 14-05-09"));
+    assert_eq!(r["photos"], s.catalog.len());
+    for f in ["catalog.snap", "presets.json", "prefs.json", "view.json"] {
+        assert!(at.join(f).is_file(), "{f}");
+    }
+    // a second one the same second gets its own folder
+    let again = s.execute("library.backup", &json!({})).unwrap();
+    assert!(again["path"].as_str().unwrap().ends_with("(1)"), "{again}");
+    let mut restored = Session::new().with_fs();
+    restored.open_library(&at, false).unwrap();
+    assert_eq!(restored.catalog.len(), s.catalog.len());
+    assert_eq!(restored.catalog.photo(id).map(|p| p.rating), Some(4));
+    drop(restored);
+    drop(s);
+    let _ = std::fs::remove_dir_all(&dir);
+}

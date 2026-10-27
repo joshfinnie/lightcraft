@@ -98,7 +98,7 @@ fn unreadable_settings_are_not_overwritten() {
 
 /// Issue #171: a library whose `catalog.lock` can't be locked (stood in for here by a directory
 /// of that name, which takes the same path as a file system without locks) still opens, and the
-/// user is told it is unprotected — in `library.info` and once through the library warnings the
+/// user is told it is only guarded by a note (a lease) — in `library.info` and once through the library warnings the
 /// app's notices and the CLI show. A normally locked library says nothing.
 #[test]
 fn an_unlockable_library_opens_with_a_warning() {
@@ -108,7 +108,7 @@ fn an_unlockable_library_opens_with_a_warning() {
     s.open_library(&lib, false).unwrap();
     let info = s.execute("library.info", &json!({})).unwrap();
     let listed = info["settingsWarnings"].as_array().cloned().unwrap_or_default();
-    assert!(listed.iter().any(|w| w.as_str().is_some_and(|w| w.contains("without protection against a second program"))), "{info}");
+    assert!(listed.iter().any(|w| w.as_str().is_some_and(|w| w.contains("a note is weaker than a lock"))), "{info}");
     let warnings = s.take_library_warnings();
     assert_eq!(warnings.len(), 1, "{warnings:?}");
     drop(s);

@@ -306,6 +306,16 @@ fn presets_json(s: &Session) -> serde_json::Result<String> {
     serde_json::to_string_pretty(&f)
 }
 
+/// What the person should know about how the catalog loaded: restored from an older copy, or
+/// loaded although it failed its checksum.
+fn catalog_warnings(report: &LoadReport) -> Vec<String> {
+    let mut w: Vec<String> = report.restored.iter().cloned().collect();
+    if report.checksum_mismatch {
+        w.push("The library's catalog file doesn't match its checksum (its bytes changed on disk), and no older copy could be opened, so it was opened as it is. Check your photos and back up the library.".into());
+    }
+    w
+}
+
 /// Finish a background compaction that is done (cheap otherwise). A failed one lost nothing (the
 /// log is kept whole) and is retried later; it is reported like other persistence errors.
 fn poll_compaction(lib: &mut Library) {
@@ -593,6 +603,7 @@ impl Session {
             self.tidy_thumbnail_cache();
         }
         let view_written = self.view_json().unwrap_or_default();
+        let catalog_warnings = catalog_warnings(&report);
         self.library = Some(Library {
             dir,
             on_disk,
@@ -605,7 +616,7 @@ impl Session {
             forgot_local: None,
             presets_saved,
             view_written,
-            settings_warnings: unlocked_warning(lock.as_ref()).into_iter().chain(settings.warnings).collect(),
+            settings_warnings: unlocked_warning(lock.as_ref()).into_iter().chain(catalog_warnings).chain(settings.warnings).collect(),
             warnings_reported: 0,
             blocked: settings.blocked,
             lock: lock.take(),
@@ -835,6 +846,45 @@ impl Session {
     }
 
     /// Compact the log into a snapshot now.
+    /// Back up the library into a new folder `LightCraft Library <date time>` in `dir` (default:
+    /// the library's `Backups` folder): the catalog as it is in memory (unsaved changes included),
+    /// and the presets, preferences and view. The folder opens as a library itself, which is how a
+    /// backup is restored. Originals and caches are not copied. Returns the folder.
+    pub fn backup_library(&mut self, dir: Option<PathBuf>) -> Result<PathBuf> {
+        let Some(lib) = self.library.as_ref().filter(|l| l.on_disk) else {
+            return Err(EngineError::Other("no library on disk to back up".into()));
+        };
+        let parent = dir.unwrap_or_else(|| lib.dir.join("Backups"));
+        let stamp: String = (self.clock)()
+            .chars()
+            .map(|c| {
+                if c == ':' {
+                    '-'
+                } else if c == 'T' {
+                    ' '
+                } else {
+                    c
+                }
+            })
+            .collect();
+        let at = (0..1000u32)
+            .map(|n| parent.join(if n == 0 { format!("LightCraft Library {stamp}") } else { format!("LightCraft Library {stamp} ({n})") }))
+            .find(|p| std::fs::symlink_metadata(p).is_err())
+            .ok_or_else(|| EngineError::Other(format!("no free backup folder name in {}", parent.display())))?;
+        let mut store = FsStore::open(&at).map_err(|e| EngineError::io(at.display(), &e))?;
+        lightcraft_catalog::journal::write_backup(&mut store, &self.catalog).map_err(|e| EngineError::io(at.display(), &e))?;
+        let to_json = |what: &str, r: serde_json::Result<Vec<u8>>| r.map_err(|e| EngineError::Other(format!("{what}: {e}")));
+        let files = [
+            ("presets.json", to_json("presets", presets_json(self).map(String::into_bytes))?),
+            ("prefs.json", to_json("prefs", serde_json::to_vec_pretty(&self.prefs))?),
+            ("view.json", to_json("view", self.view_json())?),
+        ];
+        for (name, bytes) in files {
+            store.write_atomic(name, &bytes).map_err(|e| EngineError::io(at.join(name).display(), &e))?;
+        }
+        Ok(at)
+    }
+
     pub fn compact_library(&mut self) -> Result<()> {
         self.persist()?;
         if self.history.interaction.is_some() {
@@ -853,8 +903,9 @@ impl Session {
 fn unlocked_warning(lock: Option<&LibraryLock>) -> Option<String> {
     lock.filter(|l| !l.held()).map(|_| {
         "This library could not be locked (its catalog.lock file can't be locked where it is stored, e.g. on some network \
-         shares), so it is open without protection against a second program: use it in one LightCraft app or command at \
-         a time, or changes made in one of them can be lost."
+         shares). LightCraft keeps a note there instead that turns away a second program while this one runs, but a \
+         note is weaker than a lock: use the library in one LightCraft app or command at a time, or changes made in one \
+         of them can be lost."
             .to_string()
     })
 }
