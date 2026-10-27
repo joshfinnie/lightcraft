@@ -10,7 +10,7 @@ use crate::pick::{PickKind, PickRequest, Picked};
 
 /// `app.slideshowExport {format, size?, quality?, fps?, container?, fullScreen?, speed?, path?}`:
 /// without a path, a save dialog asks for one first.
-pub fn start(app: &mut LightcraftApp, id: &str, p: &Value) -> Result<Value, String> {
+pub fn start(app: &mut LightcraftApp, id: &str, p: &Value) -> crate::CmdResult {
     if app.session.slideshow_export.as_ref().is_some_and(|r| r.running()) {
         return Err("a slideshow export is already running".into());
     }

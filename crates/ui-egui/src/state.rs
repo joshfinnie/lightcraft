@@ -971,7 +971,7 @@ pub struct UiState {
     pub last_find_missing: Option<serde_json::Value>,
     /// The outcome (success or error) of the last Find Missing Photos task.
     #[serde(skip)]
-    pub last_find_missing_result: Option<Result<serde_json::Value, String>>,
+    pub last_find_missing_result: Option<crate::CmdResult>,
     /// Injected delay for Find Missing Photos worker (test-only, for timeout testing).
     #[cfg(test)]
     #[serde(skip)]

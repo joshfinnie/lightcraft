@@ -467,7 +467,7 @@ pub(crate) fn cards_seen(app: &mut LightcraftApp, now: Vec<lightcraft_engine::de
 }
 
 /// Scan `paths` in the background, then open the review dialog (see [`poll_scan`]).
-pub fn open(app: &mut LightcraftApp, paths: Vec<String>) -> Result<Value, String> {
+pub fn open(app: &mut LightcraftApp, paths: Vec<String>) -> crate::CmdResult {
     if app.scan.is_some() {
         return Err("a scan is already running".into());
     }
@@ -489,10 +489,10 @@ pub fn open(app: &mut LightcraftApp, paths: Vec<String>) -> Result<Value, String
 /// once, the folder is listed and read on a worker thread (a network share can take minutes),
 /// and the photos then join the view in small batches under a progress window. A browse already
 /// running is replaced; the import review's scan is not.
-pub fn browse(app: &mut LightcraftApp, path: &str, subfolders: Option<bool>) -> Result<Value, String> {
+pub fn browse(app: &mut LightcraftApp, path: &str, subfolders: Option<bool>) -> crate::CmdResult {
     let dir = std::path::absolute(std::path::Path::new(path)).map_err(|e| e.to_string())?;
     if !dir.is_dir() {
-        return Err(format!("{path}: not a folder"));
+        return Err(format!("{path}: not a folder").into());
     }
     if app.scan.as_ref().is_some_and(|t| !t.browse) || app.import.as_ref().is_some_and(|t| !t.browse) {
         return Err("an import is running".into());
@@ -625,7 +625,7 @@ impl ScanTask {
 }
 
 /// Start importing the dialog's checked files (the dialog's OK / `ui.dialog.confirm`).
-pub fn start(app: &mut LightcraftApp, d: &ImportDialog) -> Result<Value, String> {
+pub fn start(app: &mut LightcraftApp, d: &ImportDialog) -> crate::CmdResult {
     busy_synchronizing(app)?;
     let queue = d.selected_paths();
     if queue.is_empty() {
@@ -634,7 +634,7 @@ pub fn start(app: &mut LightcraftApp, d: &ImportDialog) -> Result<Value, String>
     let undo0 = app.session.history.undo.len();
     let mut album = d.album;
     if album.is_none() && !d.new_album.trim().is_empty() {
-        let r = app.session.execute("album.create", &json!({"name": d.new_album.trim()})).map_err(|e| e.to_string())?;
+        let r = app.session.execute("album.create", &json!({"name": d.new_album.trim()}))?;
         album = r["id"].as_u64();
     }
     let mode = match (d.copy, d.move_files) {
@@ -677,7 +677,7 @@ pub fn start(app: &mut LightcraftApp, d: &ImportDialog) -> Result<Value, String>
 }
 
 /// Start importing `paths` (files or folders) in the background, e.g. dropped on the window.
-pub fn start_paths(app: &mut LightcraftApp, paths: Vec<String>) -> Result<Value, String> {
+pub fn start_paths(app: &mut LightcraftApp, paths: Vec<String>) -> crate::CmdResult {
     busy_synchronizing(app)?;
     if app.import.is_some() || app.scan.as_ref().is_some_and(|t| !t.browse) {
         return Err("an import is running".into());

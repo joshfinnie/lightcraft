@@ -718,11 +718,8 @@ pub(crate) fn start_object(app: &mut LightcraftApp, ctx: &egui::Context, op: &st
     if needs_model(app, "object", op) {
         return;
     }
-    let r = if op == "new" {
-        app.run_typed("mask.add", json!({"kind": "object"}))
-    } else {
-        app.run_typed("mask.addComponent", json!({"op": op, "kind": "object"}))
-    };
+    let r =
+        if op == "new" { app.run("mask.add", json!({"kind": "object"})) } else { app.run("mask.addComponent", json!({"op": op, "kind": "object"})) };
     match r {
         Ok(_) => {
             app.ui.tool = "object".into();
@@ -734,7 +731,7 @@ pub(crate) fn start_object(app: &mut LightcraftApp, ctx: &egui::Context, op: &st
 
 /// Start an AI mask of `kind` (object|prompt) combined by `op` (new|add|subtract|intersect),
 /// after the model was installed.
-pub(crate) fn begin_ai(app: &mut LightcraftApp, kind: &str, op: &str) -> Result<serde_json::Value, String> {
+pub(crate) fn begin_ai(app: &mut LightcraftApp, kind: &str, op: &str) -> crate::CmdResult {
     match kind {
         "object" => {
             let r = if op == "new" {
@@ -800,9 +797,9 @@ fn describe_field(app: &mut LightcraftApp, ui: &mut egui::Ui, new_mask: bool) {
     app.ui.mask_edit.describe = Some((op.clone(), text.clone()));
     if submit && !text.trim().is_empty() {
         let r = if op == "new" {
-            app.run_typed("mask.add", json!({"kind": "prompt", "text": text}))
+            app.run("mask.add", json!({"kind": "prompt", "text": text}))
         } else {
-            app.run_typed("mask.addComponent", json!({"op": op, "kind": "prompt", "text": text}))
+            app.run("mask.addComponent", json!({"op": op, "kind": "prompt", "text": text}))
         };
         match r {
             // the mask appears when the model has found it (a detail pass follows)

@@ -25,7 +25,7 @@ enum Kind {
 }
 
 enum Message {
-    Inspected(Result<Value, String>),
+    Inspected(crate::CmdResult),
     Prepared(Result<Box<lightcraft_engine::lightroom_job::PreparedLightroom>, String>),
     Finalized(Result<(), String>),
 }
@@ -140,7 +140,7 @@ impl Drop for LightroomTask {
 }
 
 #[cfg(target_arch = "wasm32")]
-fn unsupported_wasm() -> Result<Value, String> {
+fn unsupported_wasm() -> crate::CmdResult {
     Err("Lightroom catalog import is unavailable in browser builds; open the catalog in the native LightCraft app".into())
 }
 
@@ -175,7 +175,7 @@ fn spawn_inspect(
                 lightcraft_engine::lightroom_catalog::read_with_progress(&path, &cancel, &progress.catalog_total, &progress.catalog_done)
             })
             .and_then(|r| r.map(inspect_report));
-            let _ = tx.send(Message::Inspected(result));
+            let _ = tx.send(Message::Inspected(result.map_err(crate::CommandError::from)));
             ctx.request_repaint();
         })
         .map(|_| ())
@@ -229,7 +229,7 @@ fn spawn_finalize(
     _tx: mpsc::Sender<Message>,
     _ctx: egui::Context,
 ) -> Result<(), String> {
-    unsupported_wasm().map(|_| ())
+    unsupported_wasm().map(|_| ()).map_err(String::from)
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -343,7 +343,7 @@ fn result_dialog(value: &Value, summary: &str) -> crate::state::Dialog {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn start_inspect(app: &mut LightcraftApp, path: PathBuf, ctx: &egui::Context) -> Result<Value, String> {
+fn start_inspect(app: &mut LightcraftApp, path: PathBuf, ctx: &egui::Context) -> crate::CmdResult {
     busy(app)?;
     let cancel = Arc::new(AtomicBool::new(false));
     let progress = LightroomProgress::default();
@@ -355,9 +355,9 @@ fn start_inspect(app: &mut LightcraftApp, path: PathBuf, ctx: &egui::Context) ->
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn start_import(app: &mut LightcraftApp, path: PathBuf, update_existing: bool, ctx: &egui::Context) -> Result<Value, String> {
+fn start_import(app: &mut LightcraftApp, path: PathBuf, update_existing: bool, ctx: &egui::Context) -> crate::CmdResult {
     busy(app)?;
-    let job = lightcraft_engine::lightroom_job::LightroomJob::new(&mut app.session, path.clone(), update_existing).map_err(|e| e.to_string())?;
+    let job = lightcraft_engine::lightroom_job::LightroomJob::new(&mut app.session, path.clone(), update_existing)?;
     let cancel = Arc::new(AtomicBool::new(false));
     let progress = job.progress();
     let (tx, rx) = mpsc::channel();
@@ -368,7 +368,7 @@ fn start_import(app: &mut LightcraftApp, path: PathBuf, update_existing: bool, c
 }
 
 /// Run Lightroom UI commands before the generic engine dispatcher.
-pub fn command(app: &mut LightcraftApp, id: &str, p: &Value, ctx: &egui::Context) -> Result<Value, String> {
+pub fn command(app: &mut LightcraftApp, id: &str, p: &Value, ctx: &egui::Context) -> crate::CmdResult {
     #[cfg(target_arch = "wasm32")]
     {
         let _ = (app, id, p, ctx);
@@ -509,7 +509,7 @@ pub fn tick(app: &mut LightcraftApp, ctx: &egui::Context) {
 
 /// Wait for a task in control/headless mode while still applying owner-thread completion.
 #[cfg(not(target_arch = "wasm32"))]
-pub fn wait_for(app: &mut LightcraftApp, ctx: &egui::Context, timeout: std::time::Duration) -> Result<Value, String> {
+pub fn wait_for(app: &mut LightcraftApp, ctx: &egui::Context, timeout: std::time::Duration) -> crate::CmdResult {
     let start = std::time::Instant::now();
     while app.lightroom.is_some() {
         tick(app, ctx);
@@ -522,7 +522,7 @@ pub fn wait_for(app: &mut LightcraftApp, ctx: &egui::Context, timeout: std::time
 }
 
 #[cfg(target_arch = "wasm32")]
-pub fn wait_for(_app: &mut LightcraftApp, _ctx: &egui::Context, _timeout: std::time::Duration) -> Result<Value, String> {
+pub fn wait_for(_app: &mut LightcraftApp, _ctx: &egui::Context, _timeout: std::time::Duration) -> crate::CmdResult {
     unsupported_wasm()
 }
 
@@ -734,7 +734,7 @@ mod tests {
         let path = not_a_catalog("busy");
         for id in ["library.inspectLightroom", "library.importLightroom"] {
             let e = command(&mut h.app, id, &json!({"path": path}), &ctx).unwrap_err();
-            assert_eq!(e, "a Lightroom catalog task is already running");
+            assert_eq!(e.message, "a Lightroom catalog task is already running");
         }
         let status = command(&mut h.app, "library.inspectLightroom", &json!({}), &ctx).unwrap();
         assert_eq!(status["running"], true, "{status}");

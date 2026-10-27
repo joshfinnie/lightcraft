@@ -80,8 +80,10 @@ fn slideshow_advances_pauses_and_ends() {
 #[test]
 fn next_slides_are_prepared_before_they_are_due() {
     let mut h = grid();
-    // a long slide: anything rendered for the next ones is rendered ahead of time
-    run(&mut h, "view.slideshow", json!({"interval": 60, "fadeDuration": 1, "preparePreviews": true, "seed": 7}));
+    // the longest slide: anything rendered for the next ones is rendered ahead of time (with
+    // room for renders slowed down by a whole test run beside them)
+    let interval = lightcraft_engine::slideshow::SLIDE_MAX;
+    run(&mut h, "view.slideshow", json!({"interval": interval, "fadeDuration": 1, "preparePreviews": true, "seed": 7}));
     let ahead = play(&h).upcoming(crate::panels::slideshow::AHEAD);
     assert_eq!(ahead.len(), 2);
     let start = h.time();
@@ -91,7 +93,7 @@ fn next_slides_are_prepared_before_they_are_due() {
         h.step_until(SETTLE, |h| has_slide(h, current) && ahead.iter().all(|id| has_slide(h, *id))),
         "the slide up and the next two slides are rendered"
     );
-    assert!(h.time() - start < 60.0, "before the first is due");
+    assert!(h.time() - start < interval, "before the first is due");
     assert_eq!(photo_up(&h), current, "still on the first slide");
     h.settle(SETTLE);
 

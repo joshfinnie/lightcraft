@@ -139,8 +139,8 @@ impl MergeState {
 }
 
 fn spawn(app: &LightcraftApp, options: &MergeDialog, ids: &[PhotoId], preview: bool) -> Result<MergeTask, String> {
-    let (kind, finish) = lightcraft_engine::merge::parse(&options.command, &options.command_params()).map_err(|e| e.to_string())?;
-    let job = app.session.plan_merge(kind, finish, ids, preview).map_err(|e| e.to_string())?;
+    let (kind, finish) = lightcraft_engine::merge::parse(&options.command, &options.command_params())?;
+    let job = app.session.plan_merge(kind, finish, ids, preview)?;
     let progress = Arc::new(Mutex::new((0.0, "Starting".to_string())));
     let cancel = Arc::new(AtomicBool::new(false));
     let (tx, rx) = channel();
@@ -174,7 +174,7 @@ pub fn last_options(app: &LightcraftApp, command: &str) -> MergeDialog {
 }
 
 /// Open the merge dialog for the selection, with the options of the last merge of this kind.
-pub fn open(app: &mut LightcraftApp, command: &str) -> Result<Value, String> {
+pub fn open(app: &mut LightcraftApp, command: &str) -> crate::CmdResult {
     let ids = app.session.selected();
     if ids.len() < 2 {
         return Err("select at least 2 photos to merge".into());
@@ -191,7 +191,7 @@ pub fn open(app: &mut LightcraftApp, command: &str) -> Result<Value, String> {
 }
 
 /// Start the full-resolution merge (the dialog's Merge button / `ui.dialog.confirm`).
-pub fn start_final(app: &mut LightcraftApp, opts: &MergeDialog) -> Result<Value, String> {
+pub fn start_final(app: &mut LightcraftApp, opts: &MergeDialog) -> crate::CmdResult {
     if app.merge.final_task.is_some() {
         return Err("a merge is already running".into());
     }
@@ -214,7 +214,7 @@ pub fn start_final(app: &mut LightcraftApp, opts: &MergeDialog) -> Result<Value,
 
 /// Merge the selection without the dialog, with the options last used for `command` (the
 /// defaults the first time).
-pub fn start_last(app: &mut LightcraftApp, command: &str) -> Result<Value, String> {
+pub fn start_last(app: &mut LightcraftApp, command: &str) -> crate::CmdResult {
     let ids = app.session.selected();
     if ids.len() < 2 {
         return Err("select at least 2 photos to merge".into());
@@ -226,11 +226,11 @@ pub fn start_last(app: &mut LightcraftApp, command: &str) -> Result<Value, Strin
 
 /// HDR for Each Bracket Set (`merge.hdrBatch`): merge each bracket set among the photos in the background, one after
 /// the other, with the options last used for HDR (the defaults the first time).
-pub fn start_batch(app: &mut LightcraftApp, p: &Value) -> Result<Value, String> {
+pub fn start_batch(app: &mut LightcraftApp, p: &Value) -> crate::CmdResult {
     if app.merge.final_task.is_some() {
         return Err("a merge is already running".into());
     }
-    let ids = app.session.targets(p).map_err(|e| e.to_string())?;
+    let ids = app.session.targets(p)?;
     let sets = app.session.catalog.bracket_sets(&ids);
     if sets.is_empty() {
         return Err(lightcraft_engine::merge::NO_BRACKET_SETS.into());
@@ -246,7 +246,7 @@ fn next_in_batch(app: &mut LightcraftApp) -> Result<(), String> {
     let Some(ids) = app.merge.batch.pop_front() else { return Ok(()) };
     app.merge.ids = ids;
     let opts = last_options(app, "merge.hdr");
-    start_final(app, &opts).map(|_| ())
+    start_final(app, &opts).map(|_| ()).map_err(String::from)
 }
 
 /// Per frame: keep the preview in sync with the dialog's options, collect finished jobs.

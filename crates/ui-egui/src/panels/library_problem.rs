@@ -68,7 +68,7 @@ fn open(app: &mut LightcraftApp, path: Option<String>) {
                 if let Some(path) = path {
                     p.path = path;
                 }
-                p.error = e;
+                p.error = e.message;
                 p.dismissed = false;
             }
         }

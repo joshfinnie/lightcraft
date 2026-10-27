@@ -39,7 +39,7 @@ impl ExportTask {
 
 /// Start exporting `items` in the background, then do `after` with the files written (Add to Apple
 /// Photos). Errors per photo are collected, not fatal.
-pub fn start(app: &mut LightcraftApp, items: Vec<PreparedExport>, opts: ExportOptions, to: Destination, after: AfterExport) -> Result<Value, String> {
+pub fn start(app: &mut LightcraftApp, items: Vec<PreparedExport>, opts: ExportOptions, to: Destination, after: AfterExport) -> crate::CmdResult {
     if app.export.is_some() {
         return Err("an export is already running".into());
     }
@@ -86,7 +86,7 @@ pub fn start(app: &mut LightcraftApp, items: Vec<PreparedExport>, opts: ExportOp
 }
 
 /// Export a single paginated PDF with the same activity row and cancellation as image exports.
-pub fn start_contact_sheet(app: &mut LightcraftApp, params: &Value) -> Result<Value, String> {
+pub fn start_contact_sheet(app: &mut LightcraftApp, params: &Value) -> crate::CmdResult {
     if app.export.is_some() {
         return Err("an export is already running".into());
     }
@@ -134,7 +134,7 @@ pub fn start_contact_sheet(app: &mut LightcraftApp, params: &Value) -> Result<Va
 
 /// Print the session's current print (`print.get`) to a PDF in the background, with the same
 /// activity row and cancellation as the other exports.
-pub fn start_print(app: &mut LightcraftApp, params: &Value) -> Result<Value, String> {
+pub fn start_print(app: &mut LightcraftApp, params: &Value) -> crate::CmdResult {
     use lightcraft_engine::print::{compose, output};
     if app.export.is_some() {
         return Err("an export is already running".into());
@@ -143,7 +143,7 @@ pub fn start_print(app: &mut LightcraftApp, params: &Value) -> Result<Value, Str
     app.session.check_write_target(&path)?;
     let guard = app.session.original_guard();
     let settings = app.session.print.clone();
-    let ids = app.session.targets(params).map_err(|e| e.to_string())?;
+    let ids = app.session.targets(params)?;
     let prepared = compose::prepare(&mut app.session, &settings, &ids)?;
     let total = prepared.len();
     let title = std::path::Path::new(&path).file_stem().and_then(|n| n.to_str()).unwrap_or("Print").to_string();

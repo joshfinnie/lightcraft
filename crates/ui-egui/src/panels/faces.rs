@@ -541,7 +541,7 @@ pub fn offer_detector(app: &mut LightcraftApp) {
 }
 
 /// Inspect `path` and open the dialog for it (also what dropping a `.onnx` file on the window does).
-pub fn open_dialog(app: &mut LightcraftApp, path: &str) -> Result<Value, String> {
+pub fn open_dialog(app: &mut LightcraftApp, path: &str) -> crate::CmdResult {
     let info = app.run("faces.models.inspect", json!({"path": path}))?;
     app.ui.dialog = Some(crate::state::Dialog::FaceModel { path: path.to_string(), info, accepted: false });
     Ok(Value::Null)
@@ -549,7 +549,7 @@ pub fn open_dialog(app: &mut LightcraftApp, path: &str) -> Result<Value, String>
 
 /// The dialog's OK (the engine refuses without the acceptance): for a download, start it and watch it; for a file,
 /// install it. Either way the model ends up installed, in use, with recognition on.
-pub fn install(app: &mut LightcraftApp, path: &str, info: &Value, accepted: bool) -> Result<Value, String> {
+pub fn install(app: &mut LightcraftApp, path: &str, info: &Value, accepted: bool) -> crate::CmdResult {
     if !accepted {
         return Err("Tick the box to accept the model's terms first".into());
     }

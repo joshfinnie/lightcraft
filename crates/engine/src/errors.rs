@@ -155,6 +155,11 @@ pub struct CommandError {
 }
 
 impl CommandError {
+    /// This error about `what` (a path, a photo): `"{what}: {message}"`, of the same kind.
+    pub fn about(self, what: impl std::fmt::Display) -> Self {
+        Self { message: format!("{what}: {}", self.message), kind: self.kind }
+    }
+
     /// The error fields of a reply: `error` (the message), `code` ([`ErrorKind::code`]) and, for a
     /// missing model, `model` ([`AiModel::id`]).
     pub fn fields(&self) -> serde_json::Map<String, Value> {
@@ -188,6 +193,13 @@ impl std::fmt::Display for CommandError {
 }
 
 impl std::error::Error for CommandError {}
+
+/// As its message (a result's `error` field); [`CommandError::fields`] adds the code.
+impl serde::Serialize for CommandError {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> std::result::Result<S::Ok, S::Error> {
+        s.serialize_str(&self.message)
+    }
+}
 
 /// An error a frontend raised itself (its own commands, dialogs): [`ErrorKind::Other`].
 impl From<String> for CommandError {

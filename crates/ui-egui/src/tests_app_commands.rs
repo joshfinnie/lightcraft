@@ -23,10 +23,16 @@ fn toast(app: &LightcraftApp) -> String {
 fn commands_refuse_params_that_belong_to_another_command() {
     let mut app = app();
     let e = app.run("app.settings", json!({"tab": "colours"})).unwrap_err();
-    assert!(e.starts_with("unknown settings tab `colours` (general|import|"), "{e}");
-    assert_eq!(app.run("file.addPhotos", json!({"path": "/x"})).unwrap_err(), "file.addPhotos: takes `paths` (file.addFolder takes a `path`)");
-    assert_eq!(app.run("file.addFolder", json!({"paths": ["/x"]})).unwrap_err(), "file.addFolder: takes a `path` (file.addPhotos takes `paths`)");
-    assert!(app.run("file.addFromDevice", json!({"paths": ["/x"]})).unwrap_err().ends_with("takes a `path` (a card's DCIM folder)"));
+    assert!(e.message.starts_with("unknown settings tab `colours` (general|import|"), "{e}");
+    assert_eq!(
+        app.run("file.addPhotos", json!({"path": "/x"})).unwrap_err().message,
+        "file.addPhotos: takes `paths` (file.addFolder takes a `path`)"
+    );
+    assert_eq!(
+        app.run("file.addFolder", json!({"paths": ["/x"]})).unwrap_err().message,
+        "file.addFolder: takes a `path` (file.addPhotos takes `paths`)"
+    );
+    assert!(app.run("file.addFromDevice", json!({"paths": ["/x"]})).unwrap_err().message.ends_with("takes a `path` (a card's DCIM folder)"));
     assert!(app.ui.dialog.is_none(), "a refusal opens nothing");
 }
 
@@ -34,7 +40,7 @@ fn commands_refuse_params_that_belong_to_another_command() {
 fn without_a_file_dialog_a_command_that_needs_a_file_says_so_or_does_nothing() {
     let mut app = app();
     for id in ["file.exportCurvePresets", "file.importCurvePresets", "file.exportMaskEffects", "file.exportKeywords", "file.importKeywords"] {
-        assert_eq!(app.run(id, json!({})).unwrap_err(), "no file dialog on this platform", "{id}");
+        assert_eq!(app.run(id, json!({})).unwrap_err().message, "no file dialog on this platform", "{id}");
     }
     // these have nothing to do without a file: no error, no change
     assert_eq!(app.run("file.importLightroom", json!({})).unwrap(), Value::Null);

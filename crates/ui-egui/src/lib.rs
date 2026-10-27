@@ -192,6 +192,9 @@ use serde_json::Value;
 
 pub use control::{ControlRequest, ControlResponse};
 pub use lightcraft_engine::CommandError;
+
+/// What a UI command returns: its result, or an error that keeps its kind ([`CommandError`]).
+pub type CmdResult = Result<Value, CommandError>;
 pub use state::UiState;
 
 const TOAST_SECONDS: f64 = 1.4;
@@ -226,7 +229,7 @@ pub type ScreenProfileFn = Box<dyn FnMut() -> Option<Vec<u8>>>;
 pub type CheckEditorFn = Box<dyn Fn(&str) -> Result<(), String>>;
 /// Something the host does with the session (web: back up or restore the library in browser
 /// storage); the work may finish asynchronously.
-pub type HostAction = Box<dyn FnMut(&mut Session) -> Result<Value, String>>;
+pub type HostAction = Box<dyn FnMut(&mut Session) -> crate::CmdResult>;
 
 /// The system's dark/light appearance where egui doesn't report one (Linux desktops whose
 /// windowing layer says nothing, e.g. many Wayland compositors). The host answers from what it
@@ -581,19 +584,15 @@ impl LightcraftApp {
         }
     }
 
-    /// Run a UI or engine command by id. The single entry point for every frontend path.
-    pub fn run(&mut self, id: &str, params: Value) -> Result<Value, String> {
-        self.run_typed(id, params).map_err(|e| e.message)
-    }
-
-    /// [`LightcraftApp::run`], keeping what kind of error a refusal is: for code that decides on it
-    /// (offer a model's download, treat a cancel as one) instead of reading the message.
-    pub fn run_typed(&mut self, id: &str, params: Value) -> Result<Value, CommandError> {
+    /// Run a UI or engine command by id. The single entry point for every frontend path. A
+    /// refusal keeps what kind of error it is ([`CommandError::kind`]): decide on that (offer a
+    /// model's download, treat a cancel as one), never on the message.
+    pub fn run(&mut self, id: &str, params: Value) -> CmdResult {
         if let Some(result) = model_setup::intercept(self, id, &params) {
-            return self.report(id, &params, result.map_err(CommandError::from));
+            return self.report(id, &params, result);
         }
         if let Some(r) = menus::run_ui_command(self, id, &params) {
-            let r = r.map_err(CommandError::from).and_then(|v| docking::reveal_command(self, id).map(|()| v).map_err(CommandError::from));
+            let r = r.and_then(|v| docking::reveal_command(self, id).map(|()| v).map_err(CommandError::from));
             return self.report(id, &params, r);
         }
         let params = if id == "crop.aspect"

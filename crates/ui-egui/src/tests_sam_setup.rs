@@ -61,12 +61,12 @@ fn folder_command_opens_the_configured_directory_and_preserves_files() {
 fn missing_folder_or_opener_is_rejected_before_creating_any_directory() {
     let mut f = Fixture::new("unavailable");
     assert!(!crate::menus::ui_enabled(&f.app, "app.openSamModelFolder"));
-    assert!(f.app.run("app.openSamModelFolder", json!({})).unwrap_err().contains("not available"));
+    assert!(f.app.run("app.openSamModelFolder", json!({})).unwrap_err().message.contains("not available"));
     assert!(!f.root.exists());
     f.app.services.open_with = Some(Box::new(|_, _| panic!("no directory is configured")));
     f.app.session.segmenter.dir = None;
     assert!(!crate::menus::ui_enabled(&f.app, "app.openSamModelFolder"));
-    assert!(f.app.run("app.openSamModelFolder", json!({})).unwrap_err().contains("no folder"));
+    assert!(f.app.run("app.openSamModelFolder", json!({})).unwrap_err().message.contains("no folder"));
     assert!(!f.root.exists());
 }
 
@@ -88,7 +88,7 @@ fn folder_opener_failure_can_be_retried_without_dismissing_setup() {
     f.app.ui.dialog = Some(Dialog::SamModel { then: Some(("object".into(), "new".into())), error: None });
     let pending = f.app.ui.dialog.clone();
     f.app.services.open_with = Some(Box::new(|_, _| Err("test opener failure".into())));
-    assert_eq!(f.app.run("app.openSamModelFolder", json!({})).unwrap_err(), "test opener failure");
+    assert_eq!(f.app.run("app.openSamModelFolder", json!({})).unwrap_err().message, "test opener failure");
     assert_eq!(f.app.ui.dialog, pending);
     assert!(f.dir().is_dir());
     f.app.services.open_with = Some(Box::new(|_, _| Ok(())));

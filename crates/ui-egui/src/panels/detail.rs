@@ -1572,9 +1572,11 @@ fn crop_overlay(app: &mut LightcraftApp, ui: &mut egui::Ui, resp: &egui::Respons
     if resp.drag_started()
         && let Some(q) = ui.input(|i| i.pointer.press_origin()).or_else(|| resp.interact_pointer_pos())
     {
-        if let Err(e) = app.run("develop.beginInteraction", json!({"label": "Crop"})).and_then(|_| app.begin_crop().map(|_| serde_json::Value::Null))
+        if let Err(e) = app
+            .run("develop.beginInteraction", json!({"label": "Crop"}))
+            .and_then(|_| app.begin_crop().map_err(crate::CommandError::from).map(|_| serde_json::Value::Null))
         {
-            app.ui.status = e;
+            app.ui.status = e.message;
             let _ = app.session.cancel_interaction();
             return;
         }
@@ -1668,9 +1670,11 @@ fn crop_keys(
         let angle = d.crop.geometry.angle;
         let to_q = at + vec2(dx as f32 * map.rect.width(), dy as f32 * map.rect.height());
         let (from, to) = (to_straight(map.norm(at), angle, frame), to_straight(map.norm(to_q), angle, frame));
-        let started = app.run("develop.beginInteraction", json!({"label": "Crop"})).and_then(|_| app.begin_crop().map(|_| serde_json::Value::Null));
+        let started = app
+            .run("develop.beginInteraction", json!({"label": "Crop"}))
+            .and_then(|_| app.begin_crop().map_err(crate::CommandError::from).map(|_| serde_json::Value::Null));
         if let Err(e) = started {
-            app.ui.status = e;
+            app.ui.status = e.message;
             let _ = app.session.cancel_interaction();
             return false;
         }
@@ -2100,7 +2104,7 @@ fn mask_overlay(app: &mut LightcraftApp, ui: &mut egui::Ui, resp: &egui::Respons
         {
             let n = map.norm(q);
             let exclude = ui.input(|i| i.modifiers.alt);
-            match app.run_typed("mask.objectPoint", json!({"x": n.x, "y": n.y, "exclude": exclude})) {
+            match app.run("mask.objectPoint", json!({"x": n.x, "y": n.y, "exclude": exclude})) {
                 Ok(_) => {
                     if let Some(mid) = app.session.active_mask {
                         app.ui.mask_edit.detail_due = Some((ui.input(|i| i.time) + 1.0, mid));

@@ -542,7 +542,7 @@ fn open_download_dialog(app: &mut LightcraftApp, m: &Value) {
 }
 
 /// The dialog's OK for a denoise model: start the download and watch it.
-pub fn install(app: &mut LightcraftApp, info: &Value, accepted: bool) -> Result<Value, String> {
+pub fn install(app: &mut LightcraftApp, info: &Value, accepted: bool) -> crate::CmdResult {
     if !accepted {
         return Err(tr("Tick the box to accept the model's terms first").into());
     }

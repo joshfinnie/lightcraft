@@ -30,7 +30,7 @@ pub struct Call<'a> {
 }
 
 /// How a UI command runs.
-pub type Run = fn(&mut LightcraftApp, &Call) -> Result<Value, String>;
+pub type Run = fn(&mut LightcraftApp, &Call) -> crate::CmdResult;
 
 /// A UI command. `ui!(id, label, shortcut, menu, Params, run)` reads its params into `Params` (a
 /// `lightcraft_engine::params!` struct, or `Keys<…>` for one that hands its params on to code that
@@ -44,8 +44,8 @@ macro_rules! ui {
             menu: $menu,
             keys: lightcraft_engine::cmd::params::keys_of::<$ty>,
             run: {
-                const RUN: fn(&mut LightcraftApp, &Call, $ty) -> Result<Value, String> = $run;
-                |app, c| RUN(app, c, lightcraft_engine::cmd::params::parse_as::<$ty>(c.id, c.params).map_err(|e| e.to_string())?)
+                const RUN: fn(&mut LightcraftApp, &Call, $ty) -> crate::CmdResult = $run;
+                |app, c| RUN(app, c, lightcraft_engine::cmd::params::parse_as::<$ty>(c.id, c.params)?)
             },
         }
     };
@@ -558,7 +558,7 @@ pub(crate) fn adjust_brush(app: &mut LightcraftApp, k: f32, df: f32) -> Value {
 /// `file.addPhotos` / `file.addFolder` / `file.addFromDevice` `{album?}`: the review of the scan
 /// just started opens with that album chosen (an album's context menu ▸ Import ▸ …). An error
 /// means another scan is running.
-pub(crate) fn import_into_album(app: &mut LightcraftApp, album: Option<u64>, r: Result<Value, String>) -> Result<Value, String> {
+pub(crate) fn import_into_album(app: &mut LightcraftApp, album: Option<u64>, r: crate::CmdResult) -> crate::CmdResult {
     if r.is_ok()
         && let Some(t) = &mut app.scan
     {
@@ -602,27 +602,27 @@ pub(crate) fn appearance_json(app: &LightcraftApp) -> Value {
 
 /// `view.appearance {mode?}`: set Appearance Mode, or step to the next one (Auto, Light, Dark).
 /// The theme follows on the next frame ([`LightcraftApp::sync_theme`]).
-pub(crate) fn appearance_command(app: &mut LightcraftApp, mode: Option<&str>) -> Result<Value, String> {
+pub(crate) fn appearance_command(app: &mut LightcraftApp, mode: Option<&str>) -> crate::CmdResult {
     use crate::state::AppearanceMode;
     let mode = match mode {
         None => app.ui.settings.appearance_mode.next(),
         Some("auto") => AppearanceMode::Auto,
         Some("light") => AppearanceMode::Light,
         Some("dark") => AppearanceMode::Dark,
-        Some(m) => return Err(format!("view.appearance: unknown mode {m:?} (auto|light|dark)")),
+        Some(m) => return Err(format!("view.appearance: unknown mode {m:?} (auto|light|dark)").into()),
     };
     app.ui.settings.appearance_mode = mode;
     Ok(appearance_json(app))
 }
 
 /// `view.theme {theme}`: pick a theme; the mode becomes its family's (Dark or Light).
-pub(crate) fn theme_command(app: &mut LightcraftApp, theme: Option<&str>) -> Result<Value, String> {
+pub(crate) fn theme_command(app: &mut LightcraftApp, theme: Option<&str>) -> crate::CmdResult {
     let ids = crate::theme::ThemeKind::ALL.map(|k| k.id()).join("|");
     let Some(id) = theme else {
-        return Err(format!("view.theme: `theme` is required ({ids})"));
+        return Err(format!("view.theme: `theme` is required ({ids})").into());
     };
     let Some(kind) = crate::theme::ThemeKind::ALL.into_iter().find(|k| k.id() == id) else {
-        return Err(format!("view.theme: unknown theme `{id}` ({ids})"));
+        return Err(format!("view.theme: unknown theme `{id}` ({ids})").into());
     };
     app.ui.settings.select_theme(kind);
     Ok(appearance_json(app))
@@ -642,7 +642,7 @@ fn ui_override(id: &str) -> Option<Run> {
 
 /// Run a UI command (or the app's own way of running an engine command); `None` means "not a UI
 /// command — send it to the engine".
-pub fn run_ui_command(app: &mut LightcraftApp, id: &str, p: &Value) -> Option<Result<Value, String>> {
+pub fn run_ui_command(app: &mut LightcraftApp, id: &str, p: &Value) -> Option<crate::CmdResult> {
     let call = Call { id, params: p };
     if let Some(command) = ui_commands().find(|c| c.id == id) {
         return Some((command.run)(app, &call));
@@ -656,7 +656,7 @@ pub fn run_ui_command(app: &mut LightcraftApp, id: &str, p: &Value) -> Option<Re
             lightcraft_engine::EngineError::BadParams { msg, .. } => lightcraft_engine::EngineError::BadParams { cmd: id.into(), msg },
             e => e,
         };
-        return Some(Err(e.to_string()));
+        return Some(Err(e.into()));
     }
     Some(run(app, &call))
 }
@@ -811,7 +811,7 @@ pub fn reveal_label() -> &'static str {
 
 /// Help ▸ Open Log Folder: reveal the host's log file in the system file manager, so it can be
 /// attached to a report without hunting for the settings folder (#260).
-pub(crate) fn open_log_folder(app: &mut LightcraftApp) -> Result<Value, String> {
+pub(crate) fn open_log_folder(app: &mut LightcraftApp) -> crate::CmdResult {
     let path = app.services.log_file.clone().ok_or("this session keeps no log file")?;
     let reveal = app.services.reveal.as_mut().ok_or("not available here")?;
     reveal(&path)?;
@@ -819,7 +819,7 @@ pub(crate) fn open_log_folder(app: &mut LightcraftApp) -> Result<Value, String> 
 }
 
 /// Reveal the active photo's original in the system file manager.
-pub(crate) fn show_in_finder(app: &mut LightcraftApp) -> Result<Value, String> {
+pub(crate) fn show_in_finder(app: &mut LightcraftApp) -> crate::CmdResult {
     let id = app.session.active().ok_or("no photo selected")?;
     let path = match app.session.catalog.photo(id).map(|p| p.source.clone()) {
         Some(lightcraft_engine::catalog::Source::File { path }) => path,
@@ -834,7 +834,7 @@ pub(crate) fn show_in_finder(app: &mut LightcraftApp) -> Result<Value, String> {
 /// as Settings ▸ External Editing asks for that editor, then open them there. `p` may override the
 /// file (`format`, `colorSpace`, `bitDepth`) and the editor (`app`). PhotoCraft is checked first,
 /// so a missing editor leaves no copy behind.
-pub(crate) fn edit_in(app: &mut LightcraftApp, ctx: &egui::Context, p: &Value, photocraft: bool) -> Result<Value, String> {
+pub(crate) fn edit_in(app: &mut LightcraftApp, ctx: &egui::Context, p: &Value, photocraft: bool) -> crate::CmdResult {
     let settings = &app.ui.settings;
     let (file, configured) = if photocraft {
         let path = settings.photocraft_path.trim();
@@ -847,7 +847,7 @@ pub(crate) fn edit_in(app: &mut LightcraftApp, ctx: &egui::Context, p: &Value, p
         && let Err(e) = check(&editor)
     {
         app.toast(ctx, e.clone());
-        return Err(e);
+        return Err(e.into());
     }
     let mut params = file.params();
     if let (Some(o), Some(given)) = (params.as_object_mut(), p.as_object()) {
@@ -855,7 +855,7 @@ pub(crate) fn edit_in(app: &mut LightcraftApp, ctx: &egui::Context, p: &Value, p
             o.insert(k.clone(), v.clone());
         }
     }
-    let r = app.session.execute("photo.editExternal", &params).map_err(|e| e.to_string())?;
+    let r = app.session.execute("photo.editExternal", &params)?;
     // every selected photo got a copy (#920); each opens in the editor
     let copies: Vec<(String, Option<u64>)> = r["copies"]
         .as_array()
@@ -896,7 +896,7 @@ const MAX_ORIGINALS: usize = 50;
 /// set in Settings ▸ External Editing, e.g. a raw developer. `p` may give `ids` and the editor
 /// (`app`). Demo photos and missing files are skipped and listed; when no photo has a file to
 /// open, it fails saying why.
-pub(crate) fn open_original_in(app: &mut LightcraftApp, ctx: &egui::Context, p: &Value) -> Result<Value, String> {
+pub(crate) fn open_original_in(app: &mut LightcraftApp, ctx: &egui::Context, p: &Value) -> crate::CmdResult {
     let r = open_originals(app, p);
     if let Err(e) = &r {
         app.toast(ctx, e.clone());
@@ -914,14 +914,14 @@ pub(crate) fn open_original_in(app: &mut LightcraftApp, ctx: &egui::Context, p: 
     Ok(r)
 }
 
-pub(crate) fn open_originals(app: &mut LightcraftApp, p: &Value) -> Result<Value, String> {
-    let mut ids = app.session.targets(p).map_err(|e| e.to_string())?;
+pub(crate) fn open_originals(app: &mut LightcraftApp, p: &Value) -> crate::CmdResult {
+    let mut ids = app.session.targets(p)?;
     ids.dedup();
     if ids.is_empty() {
         return Err("no photo selected".into());
     }
     if ids.len() > MAX_ORIGINALS {
-        return Err(format!("{} photos selected: open at most {MAX_ORIGINALS} originals at a time", ids.len()));
+        return Err(format!("{} photos selected: open at most {MAX_ORIGINALS} originals at a time", ids.len()).into());
     }
     let mut files = Vec::new();
     let mut skipped = Vec::new();
@@ -940,9 +940,9 @@ pub(crate) fn open_originals(app: &mut LightcraftApp, p: &Value) -> Result<Value
     if files.is_empty() {
         let why = skipped.first().and_then(|s| s["reason"].as_str()).unwrap_or("no original file");
         return Err(if skipped.len() == 1 {
-            format!("nothing to open: {why}")
+            format!("nothing to open: {why}").into()
         } else {
-            format!("nothing to open: none of these photos has its original file ({why})")
+            format!("nothing to open: none of these photos has its original file ({why})").into()
         });
     }
     let editor = p.get("app").and_then(Value::as_str).map_or_else(|| app.ui.settings.external_editor.clone(), str::to_string);
@@ -969,7 +969,7 @@ pub(crate) fn open_originals(app: &mut LightcraftApp, p: &Value) -> Result<Value
     if opened.is_empty()
         && let Some(e) = failed
     {
-        return Err(format!("Couldn't open the editor: {e}"));
+        return Err(format!("Couldn't open the editor: {e}").into());
     }
     Ok(json!({"opened": opened, "skipped": skipped, "app": editor, "failed": failed}))
 }

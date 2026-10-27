@@ -1313,7 +1313,7 @@ fn can_drop_album(app: &LightcraftApp, dragged: AlbumId, target: Option<AlbumId>
 }
 
 /// Ends a drag that ran `result`: the folders down to the album open so it shows in its new place.
-fn finish_drop(app: &mut LightcraftApp, ui: &egui::Ui, dragged: AlbumId, result: Result<serde_json::Value, String>) {
+fn finish_drop(app: &mut LightcraftApp, ui: &egui::Ui, dragged: AlbumId, result: crate::CmdResult) {
     forget_hover(app, ui.ctx());
     match result {
         Ok(_) => {

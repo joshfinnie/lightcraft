@@ -1067,7 +1067,7 @@ pub(crate) fn can_switch_library(app: &LightcraftApp) -> Result<(), String> {
 /// itself, see [`lightcraft_engine::lightroom_folder`]) is not opened: the current library stays
 /// and a dialog offers Import Lightroom Catalog… instead; returns `{opened: false,
 /// lightroomCatalog: <.lrcat path or null>, path}`.
-pub fn open_library(app: &mut LightcraftApp, p: &Value) -> Result<Value, String> {
+pub fn open_library(app: &mut LightcraftApp, p: &Value) -> crate::CmdResult {
     can_switch_library(app)?;
     let path = match p.get("path").and_then(Value::as_str) {
         Some(x) => x.to_string(),
@@ -1090,7 +1090,7 @@ pub fn open_library(app: &mut LightcraftApp, p: &Value) -> Result<Value, String>
         let err = lightcraft_engine::EngineError::LightroomCatalog { path: path.clone().into(), catalog: catalog.clone().map(Into::into) };
         // the library problem window (no library could be opened) shows the error instead
         if app.library_problem.is_some() {
-            return Err(err.to_string());
+            return Err(err.to_string().into());
         }
         app.ui.dialog = Some(crate::state::Dialog::LightroomCatalog { folder: path.clone(), catalog: catalog.clone() });
         return Ok(json!({"opened": false, "lightroomCatalog": catalog, "path": path}));
@@ -1101,10 +1101,10 @@ pub fn open_library(app: &mut LightcraftApp, p: &Value) -> Result<Value, String>
     if (recent || app.ui.settings.library_path == path) && !matches!(std::path::Path::new(&path).try_exists(), Ok(true)) {
         let gone = format!("{path}: the library is no longer there (moved, renamed or on a disconnected drive)");
         if !recent {
-            return Err(gone);
+            return Err(gone.into());
         }
         app.ui.settings.recent_libraries.retain(|r| r != &path);
-        return Err(format!("{gone}; removed from Open Recent Library"));
+        return Err(format!("{gone}; removed from Open Recent Library").into());
     }
     switch_library(app, &path)
 }
@@ -1113,14 +1113,14 @@ pub fn open_library(app: &mut LightcraftApp, p: &Value) -> Result<Value, String>
 /// another program, unreadable, a file), the error is returned and the current library stays open:
 /// the target is checked before anything is closed, and if opening it still fails the previous
 /// library is opened again (both errors are reported if that fails too).
-fn switch_library(app: &mut LightcraftApp, path: &str) -> Result<Value, String> {
-    let dir = app.session.check_library(std::path::Path::new(path)).map_err(|e| format!("{path}: {e}"))?;
+fn switch_library(app: &mut LightcraftApp, path: &str) -> crate::CmdResult {
+    let dir = app.session.check_library(std::path::Path::new(path)).map_err(|e| crate::CommandError::from(e).about(path))?;
     let path = dir.to_string_lossy().into_owned();
     // the library being left goes in the list too (also when it was opened at launch)
     let previous_dir = app.session.library.as_ref().filter(|l| l.on_disk).map(|l| l.dir.clone());
     let previous = previous_dir.as_ref().map(|d| d.to_string_lossy().into_owned());
-    app.session.close_library().map_err(|e| e.to_string())?;
-    let opened = app.session.open_library(&dir, false).map(|_| ()).map_err(|e| format!("{path}: {e}"));
+    app.session.close_library()?;
+    let opened = app.session.open_library(&dir, false).map(|_| ()).map_err(|e| crate::CommandError::from(e).about(&path));
     app.lightroom_last = None;
     app.lightroom_result = None;
     if matches!(app.ui.dialog.as_ref(), Some(crate::state::Dialog::LightroomResult { .. })) {
@@ -1132,7 +1132,10 @@ fn switch_library(app: &mut LightcraftApp, path: &str) -> Result<Value, String> 
         let Some(prev) = previous_dir else { return Err(err) };
         return match app.session.open_library(&prev, false) {
             Ok(_) => Err(err),
-            Err(e) => Err(format!("{err}; reopening the previous library {} failed too: {e}", prev.display())),
+            Err(e) => Err(crate::CommandError {
+                message: format!("{err}; reopening the previous library {} failed too: {e}", prev.display()),
+                kind: err.kind,
+            }),
         };
     }
     app.ui.settings.library_path = path.clone();
@@ -1164,7 +1167,7 @@ pub fn open_library_name(app: &LightcraftApp) -> Option<String> {
 /// is the folder `name` inside `path` (or inside a location chosen in a dialog); without it,
 /// `path` itself, or a new folder named after the default library. The folder must not hold a
 /// library already, nor anything else.
-pub fn new_library(app: &mut LightcraftApp, p: &Value) -> Result<Value, String> {
+pub fn new_library(app: &mut LightcraftApp, p: &Value) -> crate::CmdResult {
     can_switch_library(app)?;
     let name = match p.get("name") {
         None | Some(Value::Null) => None,
@@ -1205,13 +1208,13 @@ pub fn new_library(app: &mut LightcraftApp, p: &Value) -> Result<Value, String> 
         None => location,
     };
     if lightcraft_engine::library::is_library(&dir) {
-        return Err(format!("{}: there is a library here already; open it with File ▸ Open Library…", dir.display()));
+        return Err(format!("{}: there is a library here already; open it with File ▸ Open Library…", dir.display()).into());
     }
     if dir.is_file() {
-        return Err(format!("{}: is a file; a library is a folder", dir.display()));
+        return Err(format!("{}: is a file; a library is a folder", dir.display()).into());
     }
     if std::fs::read_dir(&dir).is_ok_and(|mut d| d.next().is_some()) {
-        return Err(format!("{}: the folder isn't empty; choose an empty folder or a new name", dir.display()));
+        return Err(format!("{}: the folder isn't empty; choose an empty folder or a new name", dir.display()).into());
     }
     std::fs::create_dir_all(&dir).map_err(|e| format!("{}: can't create the library folder: {e}", dir.display()))?;
     switch_library(app, &dir.to_string_lossy())
@@ -1246,7 +1249,7 @@ fn free_name(location: &std::path::Path, base: &str) -> std::path::PathBuf {
 /// `app.recentLibraries {clear?: bool}`: the recently opened libraries, newest first, as
 /// `[{path, name, exists, open}]` (`exists: false`: moved or on a disconnected drive). `clear`
 /// forgets them all.
-pub fn recent_libraries(app: &mut LightcraftApp, p: &Value) -> Result<Value, String> {
+pub fn recent_libraries(app: &mut LightcraftApp, p: &Value) -> crate::CmdResult {
     if p.get("clear").and_then(Value::as_bool) == Some(true) {
         app.ui.settings.recent_libraries.clear();
     }
@@ -1272,7 +1275,7 @@ pub fn recent_libraries(app: &mut LightcraftApp, p: &Value) -> Result<Value, Str
 /// only. A file that can't be used is an error and changes nothing. Returns the profile in use:
 /// `{path, description, kind (matrix|lut), primaries {red, green, blue: [x, y]}}`, with
 /// `path: null, screen: true` for the screen's profile.
-pub fn display_profile(app: &mut LightcraftApp, p: &Value) -> Result<Value, String> {
+pub fn display_profile(app: &mut LightcraftApp, p: &Value) -> crate::CmdResult {
     let path = match p.get("path") {
         None => None,
         Some(Value::Null) => Some(String::new()),
@@ -1318,7 +1321,7 @@ mod tests {
     fn open_library_is_refused_while_an_import_runs() {
         let mut app = app_with_import();
         let err = open_library(&mut app, &json!({"path": "other"})).unwrap_err();
-        assert!(err.contains("import to finish"), "{err}");
+        assert!(err.message.contains("import to finish"), "{err}");
         assert!(app.import.is_some());
     }
 
@@ -1326,7 +1329,7 @@ mod tests {
     fn new_library_is_refused_while_an_import_runs() {
         let mut app = app_with_import();
         let err = new_library(&mut app, &json!({"path": "other"})).unwrap_err();
-        assert!(err.contains("import to finish"), "{err}");
+        assert!(err.message.contains("import to finish"), "{err}");
         assert!(app.import.is_some());
     }
 
@@ -1351,7 +1354,7 @@ mod tests {
         let mut app = LightcraftApp::new(lightcraft_engine::Session::new(), crate::Services::default());
         app.ui.settings.library_path = path.clone();
         let err = open_library(&mut app, &json!({"path": path})).unwrap_err();
-        assert!(err.contains("no longer there"), "{err}");
+        assert!(err.message.contains("no longer there"), "{err}");
         assert!(!gone.exists());
         assert!(app.session.library.is_none());
     }
@@ -1365,7 +1368,7 @@ mod tests {
         crate::import::open(&mut app, vec![dir.to_string_lossy().into_owned()]).unwrap();
         assert!(app.scan.is_some());
         let err = open_library(&mut app, &json!({"path": "other"})).unwrap_err();
-        assert!(err.contains("import to finish"), "{err}");
+        assert!(err.message.contains("import to finish"), "{err}");
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

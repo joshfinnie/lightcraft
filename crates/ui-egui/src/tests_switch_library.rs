@@ -104,9 +104,9 @@ fn new_library_creates_opens_and_is_remembered_and_named() {
 
     // a second New Library at the same place is refused and the current one stays open
     let e = app.run("app.newLibrary", json!({"path": dir.to_string_lossy(), "name": "Client A"})).unwrap_err();
-    assert!(e.contains("library here already"), "{e}");
+    assert!(e.message.contains("library here already"), "{e}");
     let e = app.run("app.newLibrary", json!({"path": dir.to_string_lossy(), "name": "../x"})).unwrap_err();
-    assert!(e.contains("library name"), "{e}");
+    assert!(e.message.contains("library name"), "{e}");
     assert_eq!(app.session.library.as_ref().unwrap().dir, a);
 
     let list = app.run("app.recentLibraries", json!({})).unwrap();
@@ -168,7 +168,7 @@ fn missing_recent_libraries_are_greyed_out_and_pruned_and_the_list_is_capped() {
         .any(|n| matches!(n, crate::menubar::MenuNode::Item { params, enabled: false, .. } if params["path"] == gone.as_str()));
     assert!(disabled, "missing library greyed out");
     let e = app.run("app.openLibrary", json!({"path": gone})).unwrap_err();
-    assert!(e.contains("no longer there"), "{e}");
+    assert!(e.message.contains("no longer there"), "{e}");
     assert!(!std::path::Path::new(&gone).exists(), "no empty library created in its place");
     assert!(app.ui.settings.recent_libraries.is_empty());
     assert!(app.session.library.as_ref().unwrap().dir.ends_with("first"));
@@ -195,7 +195,9 @@ fn switching_to_a_locked_library_keeps_the_current_one_open() {
     let other = dir.join("Other");
     let held = lightcraft_catalog::LibraryLock::acquire(&other, "someone else").unwrap();
     let e = app.run("app.openLibrary", json!({"path": other.to_string_lossy()})).unwrap_err();
-    assert!(e.contains("already open"), "{e}");
+    assert!(e.message.contains("already open"), "{e}");
+    // still the engine's kind: the control channel and the CLI answer `code: "libraryInUse"`
+    assert_eq!(e.kind, lightcraft_engine::ErrorKind::LibraryInUse, "{e}");
     assert!(app.session.library.as_ref().unwrap().dir.ends_with("first"), "the current library stays");
     assert!(app.session.library.as_ref().unwrap().on_disk);
     assert!(app.ui.settings.library_path.ends_with("first"));
@@ -213,7 +215,7 @@ fn library_names_must_work_as_folder_names_on_every_system() {
     let mut app = app_in(&dir);
     for bad in ["a<b", "a>b", "a:b", "a\"b", "a/b", "a\\b", "a|b", "a?b", "a*b", "name.", "..", " ", "a\u{7}"] {
         let e = app.run("app.newLibrary", json!({"path": dir.to_string_lossy(), "name": bad})).unwrap_err();
-        assert!(e.contains("library name"), "{bad:?}: {e}");
+        assert!(e.message.contains("library name"), "{bad:?}: {e}");
     }
     assert!(app.session.library.as_ref().unwrap().dir.ends_with("first"));
     app.run("app.newLibrary", json!({"path": dir.to_string_lossy(), "name": "  Trip 2026  "})).unwrap();

@@ -214,7 +214,7 @@ pub fn handle(app: &mut LightcraftApp, ctx: &egui::Context, req: &ControlRequest
         "engine.execute" | "ui.menu.invoke" | "command" => {
             let Some(id) = s("command").or(s("id")) else { return err("missing `command`") };
             let params = p.get("params").cloned().filter(|v| !v.is_null()).unwrap_or(json!({}));
-            let r = app.run_typed(id, params);
+            let r = app.run(id, params);
             ctx.request_repaint();
             wrap(r)
         }
@@ -498,10 +498,10 @@ pub fn default_export_dir() -> String {
 /// Export the selected photos (UI command `app.export`). Params: see
 /// [`lightcraft_engine::export::ExportOptions::from_json`], plus `dir` (output folder) or `path`
 /// (exact output file, single photo), `ids` (default: the selection, else the active photo).
-pub fn export_active(app: &mut LightcraftApp, p: &Value) -> Result<Value, String> {
+pub fn export_active(app: &mut LightcraftApp, p: &Value) -> crate::CmdResult {
     use lightcraft_engine::export::{Destination, ExportOptions, export_batch};
     let p = &app.session.export_params(p)?;
-    let mut opts = ExportOptions::from_params(p).map_err(|e| e.to_string())?;
+    let mut opts = ExportOptions::from_params(p)?;
     if let (Some(path), None) = (p.get("path").and_then(Value::as_str), p.get("format")) {
         let ext = path.rsplit_once('.').map_or("", |(_, e)| e);
         opts.format = lightcraft_engine::export::ExportFormat::parse(ext).unwrap_or(opts.format);

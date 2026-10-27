@@ -1457,7 +1457,7 @@ pub fn show(app: &mut LightcraftApp, ctx: &egui::Context) {
             // the SAM 3 dialog stays open to show the download (or why it can't start)
             Err(e) if matches!(dlg, Dialog::SamModel { .. }) => {
                 if let Dialog::SamModel { error, .. } = &mut dlg {
-                    *error = Some(e);
+                    *error = Some(e.message);
                 }
             }
             Ok(r) if matches!(dlg, Dialog::NewAlbum { .. }) && r.get("skipped").and_then(serde_json::Value::as_u64).is_some_and(|n| n > 0) => {
@@ -1582,7 +1582,7 @@ fn sam_by_hand(sam: &lightcraft_engine::segment::Segmenter) -> bool {
 const SAM_HELP: &str = "https://github.com/joshfinnie/lightcraft/blob/main/docs/ai-masks.md#getting-the-model";
 
 /// Open the configured SAM 3 folder itself; revealing a file opens its parent instead.
-pub(crate) fn show_model_folder(app: &mut LightcraftApp) -> Result<serde_json::Value, String> {
+pub(crate) fn show_model_folder(app: &mut LightcraftApp) -> crate::CmdResult {
     let dir = app.session.segmenter.dir.as_ref().ok_or("no folder is set for the SAM 3 model")?;
     let path = dir.to_str().ok_or("the model folder path is not valid UTF-8")?;
     let open = app.services.open_with.as_mut().ok_or("opening model folders is not available here")?;
@@ -1688,7 +1688,7 @@ fn sam_model_body(app: &mut LightcraftApp, ui: &mut egui::Ui, error: Option<&str
 }
 
 /// Runs a command that creates an album and asks the Albums tree to open the folders down to it.
-fn created_in(app: &mut LightcraftApp, command: &str, params: serde_json::Value) -> Result<serde_json::Value, String> {
+fn created_in(app: &mut LightcraftApp, command: &str, params: serde_json::Value) -> crate::CmdResult {
     let r = app.run(command, params)?;
     app.ui.reveal_album = r.get("id").and_then(serde_json::Value::as_u64);
     Ok(r)
@@ -1705,7 +1705,7 @@ pub(crate) fn album_entries(cat: &lightcraft_catalog::Catalog, editing: Option<u
     })
 }
 
-pub fn confirm_dialog(app: &mut LightcraftApp, dlg: &Dialog) -> Result<serde_json::Value, String> {
+pub fn confirm_dialog(app: &mut LightcraftApp, dlg: &Dialog) -> crate::CmdResult {
     match dlg {
         Dialog::LightroomResult { first, .. } => {
             if let Some(first) = first {
@@ -1817,17 +1817,17 @@ pub fn confirm_dialog(app: &mut LightcraftApp, dlg: &Dialog) -> Result<serde_jso
             use lightcraft_catalog::keywords::same;
             let name = name.trim();
             if name.is_empty() {
-                return Err(crate::i18n::tr("A keyword set needs a name").to_string());
+                return Err(crate::i18n::tr("A keyword set needs a name").to_string().into());
             }
             if same(name, lightcraft_engine::cmd::keywords::RECENT) {
-                return Err(crate::i18n::tr("Recent Keywords is built in: choose another name").to_string());
+                return Err(crate::i18n::tr("Recent Keywords is built in: choose another name").to_string().into());
             }
             // the set it renames: none when saving as new, or when it was deleted meanwhile (then it is
             // saved anew rather than refused)
             let sets = &app.session.prefs.keyword_sets;
             let renames = replaces.as_deref().filter(|_| !as_new).filter(|old| sets.iter().any(|x| same(&x.name, old)));
             if sets.iter().any(|x| same(&x.name, name) && !renames.is_some_and(|old| same(&x.name, old))) {
-                return Err(crate::i18n::tr_format!("There is a keyword set “{name}” already", name = name));
+                return Err(crate::i18n::tr_format!("There is a keyword set “{name}” already", name = name).into());
             }
             let mut params = json!({"name": name, "keywords": slots});
             match renames {
@@ -1860,7 +1860,7 @@ pub fn confirm_dialog(app: &mut LightcraftApp, dlg: &Dialog) -> Result<serde_jso
         Dialog::SmartRules { id, name, rules, parent } => {
             // refused before anything changes (not even the name)
             if let Some(problem) = rules.check_for(&app.session.catalog, id.map(lightcraft_catalog::AlbumId)).first() {
-                return Err(problem.to_string());
+                return Err(problem.to_string().into());
             }
             let name = if name.trim().is_empty() { "Smart Album".to_string() } else { name.trim().to_string() };
             match id {
@@ -1898,12 +1898,12 @@ pub fn confirm_dialog(app: &mut LightcraftApp, dlg: &Dialog) -> Result<serde_jso
             // another library opened meanwhile (from the menu bar, an agent): these numbers are
             // other photos there
             if *library != app.session.library_generation() {
-                return Err(crate::i18n::tr("Another library was opened since the photos were dropped: nothing was moved").to_string());
+                return Err(crate::i18n::tr("Another library was opened since the photos were dropped: nothing was moved").to_string().into());
             }
             if *dont_ask {
                 app.ui.settings.ask_before_move = false;
             }
-            crate::panels::left::move_photos(app, Some(ids), folder).map(|n| json!({"moved": n}))
+            crate::panels::left::move_photos(app, Some(ids), folder).map(|n| json!({"moved": n})).map_err(crate::CommandError::from)
         }
         // the catalog found: no file dialog; none: File ▸ Import Lightroom Catalog… asks for it
         Dialog::LightroomCatalog { catalog, .. } => {

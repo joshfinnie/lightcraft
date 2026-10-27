@@ -36,23 +36,35 @@ fn ai_mask_errors_offer_the_model_by_kind() {
     assert_eq!(h.app.ui.dialog, None);
 }
 
-/// `run_typed` keeps the engine's kind for the code that decides, and `run` the same message.
+/// `run` keeps the engine's kind for the code that decides on it.
 #[test]
-fn run_typed_keeps_the_kind_and_run_the_message() {
+fn run_keeps_the_engines_error_kind() {
     let mut h = demo();
     let dir = std::env::temp_dir().join(format!("lc-ui-error-kinds-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     h.app.session.face_models_dir = Some(dir.join("models"));
-    let typed = h.app.run_typed("faces.detect", json!({})).unwrap_err();
+    let typed = h.app.run("faces.detect", json!({})).unwrap_err();
     assert_eq!(typed.kind, ErrorKind::ModelMissing(AiModel::FaceDetector), "{typed}");
-    h.app.ui.dialog = None;
-    let text = h.app.run("faces.detect", json!({})).unwrap_err();
-    assert_eq!(text, typed.message);
-    let unknown = h.app.run_typed("no.such.command", json!({})).unwrap_err();
+    let unknown = h.app.run("no.such.command", json!({})).unwrap_err();
     assert_eq!(unknown.kind, ErrorKind::UnknownCommand, "{unknown}");
     // an error the UI raised itself is `Other`
     assert_eq!(CommandError::from("Tick the box to accept the model's terms first".to_string()).kind, ErrorKind::Other);
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A UI command that runs an engine command keeps that command's kind: Export Keywords into a
+/// folder that is a file is a file problem (`code: "io"`…), not `other`, as it was while UI
+/// commands returned their errors as text.
+#[test]
+fn ui_commands_keep_the_kind_of_the_engine_error_they_pass_on() {
+    let mut h = demo();
+    let not_a_folder = std::env::temp_dir().join(format!("lc-ui-kinds-file-{}", std::process::id()));
+    std::fs::write(&not_a_folder, b"a file").unwrap();
+    let e = h.app.run("file.exportKeywords", json!({"path": not_a_folder.join("k.txt").to_string_lossy()})).unwrap_err();
+    assert!(matches!(e.kind, ErrorKind::File(_)), "{:?}: {e}", e.kind);
+    let e = h.app.run("file.exportKeywords", json!({"path": 3})).unwrap_err();
+    assert_eq!(e.kind, ErrorKind::BadParams, "{e}");
+    let _ = std::fs::remove_file(&not_a_folder);
 }
 
 /// A control-channel error reply names its kind in `code` (and the model in `model`), so an agent
@@ -82,10 +94,10 @@ fn a_ui_command_error_reaches_the_status_line() {
     let mut h = demo();
     h.app.ui.status.clear();
     let e = h.app.run("app.exportPrevious", json!({})).unwrap_err();
-    assert_eq!(h.app.ui.status, e, "the UI command's error is on the status line");
+    assert_eq!(h.app.ui.status, e.message, "the UI command's error is on the status line");
     h.app.ui.status.clear();
     let e = h.app.run("photo.rate", json!({"rating": 9})).unwrap_err();
-    assert_eq!(h.app.ui.status, e);
+    assert_eq!(h.app.ui.status, e.message);
 }
 
 /// A SAM 3 download that ended while its dialog was closed: a cancel is told by the status's

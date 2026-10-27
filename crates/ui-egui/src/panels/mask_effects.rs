@@ -452,12 +452,12 @@ pub fn save_body(
 }
 
 /// Save from the New Effect Preset dialog.
-pub fn save_confirm(app: &mut LightcraftApp, name: &str, group: &str, fields: &[String], amount: bool, brush: bool) -> Result<Value, String> {
+pub fn save_confirm(app: &mut LightcraftApp, name: &str, group: &str, fields: &[String], amount: bool, brush: bool) -> crate::CmdResult {
     if name.trim().is_empty() {
-        return Err(crate::i18n::tr("Name the preset").to_string());
+        return Err(crate::i18n::tr("Name the preset").to_string().into());
     }
     if fields.is_empty() {
-        return Err(crate::i18n::tr("Choose at least one setting to include").to_string());
+        return Err(crate::i18n::tr("Choose at least one setting to include").to_string().into());
     }
     let mut keep: Vec<String> = fields.to_vec();
     if keep.iter().any(|f| f == "color_sat") {

@@ -58,7 +58,7 @@ pub struct Run {
 /// `seed` fixes the random order). The intro and ending screens that are on (`slideshow.titles`)
 /// play before the first photo and after the last one. With no photos in view there is nothing
 /// to show (titles alone don't make a slideshow).
-pub fn start(app: &mut LightcraftApp, p: &Value, now: f64) -> Result<Value, String> {
+pub fn start(app: &mut LightcraftApp, p: &Value, now: f64) -> crate::CmdResult {
     let mut overrides = p.as_object().cloned().unwrap_or_default();
     if let Some(i) = overrides.remove("interval") {
         overrides.insert("slideDuration".into(), i);
@@ -96,7 +96,7 @@ pub fn end(app: &mut LightcraftApp) {
 }
 
 /// The slideshow's own commands (the playback controls and their keys).
-pub fn command(app: &mut LightcraftApp, id: &str, now: f64) -> Result<Value, String> {
+pub fn command(app: &mut LightcraftApp, id: &str, now: f64) -> crate::CmdResult {
     let Some(run) = app.ui.slideshow.as_mut() else { return Err("no slideshow is playing".into()) };
     let t = match id {
         "slideshow.togglePause" => {

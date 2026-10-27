@@ -27,7 +27,7 @@ pub struct SyncTask {
 /// Open the dialog for folder `path` (called `name` in it) and start scanning.
 pub fn open(app: &mut LightcraftApp, path: &str, name: &str, disk: bool) -> Result<(), String> {
     cancel(app);
-    let input = SyncInput::new(&mut app.session, path, disk).map_err(|e| e.to_string())?;
+    let input = SyncInput::new(&mut app.session, path, disk)?;
     let progress = Arc::new(SyncProgress::default());
     let (tx, rx) = std::sync::mpsc::channel();
     let p = progress.clone();
@@ -176,16 +176,16 @@ pub fn body(app: &LightcraftApp, ui: &mut egui::Ui, dlg: &mut Dialog) {
 /// Synchronize with the dialog's choices: the scan the dialog showed is handed to a worker
 /// thread at once ([`SyncRun`]); nothing is read from disk on the UI thread. A scan that went
 /// stale (the folder's photos changed meanwhile) is refused and made again, keeping the choices.
-pub fn confirm(app: &mut LightcraftApp, dlg: &Dialog) -> Result<Value, String> {
+pub fn confirm(app: &mut LightcraftApp, dlg: &Dialog) -> crate::CmdResult {
     let Dialog::SynchronizeFolder { path, name, disk, counts: Some(_), import_new, relink_moved, remove_missing, read_metadata, .. } = dlg else {
         return Err("the folder is still being scanned".into());
     };
     if app.sync_run.is_some() {
-        return Err(crate::i18n::tr("A folder is already being synchronized").to_string());
+        return Err(crate::i18n::tr("A folder is already being synchronized").to_string().into());
     }
     // (an import readies its files against the library as it was: both could add the same file)
     if app.import.is_some() {
-        return Err(crate::i18n::tr("Wait for the import to finish").to_string());
+        return Err(crate::i18n::tr("Wait for the import to finish").to_string().into());
     }
     let choice = SyncChoice { import_new: *import_new, relink_moved: *relink_moved, remove_missing: *remove_missing, read_metadata: *read_metadata };
     app.sync_owns_changes = false;
@@ -203,7 +203,7 @@ pub fn confirm(app: &mut LightcraftApp, dlg: &Dialog) -> Result<Value, String> {
             {
                 (*i, *l, *m, *x) = (*import_new, *relink_moved, *remove_missing, *read_metadata);
             }
-            return Err(e);
+            return Err(e.into());
         }
     };
     let progress = Arc::new(SyncProgress::default());

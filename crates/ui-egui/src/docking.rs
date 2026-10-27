@@ -371,11 +371,11 @@ pub(crate) fn cancel_replaced_gesture(app: &crate::LightcraftApp, workspace: Opt
     }
 }
 
-pub fn command(app: &mut crate::LightcraftApp, reset: bool, params: &Value) -> Result<Value, String> {
+pub fn command(app: &mut crate::LightcraftApp, reset: bool, params: &Value) -> crate::CmdResult {
     command_impl(app, reset, params, false)
 }
 
-fn command_impl(app: &mut crate::LightcraftApp, reset: bool, params: &Value, renderer_action: bool) -> Result<Value, String> {
+fn command_impl(app: &mut crate::LightcraftApp, reset: bool, params: &Value, renderer_action: bool) -> crate::CmdResult {
     let mut workspace = app.ui.docking.clone().unwrap_or_else(|| from_ui(app));
     if reset {
         workspace = Workspace::default();
@@ -482,7 +482,7 @@ pub fn show(app: &mut crate::LightcraftApp, ui: &mut egui::Ui) {
     }
     for action in output.actions {
         if let Err(error) = serde_json::to_value(action)
-            .map_err(|error| error.to_string())
+            .map_err(|error| crate::CommandError::from(error.to_string()))
             .and_then(|action| command_impl(app, false, &json!({"action": action}), true))
         {
             app.ui.toast = Some((format!("Panel move was not applied: {error}"), ui.input(|input| input.time) + 8.0, None));

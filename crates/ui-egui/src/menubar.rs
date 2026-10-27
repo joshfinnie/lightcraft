@@ -835,7 +835,7 @@ pub fn menu_bar(app: &LightcraftApp) -> Vec<(String, Vec<MenuNode>)> {
 
 /// Run a menu item. Rating, flag and label items behave like their keys (the active photo only in
 /// Compare/Survey; Auto Advance moves on).
-pub fn run_item(app: &mut LightcraftApp, id: &str, params: Value) -> Result<Value, String> {
+pub fn run_item(app: &mut LightcraftApp, id: &str, params: Value) -> crate::CmdResult {
     let mut params = if params.is_null() { json!({}) } else { params };
     let culling_cmd = matches!(
         id,
@@ -1281,13 +1281,13 @@ mod tests {
         let n = w.len();
         drop(w);
         let r = run_item(&mut app, "app.export", json!({"preset": "Tiny PNG", "dir": "  "}));
-        assert_eq!(r.unwrap_err(), crate::control::NO_EXPORT_FOLDER);
+        assert_eq!(r.unwrap_err().message, crate::control::NO_EXPORT_FOLDER);
         assert_eq!(written.lock().unwrap().len(), n, "nothing written without a folder");
         // "Same folder as original photo" needs no folder; a demo photo has none of its own, so it
         // gets its own error rather than a file written elsewhere (issue #956)
         let r = run_item(&mut app, "app.export", json!({"preset": "Tiny PNG", "dir": "  ", "destinationMode": "sameAsOriginal"}));
         let e = r.unwrap_err();
-        assert!(e.contains("no folder on disk"), "{e}");
+        assert!(e.message.contains("no folder on disk"), "{e}");
         assert_eq!(written.lock().unwrap().len(), n, "nothing written for a photo without a folder");
     }
 
@@ -1360,7 +1360,7 @@ mod tests {
         assert_eq!(shown.lock().unwrap().as_slice(), [log]);
         // the file manager's failure is the command's
         app.services.reveal = Some(Box::new(|_: &str| Err("no file manager".into())));
-        assert_eq!(run_item(&mut app, "app.openLogFolder", Value::Null).unwrap_err(), "no file manager");
+        assert_eq!(run_item(&mut app, "app.openLogFolder", Value::Null).unwrap_err().message, "no file manager");
     }
 
     #[test]
@@ -1413,17 +1413,17 @@ mod tests {
         // 1. Point at a nonexistent directory
         let bad_dir = dir.join("nonexistent_subdir");
         let err = run_item(&mut app, "file.findMissing", json!({"folder": bad_dir.to_string_lossy(), "wait": true})).unwrap_err();
-        assert!(err.contains("not a folder"), "expected 'not a folder' error, got: {err}");
+        assert!(err.message.contains("not a folder"), "expected 'not a folder' error, got: {err}");
         assert!(app.ui.toast.as_ref().map(|t| t.0.contains("not a folder")).unwrap_or(false), "toast should reflect failure");
         assert!(app.ui.last_find_missing.is_none(), "last_find_missing must remain None on failure");
 
         // 2. Invalid timeout parameters are rejected cleanly
         let err = run_item(&mut app, "file.findMissing", json!({"folder": dir.to_string_lossy(), "wait": true, "timeout": -1.0})).unwrap_err();
-        assert!(err.contains("non-negative number of seconds"), "{err}");
+        assert!(err.message.contains("non-negative number of seconds"), "{err}");
         let err = run_item(&mut app, "file.findMissing", json!({"folder": dir.to_string_lossy(), "wait": true, "timeout": "invalid"})).unwrap_err();
-        assert!(err.contains("`timeout`: invalid type"), "{err}");
+        assert!(err.message.contains("`timeout`: invalid type"), "{err}");
         let err = run_item(&mut app, "file.findMissing", json!({"folder": dir.to_string_lossy(), "wait": true, "timeout": 1e300})).unwrap_err();
-        assert!(err.contains("too large"), "{err}");
+        assert!(err.message.contains("too large"), "{err}");
 
         // Catalog and photo path must not have been mutated
         assert_eq!(app.session.history.undo.len(), undo_count_before, "no undo steps added on failed search");
@@ -1487,8 +1487,8 @@ mod tests {
         app.ui.find_missing_test_delay = Some(std::time::Duration::from_millis(100));
         let err = run_item(&mut app, "file.findMissing", json!({"folder": dir.to_string_lossy(), "wait": true, "timeout": 0.005})).unwrap_err();
 
-        assert!(err.contains("search timed out"), "error should mention timeout: {err}");
-        assert!(err.contains("search continues in the background"), "error should document continuation: {err}");
+        assert!(err.message.contains("search timed out"), "error should mention timeout: {err}");
+        assert!(err.message.contains("search continues in the background"), "error should document continuation: {err}");
 
         // The background task continues running in app.tasks
         assert!(app.tasks.is_running("Find Missing Photos"), "task should continue running in background");

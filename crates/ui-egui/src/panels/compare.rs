@@ -42,7 +42,7 @@ pub fn compare_pair(app: &mut LightcraftApp) -> Option<(PhotoId, PhotoId)> {
 }
 
 /// Enter Compare with the current selection (the active photo becomes the select).
-pub fn enter_compare(app: &mut LightcraftApp) -> Result<Value, String> {
+pub fn enter_compare(app: &mut LightcraftApp) -> crate::CmdResult {
     app.ui.compare = None;
     let (a, b) = compare_pair(app).ok_or("Compare needs at least two photos")?;
     app.ui.view = ViewMode::Compare;
@@ -57,7 +57,7 @@ fn select_pair(app: &mut LightcraftApp, a: PhotoId, b: PhotoId, active: PhotoId)
 }
 
 /// Move the candidate `d` photos through the view (skipping the select); it becomes active.
-pub fn compare_step(app: &mut LightcraftApp, d: isize) -> Result<Value, String> {
+pub fn compare_step(app: &mut LightcraftApp, d: isize) -> crate::CmdResult {
     let (sel, cand) = compare_pair(app).ok_or("nothing to compare")?;
     let vis: Vec<PhotoId> = app.session.visible_cloned().into_iter().filter(|x| *x != sel).collect();
     let Some(i) = vis.iter().position(|x| *x == cand).or(if vis.is_empty() { None } else { Some(0) }) else { return Ok(Value::Null) };
@@ -66,7 +66,7 @@ pub fn compare_step(app: &mut LightcraftApp, d: isize) -> Result<Value, String> 
     Ok(json!({"candidate": vis[j].0}))
 }
 
-pub fn swap(app: &mut LightcraftApp) -> Result<Value, String> {
+pub fn swap(app: &mut LightcraftApp) -> crate::CmdResult {
     let (a, b) = compare_pair(app).ok_or("nothing to compare")?;
     let active = app.session.active().unwrap_or(b);
     select_pair(app, b, a, active);
@@ -76,15 +76,15 @@ pub fn swap(app: &mut LightcraftApp) -> Result<Value, String> {
 /// Show photo `id` on one side of the pair: `side` "select" or "candidate", else the side that is
 /// active (the one the Edit panel and the rating keys act on). A photo already on the other side
 /// swaps the two. The photo becomes the active one, so what is edited is always on screen.
-pub fn set_photo(app: &mut LightcraftApp, id: PhotoId, side: Option<&str>) -> Result<Value, String> {
+pub fn set_photo(app: &mut LightcraftApp, id: PhotoId, side: Option<&str>) -> crate::CmdResult {
     if app.session.catalog.photo(id).is_none_or(|p| p.deleted) {
-        return Err(format!("no photo {}", id.0));
+        return Err(format!("no photo {}", id.0).into());
     }
     let (sel, cand) = compare_pair(app).ok_or("nothing to compare")?;
     let to_select = match side {
         Some("select") => true,
         Some("candidate") => false,
-        Some(other) => return Err(format!("unknown side `{other}` (select or candidate)")),
+        Some(other) => return Err(format!("unknown side `{other}` (select or candidate)").into()),
         None => app.session.active() == Some(sel),
     };
     let (a, b) = match (to_select, id == sel, id == cand) {
@@ -101,9 +101,9 @@ pub fn set_photo(app: &mut LightcraftApp, id: PhotoId, side: Option<&str>) -> Re
 /// from the active photo) on the filmstrip in Compare: the selection changes as it does in the
 /// grid, but the two photos shown stay selected and the active one stays active, so the photo the
 /// rating keys act on is still on screen (#744). A plain click is [`set_photo`].
-pub fn select_with_modifier(app: &mut LightcraftApp, id: PhotoId, range: bool) -> Result<Value, String> {
+pub fn select_with_modifier(app: &mut LightcraftApp, id: PhotoId, range: bool) -> crate::CmdResult {
     if app.session.catalog.photo(id).is_none_or(|p| p.deleted) {
-        return Err(format!("no photo {}", id.0));
+        return Err(format!("no photo {}", id.0).into());
     }
     let (sel, cand) = compare_pair(app).ok_or("nothing to compare")?;
     let mut next = app.session.selection.clone();
@@ -119,11 +119,11 @@ pub fn select_with_modifier(app: &mut LightcraftApp, id: PhotoId, range: bool) -
     }
     let active = app.session.selection.active.filter(|a| next.contains(*a)).unwrap_or(cand);
     let ids: Vec<u64> = next.ids.iter().map(|p| p.0).collect();
-    app.session.execute("library.select", &json!({"ids": ids, "active": active.0})).map_err(|e| e.to_string())
+    app.session.execute("library.select", &json!({"ids": ids, "active": active.0})).map_err(crate::CommandError::from)
 }
 
 /// The candidate becomes the select; the next photo becomes the candidate.
-pub fn make_select(app: &mut LightcraftApp) -> Result<Value, String> {
+pub fn make_select(app: &mut LightcraftApp) -> crate::CmdResult {
     let (_, b) = compare_pair(app).ok_or("nothing to compare")?;
     let vis = app.session.visible_cloned();
     let i = vis.iter().position(|x| *x == b).unwrap_or(0);
@@ -148,7 +148,7 @@ pub fn survey_photos(app: &mut LightcraftApp) -> Vec<PhotoId> {
 }
 
 /// Move the active photo `d` steps within the survey.
-pub fn survey_step(app: &mut LightcraftApp, d: isize) -> Result<Value, String> {
+pub fn survey_step(app: &mut LightcraftApp, d: isize) -> crate::CmdResult {
     let v = survey_photos(app);
     if v.is_empty() {
         return Ok(Value::Null);
@@ -165,7 +165,7 @@ pub fn advance(app: &mut LightcraftApp) {
     let _ = match app.ui.view {
         ViewMode::Compare => compare_step(app, 1),
         ViewMode::Survey => survey_step(app, 1),
-        _ => app.session.execute("library.next", &json!({})).map_err(|e| e.to_string()),
+        _ => app.session.execute("library.next", &json!({})).map_err(crate::CommandError::from),
     };
 }
 

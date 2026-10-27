@@ -1491,7 +1491,7 @@ fn ai_masks_without_the_model_offer_the_download() {
     assert_eq!(h.app.ui.mask_edit.describe, None);
     // a click command from an agent gets the not-installed error at once, and the app offers the model
     let e = h.app.run("mask.add", json!({"kind": "prompt", "text": "sky"})).unwrap_err();
-    assert!(e.starts_with(lightcraft_engine::segment::NOT_INSTALLED), "{e}");
+    assert!(e.message.starts_with(lightcraft_engine::segment::NOT_INSTALLED), "{e}");
     assert!(develop(&h).masks.is_empty());
     assert!(t.elapsed() < SETTLE, "{:?}", t.elapsed());
 }

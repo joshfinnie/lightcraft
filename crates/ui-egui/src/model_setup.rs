@@ -41,7 +41,7 @@ pub(crate) fn denoise_requested(app: &LightcraftApp, id: PhotoId) -> bool {
     app.model_setup.denoise.as_ref().is_some_and(|r| r.photo == id && r.valid(app))
 }
 
-pub(crate) fn intercept(app: &mut LightcraftApp, command: &str, params: &Value) -> Option<Result<Value, String>> {
+pub(crate) fn intercept(app: &mut LightcraftApp, command: &str, params: &Value) -> Option<crate::CmdResult> {
     if matches!(command, "app.openLibrary" | "file.restoreLibrary") {
         app.model_setup = Pending::default();
         return None;
@@ -72,7 +72,7 @@ pub(crate) fn intercept(app: &mut LightcraftApp, command: &str, params: &Value) 
     };
     if !on {
         app.model_setup.denoise = None;
-        return Some(app.session.execute("denoise.toggle", &json!({"id": id.0, "enabled": false})).map_err(|e| e.to_string()));
+        return Some(app.session.execute("denoise.toggle", &json!({"id": id.0, "enabled": false})).map_err(crate::CommandError::from));
     }
     let _ = app.session.execute("denoise.status", &json!({"id": id.0}));
     if !matches!(app.session.denoise_photo_state(id), PhotoState::NoModel) {
@@ -81,7 +81,7 @@ pub(crate) fn intercept(app: &mut LightcraftApp, command: &str, params: &Value) 
     if app.session.execute("denoise.models.list", &json!({})).ok().is_none_or(|v| v["dir"].is_null()) {
         return None;
     }
-    Some(Request::capture(app, id).map(|request| {
+    Some(Request::capture(app, id).map_err(crate::CommandError::from).map(|request| {
         app.model_setup.denoise = Some(request);
         app.model_setup.next_check = 0.0;
         app.ui.dialog = Some(Dialog::Settings { tab: "denoise".into() });
@@ -148,6 +148,6 @@ pub(crate) fn pump(app: &mut LightcraftApp, ctx: &egui::Context) {
     }
     match app.run("denoise.toggle", json!({"id": request.photo.0, "enabled": true})) {
         Ok(_) => app.ui.status = tr("AI Denoise is enabled on the requesting photo").into(),
-        Err(error) => app.ui.status = error,
+        Err(error) => app.ui.status = error.message,
     }
 }

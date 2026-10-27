@@ -7,7 +7,7 @@ use lightcraft_catalog::PhotoId;
 use lightcraft_develop::{ControlSpec, DevelopSettings, Section, Track, WbMode, controls};
 use lightcraft_geom::Point;
 use lightcraft_raster::Histogram;
-use serde_json::{Value, json};
+use serde_json::json;
 
 use crate::LightcraftApp;
 use crate::icons::{Icon, paint};
@@ -21,7 +21,7 @@ pub fn apply_slider_out(
     app: &mut LightcraftApp,
     spec: &ControlSpec,
     out: SliderOut,
-    mut set: impl FnMut(&mut LightcraftApp, f64) -> Result<Value, String>,
+    mut set: impl FnMut(&mut LightcraftApp, f64) -> crate::CmdResult,
 ) {
     if out.drag_started && !out.reset {
         let _ = app.run("develop.beginInteraction", json!({"label": spec.label}));
