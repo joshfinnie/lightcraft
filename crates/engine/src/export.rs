@@ -1210,8 +1210,17 @@ impl ExportOptions {
     }
 }
 
+/// Whether [`unsharp`] changes a `w × h` image sharpened for `target`.
+fn sharpens(target: SharpenFor, w: usize, h: usize) -> bool {
+    !matches!(target, SharpenFor::None) && w >= 3 && h >= 3
+}
+
 /// Unsharp mask on an 8-bit image (separable box-blur approximation of a small Gaussian).
 pub fn output_sharpen(img: &mut Rgba8, target: SharpenFor, amount: SharpenAmount) {
+    // (a float copy of the whole image is no small thing at 24 MP: not made for nothing)
+    if !sharpens(target, img.width, img.height) {
+        return;
+    }
     let src: Vec<[f32; 3]> = img.data.iter().map(|p| [p[0] as f32, p[1] as f32, p[2] as f32]).collect();
     if let Some(out) = unsharp(img.width, img.height, &src, target, amount) {
         for (p, v) in img.data.iter_mut().zip(out) {
@@ -1225,6 +1234,9 @@ pub fn output_sharpen(img: &mut Rgba8, target: SharpenFor, amount: SharpenAmount
 /// [`output_sharpen`] on a high-bit-depth image (float images are sharpened in linear light).
 pub fn output_sharpen_deep(img: &mut DeepImage, target: SharpenFor, amount: SharpenAmount) {
     let (w, h) = (img.width, img.height);
+    if !sharpens(target, w, h) {
+        return;
+    }
     match &mut img.samples {
         DeepSamples::U16(v) => {
             let src: Vec<[f32; 3]> = v.as_chunks::<3>().0.iter().map(|c| [c[0] as f32, c[1] as f32, c[2] as f32]).collect();
@@ -1351,8 +1363,12 @@ pub fn encode_with_metadata(img: &Rgba8, o: &ExportOptions, meta: Option<&Metada
     r.map_err(|e| e.to_string())
 }
 
-/// Output sharpening and the watermark on an 8-bit render in `o.effective_space()`.
-fn finish_8bit(img: &Rgba8, o: &ExportOptions) -> Rgba8 {
+/// Output sharpening and the watermark on an 8-bit render in `o.effective_space()` (the render
+/// itself when there are neither: no copy of it).
+fn finish_8bit<'a>(img: &'a Rgba8, o: &ExportOptions) -> std::borrow::Cow<'a, Rgba8> {
+    if o.watermark.is_none() && !sharpens(o.sharpen, img.width, img.height) {
+        return std::borrow::Cow::Borrowed(img);
+    }
     let mut img = img.clone();
     output_sharpen(&mut img, o.sharpen, o.sharpen_amount);
     let space = o.effective_space();
@@ -1360,18 +1376,22 @@ fn finish_8bit(img: &Rgba8, o: &ExportOptions) -> Rgba8 {
         let wm = Watermark { color: srgb8_in(space, wm.color), target: Some(space), ..wm.clone() };
         draw_watermark(&mut img, &wm);
     }
-    img
+    std::borrow::Cow::Owned(img)
 }
 
-/// Output sharpening and the watermark on a high-bit-depth render.
-fn finish_deep(img: &DeepImage, o: &ExportOptions) -> DeepImage {
+/// Output sharpening and the watermark on a high-bit-depth render (the render itself when there
+/// are neither).
+fn finish_deep<'a>(img: &'a DeepImage, o: &ExportOptions) -> std::borrow::Cow<'a, DeepImage> {
+    if o.watermark.is_none() && !sharpens(o.sharpen, img.width, img.height) {
+        return std::borrow::Cow::Borrowed(img);
+    }
     let mut img = img.clone();
     output_sharpen_deep(&mut img, o.sharpen, o.sharpen_amount);
     if let Some(wm) = &o.watermark {
         let wm = Watermark { color: srgb8_in(img.space, wm.color), target: Some(img.space), ..wm.clone() };
         draw_watermark_deep(&mut img, &wm);
     }
-    img
+    std::borrow::Cow::Owned(img)
 }
 
 /// Encode an ISO 21496-1 gain map JPEG from the SDR rendition `sdr` (8-bit, in the output space)
