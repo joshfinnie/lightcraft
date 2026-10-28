@@ -1736,7 +1736,7 @@ mod thumbnail_hash_tests {
         assert_eq!(s.media.settings_hashes.computations, 2);
     }
     /// The loupe asks for its jobs on every frame: settings that didn't change aren't serialized
-    /// again (a painted mask is megabytes of JSON, ~15 ms a hash).
+    /// again (a painted mask is hundreds of thousands of numbers).
     #[test]
     fn loupe_jobs_for_unchanged_settings_hash_them_once() {
         let mut s = session();
