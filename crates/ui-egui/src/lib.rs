@@ -185,6 +185,7 @@ mod tests_zoom;
 #[cfg(test)]
 mod tests_zoom_keys;
 
+use std::sync::Arc;
 use std::sync::mpsc::{Receiver, Sender};
 
 use lightcraft_engine::{AiModel, ErrorKind, Session};
@@ -459,6 +460,8 @@ pub struct LightcraftApp {
     /// The look the loupe shows while the pointer rests on a preset or profile (set by the
     /// panels each frame; nothing is committed, no history entry).
     pub hover_preview: Option<HoverPreview>,
+    /// Last frame's [`Self::hover_preview`], whose settings [`Self::hover`] keeps when they are unchanged.
+    hover_last: Option<HoverPreview>,
     /// The window is in full screen (as last reported by the host, or as last requested).
     pub window_is_fullscreen: bool,
     /// The GPU preference last applied (`app.gpu`), to apply Settings changes once.
@@ -547,6 +550,7 @@ impl LightcraftApp {
             last_export_result: None,
             slideshow_export_reported: true,
             hover_preview: None,
+            hover_last: None,
             window_is_fullscreen: false,
             gpu_applied: None,
             gpu_notice: false,
@@ -582,6 +586,17 @@ impl LightcraftApp {
         {
             self.ui.people.person_from = Some((Some(to.to_string()), photo));
         }
+    }
+
+    /// Preview `settings` in the loupe this frame (the pointer rests on a preset, profile,
+    /// version or effect). Settings equal to last frame's keep their `Arc`, and with it the
+    /// render key hashed once, not on every frame of the hover.
+    pub fn hover(&mut self, label: String, settings: Arc<lightcraft_develop::DevelopSettings>) {
+        let settings = match self.hover_last.take() {
+            Some(last) if Arc::ptr_eq(&last.settings, &settings) || last.settings == settings => last.settings,
+            _ => settings,
+        };
+        self.hover_preview = Some(HoverPreview { label, settings });
     }
 
     /// Run a UI or engine command by id. The single entry point for every frontend path. A
@@ -1418,7 +1433,7 @@ impl LightcraftApp {
         }
         self.library_changed(&ctx);
         // panels set it again this frame while the pointer rests on a preset or profile
-        self.hover_preview = None;
+        self.hover_last = self.hover_preview.take();
         self.ai_mask_detail(&ctx);
         self.place_names_outcome(&ctx);
         if self.ui.fullscreen {
@@ -1488,16 +1503,16 @@ pub fn now_ms() -> f64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs_f64() * 1000.0).unwrap_or(0.0)
 }
 
-/// Whether the settings render in black & white.
 /// A temporary look for the loupe (hovering a preset or profile).
 #[derive(Clone, Debug, PartialEq)]
 pub struct HoverPreview {
     /// What is previewed (e.g. "Preset: Warm Glow").
     pub label: String,
     /// The photo's settings with the look applied.
-    pub settings: lightcraft_develop::DevelopSettings,
+    pub settings: Arc<lightcraft_develop::DevelopSettings>,
 }
 
+/// Whether the settings render in black & white.
 pub fn is_bw(d: &lightcraft_develop::DevelopSettings) -> bool {
     d.treatment == lightcraft_develop::Treatment::Bw || d.profile.id == "lc.mono" || d.profile.id.starts_with("lc.bw.")
 }

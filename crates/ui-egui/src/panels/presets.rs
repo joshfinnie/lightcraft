@@ -11,10 +11,10 @@ use lightcraft_develop::{ControlSpec, Preset, Section, Track};
 use lightcraft_engine::presets::PresetList;
 use serde_json::json;
 
+use crate::LightcraftApp;
 use crate::icons::{Icon, paint};
 use crate::theme::Tokens;
 use crate::widgets::{divider, icon_button, register, slider};
-use crate::{HoverPreview, LightcraftApp};
 
 /// Long edge of preset thumbnails (px).
 const THUMB_EDGE: usize = 128;
@@ -195,7 +195,7 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
                         && let Some(s) = look
                     {
                         let label = crate::i18n::tr_format!("Preset: {name}", name = name);
-                        app.hover_preview = Some(HoverPreview { label: label.clone(), settings: s });
+                        app.hover(label.clone(), Arc::new(s));
                         if let Some(id) = active {
                             ui.data_mut(|d| d.insert_temp(egui::Id::new("last-preset-hover"), (id, pr.clone(), label)));
                         }
@@ -265,7 +265,7 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
                     ui.data(|d| d.get_temp::<(lightcraft_catalog::PhotoId, Preset, String)>(last_hover_id))
                 && saved_id == id
             {
-                app.hover_preview = Some(HoverPreview { label: saved_label, settings: saved_preset.apply(curr, 1.0) });
+                app.hover(saved_label, Arc::new(saved_preset.apply(curr, 1.0)));
             }
         } else {
             ui.data_mut(|d| d.remove::<(lightcraft_catalog::PhotoId, Preset, String)>(last_hover_id));

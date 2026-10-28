@@ -335,7 +335,6 @@ mod imp {
     use std::time::{Duration, Instant};
 
     use lightcraft_catalog::{Op, Photo, PhotoId};
-    use lightcraft_develop::DevelopSettings;
     use lightcraft_faces::matching;
     use lightcraft_faces::runtime::Embedder;
     use lightcraft_geom::Rect;
@@ -427,7 +426,7 @@ mod imp {
         if todo.is_empty() && !detect {
             return None;
         }
-        let job = s.preview_job(id, EDGE, EDGE, false, &DevelopSettings::default())?;
+        let job = s.preview_job(id, EDGE, EDGE, false, Arc::default())?;
         let preview = s.scan_preview_of(&photo);
         Some(Prepared { tag, epoch: s.faces.epoch, id, content: crate::media::content_key(&photo), job, preview, todo, detect, detector })
     }

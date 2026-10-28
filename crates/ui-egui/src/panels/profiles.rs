@@ -13,7 +13,9 @@ use crate::icons::{Icon, paint};
 use crate::state::RightPanel;
 use crate::theme::Tokens;
 use crate::widgets::{divider, icon_button, one_line, register};
-use crate::{HoverPreview, LightcraftApp};
+use std::sync::Arc;
+
+use crate::LightcraftApp;
 
 /// Long edge of the variant thumbnails (px).
 const THUMB_EDGE: usize = 256;
@@ -120,10 +122,7 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui, id: PhotoId) {
             && let Some((p_name, _)) = app.session.profile_info(&saved_profile_id)
         {
             let s = with_profile_id(&d, &saved_profile_id);
-            app.hover_preview = Some(HoverPreview {
-                label: crate::i18n::tr_format!("Profile: {}", crate::i18n::profile_label(&saved_profile_id, p_name)),
-                settings: s,
-            });
+            app.hover(crate::i18n::tr_format!("Profile: {}", crate::i18n::profile_label(&saved_profile_id, p_name)), Arc::new(s));
         }
     } else {
         ui.data_mut(|m| m.remove::<(PhotoId, String)>(last_hover_id));
@@ -186,8 +185,7 @@ fn cell_ui(
         paint(painter, star.shrink(4.0), if fav { Icon::StarFilled } else { Icon::Star }, if fav || over_star { t.star } else { Color32::WHITE });
     }
     if resp.hovered() && !applied && !over_star {
-        app.hover_preview =
-            Some(HoverPreview { label: crate::i18n::tr_format!("Profile: {}", crate::i18n::profile_label(p_id, p_name)), settings: s.clone() });
+        app.hover(crate::i18n::tr_format!("Profile: {}", crate::i18n::profile_label(p_id, p_name)), Arc::new(s.clone()));
         ui.data_mut(|m| m.insert_temp(egui::Id::new("last-profile-hover"), (id, p_id.to_string())));
     } else if resp.hovered() && applied {
         // resting on the applied profile shows it (no preview), not the last other profile hovered

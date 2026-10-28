@@ -310,7 +310,7 @@ fn preview(app: &mut LightcraftApp, mask: &Mask, name: &str) {
     let mut d = (*d).clone();
     let Some(m) = d.masks.iter_mut().find(|m| m.id == mask.id) else { return };
     m.adjust = e.apply(&m.adjust);
-    app.hover_preview = Some(crate::HoverPreview { label: crate::i18n::tr_format!("Effect: {name}", name = display_name(name)), settings: d });
+    app.hover(crate::i18n::tr_format!("Effect: {name}", name = display_name(name)), std::sync::Arc::new(d));
 }
 
 /// The right-click menu of an effect in the Effect menu.

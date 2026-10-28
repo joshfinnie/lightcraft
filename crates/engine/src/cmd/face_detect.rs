@@ -11,7 +11,6 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Instant;
 
 use lightcraft_catalog::Op;
-use lightcraft_develop::DevelopSettings;
 use lightcraft_faces::known::YUNET_ID;
 use lightcraft_faces::yunet::{Detector, Face, Options};
 use lightcraft_meta::{Region, RegionKind};
@@ -256,8 +255,7 @@ pub(crate) fn is_detected(r: &Region) -> bool {
 /// The photo as the faces see it: upright, uncropped, default settings, as 8-bit RGB with its size, its long edge at
 /// most `edge`.
 pub(crate) fn render_rgb(s: &mut Session, id: lightcraft_catalog::PhotoId, edge: usize) -> std::result::Result<(Vec<u8>, usize, usize), String> {
-    let settings = DevelopSettings::default();
-    let job = s.preview_job(id, edge, edge, false, &settings).ok_or("no such photo")?;
+    let job = s.preview_job(id, edge, edge, false, Arc::default()).ok_or("no such photo")?;
     let image = job.run().rendered?.image;
     let rgb: Vec<u8> = image.data.iter().flat_map(|px| [px[0], px[1], px[2]]).collect();
     Ok((rgb, image.width, image.height))

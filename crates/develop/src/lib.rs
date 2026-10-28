@@ -83,13 +83,10 @@ impl DevelopSettings {
 
     /// Stable 64-bit hash of the settings (FNV-1a over canonical JSON), for preview cache keys.
     pub fn hash64(&self) -> u64 {
-        let s = serde_json::to_string(self).unwrap_or_default();
-        let mut h: u64 = 0xcbf2_9ce4_8422_2325;
-        for b in s.as_bytes() {
-            h ^= *b as u64;
-            h = h.wrapping_mul(0x0100_0000_01b3);
-        }
-        h
+        let mut h = Fnv(0xcbf2_9ce4_8422_2325);
+        // streamed: a painted edit is megabytes of JSON, never held as a string
+        let _ = serde_json::to_writer(&mut h, self);
+        h.0
     }
 
     /// True if nothing differs from a fresh default (ignoring white balance "as shot" values, and
@@ -168,6 +165,23 @@ impl DevelopSettings {
     }
 }
 
+/// FNV-1a over the bytes written to it.
+struct Fnv(u64);
+
+impl std::io::Write for Fnv {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        for b in buf {
+            self.0 ^= u64::from(*b);
+            self.0 = self.0.wrapping_mul(0x0100_0000_01b3);
+        }
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests_process;
 
@@ -201,6 +215,19 @@ mod tests {
         let back = DevelopSettings::from_json(&v).unwrap();
         assert_eq!(back, s);
         assert_ne!(back.hash64(), DevelopSettings::default().hash64());
+    }
+
+    /// The streamed hash is FNV-1a of the settings' JSON, as it was when it hashed a string, so
+    /// the previews cached on disk under it stay valid.
+    #[test]
+    fn hash64_is_fnv_of_the_json() {
+        let mut s = DevelopSettings::default();
+        controls::set(&mut s, "light.exposure", 0.7);
+        for d in [DevelopSettings::default(), s] {
+            let fnv =
+                serde_json::to_string(&d).unwrap().bytes().fold(0xcbf2_9ce4_8422_2325_u64, |h, b| (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3));
+            assert_eq!(d.hash64(), fnv);
+        }
     }
 
     #[test]

@@ -416,14 +416,14 @@ impl Session {
             _ => None,
         };
         let render = match region {
-            None => self.preview_job(id, INPUT_EDGE, INPUT_EDGE, false, &d).ok_or("no such photo")?,
+            None => self.preview_job(id, INPUT_EDGE, INPUT_EDGE, false, std::sync::Arc::new(d)).ok_or("no such photo")?,
             Some(region) => {
                 d.crop.geometry =
                     lightcraft_geom::CropGeometry { rect: lightcraft_geom::Rect::new(region[0], region[1], region[2], region[3]), angle: 0.0 };
                 d.crop.flip_h = false;
                 d.crop.flip_v = false;
                 d.geometry.constrain_crop = false;
-                let mut job = self.preview_job(id, INPUT_EDGE, INPUT_EDGE, true, &d).ok_or("no such photo")?;
+                let mut job = self.preview_job(id, INPUT_EDGE, INPUT_EDGE, true, std::sync::Arc::new(d)).ok_or("no such photo")?;
                 let frac = (region[2] - region[0]).max(region[3] - region[1]).max(0.01);
                 job.level = crate::media::SourceLevel::for_size((INPUT_EDGE as f64 / frac) as usize);
                 job.source = self.media.source_ref(&p, job.level);

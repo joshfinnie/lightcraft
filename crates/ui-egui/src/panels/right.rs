@@ -1311,8 +1311,7 @@ fn versions(app: &mut LightcraftApp, ui: &mut egui::Ui, id: PhotoId) {
             }
             // resting on a version shows it in the loupe (nothing is changed)
             if resp.hovered() && !current {
-                app.hover_preview =
-                    Some(crate::HoverPreview { label: crate::i18n::tr_format!("Version: {}", v.name), settings: (*v.settings).clone() });
+                app.hover(crate::i18n::tr_format!("Version: {}", v.name), v.settings.clone());
             }
             if resp.double_clicked() {
                 crate::panels::dialogs::prompt(app, "Rename Version", "Version name", &v.name, "version.rename", json!({"index": i}), "name");

@@ -28,19 +28,21 @@ use serde::{Deserialize, Serialize};
 
 const SETTINGS_HASH_ENTRIES: usize = 1024;
 
+/// `hash64` of the settings in use, remembered per allocation: a photo's settings are an `Arc`
+/// replaced on every edit, so an unchanged `Arc` has an unchanged hash. The `Weak` keeps the
+/// allocation, so its address can't be reused for other settings while the entry lives.
 #[derive(Default)]
 struct SettingsHashes {
-    entries: HashMap<PhotoId, (Weak<DevelopSettings>, u64)>,
-    order: VecDeque<PhotoId>,
+    entries: HashMap<usize, (Weak<DevelopSettings>, u64)>,
+    order: VecDeque<usize>,
     #[cfg(test)]
     computations: usize,
 }
 
 impl SettingsHashes {
-    fn get(&mut self, id: PhotoId, settings: &Arc<DevelopSettings>) -> u64 {
-        if let Some((old, hash)) = self.entries.get(&id)
-            && old.as_ptr() == Arc::as_ptr(settings)
-        {
+    fn get(&mut self, settings: &Arc<DevelopSettings>) -> u64 {
+        let at = Arc::as_ptr(settings) as usize;
+        if let Some((_, hash)) = self.entries.get(&at) {
             return *hash;
         }
         let hash = settings.hash64();
@@ -48,15 +50,13 @@ impl SettingsHashes {
         {
             self.computations += 1;
         }
-        if !self.entries.contains_key(&id) {
-            if self.entries.len() >= SETTINGS_HASH_ENTRIES
-                && let Some(oldest) = self.order.pop_front()
-            {
-                self.entries.remove(&oldest);
-            }
-            self.order.push_back(id);
+        if self.entries.len() >= SETTINGS_HASH_ENTRIES
+            && let Some(oldest) = self.order.pop_front()
+        {
+            self.entries.remove(&oldest);
         }
-        self.entries.insert(id, (Arc::downgrade(settings), hash));
+        self.order.push_back(at);
+        self.entries.insert(at, (Arc::downgrade(settings), hash));
         hash
     }
 }
@@ -1232,7 +1232,7 @@ impl crate::Session {
         let source_key = Hasher128::new().str(&content_key).finish();
         let content = source_key.0 as u64;
         // Temporary "before" settings must not replace the photo's cached develop hash.
-        let settings_hash = if before { settings.hash64() } else { self.media.settings_hashes.get(id, &settings) };
+        let settings_hash = if before { settings.hash64() } else { self.media.settings_hashes.get(&settings) };
         let salt = self.media.denoise_salt(id, &settings);
         let key = settings_hash
             ^ ((max_w as u64) << 40)
@@ -1272,12 +1272,22 @@ impl crate::Session {
         })
     }
 
+    /// `settings.hash64()`, computed once per `Arc` (a frame that draws unchanged settings
+    /// doesn't serialize them again).
+    pub fn settings_hash(&mut self, settings: &Arc<DevelopSettings>) -> u64 {
+        self.media.settings_hashes.get(settings)
+    }
+
     /// A render of `id` with `settings` in place of its own, fitting `max_w × max_h` (the loupe's
     /// temporary preview while hovering a preset or profile; nothing is committed or cached).
-    pub fn preview_job(&mut self, id: PhotoId, max_w: usize, max_h: usize, apply_crop: bool, settings: &DevelopSettings) -> Option<RenderJob> {
+    pub fn preview_job(&mut self, id: PhotoId, max_w: usize, max_h: usize, apply_crop: bool, settings: Arc<DevelopSettings>) -> Option<RenderJob> {
         let mut job = self.render_job(id, max_w, max_h, false, apply_crop)?;
-        job.settings = Arc::new(settings.clone());
-        job.key = settings.hash64() ^ ((max_w as u64) << 40) ^ ((max_h as u64) << 20) ^ (apply_crop as u64) ^ (job.level as u64) << 60;
+        job.key = self.media.settings_hashes.get(&settings)
+            ^ ((max_w as u64) << 40)
+            ^ ((max_h as u64) << 20)
+            ^ (apply_crop as u64)
+            ^ (job.level as u64) << 60;
+        job.settings = settings;
         Some(job)
     }
 
@@ -1396,11 +1406,11 @@ impl crate::Session {
     }
 
     /// Size-independent cache key of a photo's view render (loupe) for its current settings.
-    fn view_key(p: &Photo, apply_crop: bool) -> Hash128 {
+    fn view_key(hashes: &mut SettingsHashes, p: &Photo, apply_crop: bool) -> Hash128 {
         Hasher128::new()
             .str(&content_key(p))
             .str("view")
-            .u64(p.develop.hash64())
+            .u64(hashes.get(&p.develop))
             .u64(apply_crop as u64)
             .u64(RENDER_CACHE_VERSION)
             .u64(crate::camera_profiles::cache_key())
@@ -1412,7 +1422,7 @@ impl crate::Session {
     pub fn loupe_job(&mut self, id: PhotoId, max_w: usize, max_h: usize, apply_crop: bool) -> Option<RenderJob> {
         let mut job = self.render_job(id, max_w, max_h, false, apply_crop)?;
         let p = self.catalog.photo(id)?;
-        job.view_cache = Some((self.media.rendered.clone(), Self::view_key(p, apply_crop)));
+        job.view_cache = Some((self.media.rendered.clone(), Self::view_key(&mut self.media.settings_hashes, p, apply_crop)));
         Some(job)
     }
 
@@ -1521,8 +1531,8 @@ impl crate::Session {
         let p = self.catalog.photo(id)?.clone();
         let small = self.thumb_job(id, THUMB_SIZES[THUMB_SIZES.len() - 1])?;
         // (the thumbnail job itself starts with the cached thumbnail, after the sharper embedded preview)
-        let cached = vec![(self.media.rendered.clone(), Self::view_key(&p, apply_crop))];
-        let h = Hasher128::new().str(&content_key(&p)).str("quick").u64(p.develop.hash64()).u64(apply_crop as u64).finish();
+        let cached = vec![(self.media.rendered.clone(), Self::view_key(&mut self.media.settings_hashes, &p, apply_crop))];
+        let h = Hasher128::new().str(&content_key(&p)).str("quick").u64(self.media.settings_hashes.get(&p.develop)).u64(apply_crop as u64).finish();
         let key = h.0 as u64;
         let embedded = self.embedded_of(&p).map(|(path, l)| (path, l, max_edge.clamp(1, SourceLevel::Preview.max_edge())));
         Some(QuickJob { request_id: 0, photo: id, key, cached, embedded, small: apply_crop.then(|| Box::new(small)) })
@@ -1720,29 +1730,60 @@ mod thumbnail_hash_tests {
         s.thumb_job(PhotoId(1), 256).unwrap();
         s.thumb_job(PhotoId(1), 384).unwrap();
         assert_eq!(s.media.settings_hashes.computations, 2);
+        // undo puts the earlier settings back, whose hash is still known
         s.catalog.apply(undo).unwrap();
         s.thumb_job(PhotoId(1), 256).unwrap();
-        assert_eq!(s.media.settings_hashes.computations, 3);
+        assert_eq!(s.media.settings_hashes.computations, 2);
     }
+    /// The loupe asks for its jobs on every frame: settings that didn't change aren't serialized
+    /// again (a painted mask is megabytes of JSON, ~15 ms a hash).
+    #[test]
+    fn loupe_jobs_for_unchanged_settings_hash_them_once() {
+        let mut s = session();
+        let develop = s.catalog.photo(PhotoId(1)).unwrap().develop.clone();
+        for _ in 0..5 {
+            s.loupe_job(PhotoId(1), 640, 480, true).unwrap();
+            s.quick_view_job(PhotoId(1), 640, true).unwrap();
+            assert_eq!(s.settings_hash(&develop), develop.hash64());
+        }
+        assert_eq!(s.media.settings_hashes.computations, 1);
+        let look = Arc::new(DevelopSettings::default());
+        for _ in 0..5 {
+            let job = s.preview_job(PhotoId(1), 640, 480, true, look.clone()).unwrap();
+            assert!(Arc::ptr_eq(&job.settings, &look));
+        }
+        assert_eq!(s.media.settings_hashes.computations, 2);
+    }
+
     #[test]
     fn hash_cache_is_bounded_weak_and_shared_settings_remain_independent() {
         let mut hashes = SettingsHashes::default();
         let shared = Arc::new(DevelopSettings::default());
-        for id in 1..=SETTINGS_HASH_ENTRIES as u64 * 3 {
-            assert_eq!(hashes.get(PhotoId(id), &shared), shared.hash64());
+        // settings shared by many photos are hashed once
+        for _ in 0..3 {
+            assert_eq!(hashes.get(&shared), shared.hash64());
+        }
+        assert_eq!(hashes.computations, 1);
+        // a drag makes new settings every frame: the oldest are forgotten
+        let many: Vec<_> = (0..SETTINGS_HASH_ENTRIES * 3)
+            .map(|i| {
+                let mut d = DevelopSettings::default();
+                d.light.exposure = i as f64 / 1000.0;
+                Arc::new(d)
+            })
+            .collect();
+        for d in &many {
+            assert_eq!(hashes.get(d), d.hash64());
         }
         assert_eq!(hashes.entries.len(), SETTINGS_HASH_ENTRIES);
         assert_eq!(hashes.order.len(), SETTINGS_HASH_ENTRIES);
-        assert_eq!(Arc::strong_count(&shared), 1);
+        assert_eq!(Arc::strong_count(&shared), 1, "the cache doesn't keep settings alive");
         let mut edit = (*shared).clone();
         edit.light.exposure = 1.0;
         let edit = Arc::new(edit);
-        let a = PhotoId(10000);
-        let b = PhotoId(10001);
-        let initial = hashes.get(a, &shared);
-        assert_eq!(hashes.get(b, &shared), initial);
-        assert_ne!(hashes.get(a, &edit), initial);
-        assert_eq!(hashes.get(b, &shared), initial);
+        let initial = hashes.get(&shared);
+        assert_ne!(hashes.get(&edit), initial);
+        assert_eq!(hashes.get(&shared), initial);
         let mut s = session();
         s.thumb_job(PhotoId(1), 256).unwrap();
         s.media.clear_sources();
@@ -2293,7 +2334,7 @@ mod tests {
         // the photo's own settings never changed
         assert_eq!(*s.develop_of(id).unwrap(), mine);
         // hover previews: a loupe-sized job with other settings, its own key
-        let pv = s.preview_job(id, 800, 600, true, &a).unwrap();
+        let pv = s.preview_job(id, 800, 600, true, Arc::new(a.clone())).unwrap();
         assert_ne!(pv.key, s.render_job(id, 800, 600, false, true).unwrap().key);
         assert_eq!(*pv.settings, a);
     }

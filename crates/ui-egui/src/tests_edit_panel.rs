@@ -140,6 +140,12 @@ fn the_profile_menu_favourites_previews_and_applies_a_profile() {
     let preview = h.app.hover_preview.as_ref().expect("hovering a profile previews it");
     assert_eq!(preview.settings.profile.id, other);
     assert!(preview.label.starts_with("Profile: "), "{}", preview.label);
+    // resting there, the look keeps its settings from frame to frame: the render key is hashed
+    // from them once, not on every frame
+    let held = preview.settings.clone();
+    h.step();
+    let still = h.app.hover_preview.as_ref().expect("still hovering the profile");
+    assert!(std::sync::Arc::ptr_eq(&held, &still.settings));
 
     click(&mut h, &format!("profileMenu:group:{other}"));
     assert_eq!(develop(&h).profile.id, other);
