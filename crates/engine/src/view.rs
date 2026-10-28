@@ -282,9 +282,51 @@ pub(crate) struct ViewCache {
     pub(crate) visible_gen: u64,
     /// Photos in the current source with no filter on (cached like `visible`).
     pub(crate) total: Option<((u64, String), usize)>,
+    /// [`Session::selection_facts`] and what they were worked out for.
+    facts: std::sync::Mutex<Option<(FactsKey, SelectionFacts)>>,
+}
+
+/// The library, the catalog's revision and the selection: what [`SelectionFacts`] depend on.
+type FactsKey = (u64, u64, Vec<PhotoId>, Option<PhotoId>);
+
+/// What menus and their commands' `enabled()` ask of the whole selection on every frame
+/// ([`Session::selection_facts`]).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct SelectionFacts {
+    /// A selected photo (or the active one) is in Recently Deleted.
+    pub deleted: bool,
+    /// A photo the selection acts on renders with an older process than the newest.
+    pub outdated: bool,
+    /// A photo the selection acts on is in a stack.
+    pub stacked: bool,
 }
 
 impl Session {
+    /// [`SelectionFacts`], asked of every selected photo once and then remembered until the
+    /// catalog or the selection changes: menus ask on every frame, and a selection can be a whole
+    /// library.
+    pub fn selection_facts(&self) -> SelectionFacts {
+        let sel = &self.selection;
+        let mut held = self.view.facts.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(((library, revision, ids, active), facts)) = held.as_ref()
+            && *library == self.library_generation()
+            && *revision == self.catalog.revision
+            && *active == sel.active
+            && *ids == sel.ids
+        {
+            return *facts;
+        }
+        let photo = |id: &PhotoId| self.catalog.photo(*id);
+        let targets = if sel.ids.is_empty() { sel.active.as_slice() } else { sel.ids.as_slice() };
+        let facts = SelectionFacts {
+            deleted: sel.ids.iter().chain(&sel.active).any(|id| photo(id).is_some_and(|p| p.deleted)),
+            outdated: targets.iter().any(|id| photo(id).is_some_and(|p| p.develop.process.is_outdated())),
+            stacked: targets.iter().any(|id| self.catalog.stack_of(*id).is_some()),
+        };
+        *held = Some(((self.library_generation(), self.catalog.revision, sel.ids.clone(), sel.active), facts));
+        facts
+    }
+
     /// Photos shown in the grid/filmstrip for the current source, filter and sort.
     pub fn visible(&mut self) -> &[PhotoId] {
         let mut key =

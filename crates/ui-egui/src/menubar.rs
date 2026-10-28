@@ -282,20 +282,20 @@ const HIDDEN: &[&str] = &[
 
 /// The selection includes a photo in Recently Deleted.
 pub(crate) fn selection_deleted(app: &LightcraftApp) -> bool {
-    let s = &app.session;
-    s.selection.ids.iter().copied().chain(s.selection.active).any(|id| s.catalog.photo(id).is_some_and(|p| p.deleted))
+    app.session.selection_facts().deleted
 }
 
 /// Items only some hosts have are left out of the others' menus (the web build's library backup);
-/// Restore and Delete Permanently replace Delete for photos in Recently Deleted.
-fn host_supports(app: &LightcraftApp, id: &str) -> bool {
+/// Restore and Delete Permanently replace Delete for photos in Recently Deleted (`deleted`:
+/// [`selection_deleted`], asked once for the whole bar).
+fn host_supports(app: &LightcraftApp, id: &str, deleted: bool) -> bool {
     match id {
         "file.backupLibrary" => app.services.backup_library.is_some() || app.session.library.as_ref().is_some_and(|l| l.on_disk),
         "file.restoreLibrary" => app.services.restore_library.is_some(),
-        "photo.restore" | "photo.deletePermanently" => selection_deleted(app),
-        "photo.delete" => !selection_deleted(app),
+        "photo.restore" | "photo.deletePermanently" => deleted,
+        "photo.delete" => !deleted,
         // only in an album that holds its photos (not a smart one)
-        "album.removePhotos" => in_normal_album(app) && !selection_deleted(app),
+        "album.removePhotos" => in_normal_album(app) && !deleted,
         // only where the trash is on screen
         "library.emptyRecentlyDeleted" => app.session.source == lightcraft_engine::LibrarySource::RecentlyDeleted,
         _ => true,
@@ -771,8 +771,9 @@ fn tidy(v: Vec<MenuNode>) -> Vec<MenuNode> {
 
 /// The whole menu bar: (title, items) per menu in [`MENUS`] order.
 pub fn menu_bar(app: &LightcraftApp) -> Vec<(String, Vec<MenuNode>)> {
+    let deleted = selection_deleted(app);
     let entries: Vec<MenuEntry> =
-        crate::menus::menu_entries(app).into_iter().filter(|e| !HIDDEN.contains(&e.id.as_str()) && host_supports(app, &e.id)).collect();
+        crate::menus::menu_entries(app).into_iter().filter(|e| !HIDDEN.contains(&e.id.as_str()) && host_supports(app, &e.id, deleted)).collect();
     let mut used = vec![false; entries.len()];
     let mut bar = Vec::new();
     for title in MENUS {
@@ -1177,7 +1178,10 @@ mod tests {
         let all: Vec<MenuNode> = bar.iter().flat_map(|(_, v)| v.clone()).collect();
         // every engine command with a menu path is reachable (parameterized ones via submenus; items
         // that follow the state, like Restore for deleted photos, when it applies)
-        for c in lightcraft_engine::command_specs().iter().filter(|c| !c.menu.is_empty() && !HIDDEN.contains(&c.id) && host_supports(&app, c.id)) {
+        for c in lightcraft_engine::command_specs()
+            .iter()
+            .filter(|c| !c.menu.is_empty() && !HIDDEN.contains(&c.id) && host_supports(&app, c.id, selection_deleted(&app)))
+        {
             assert!(find(&all, c.id).is_some(), "{} missing from the menu bar", c.id);
         }
         for id in ["photo.rate", "photo.flag", "photo.label", "library.sort", "album.addPhotos", "view.compare", "stack.group", "photo.virtualCopy"] {
