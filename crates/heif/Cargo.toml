@@ -4,6 +4,7 @@ description = "Optional HEIF/HEIC still-image decoder for LightCraft (heic-rs fo
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+publish.workspace = true
 
 [dependencies]
 # Pure Rust, no unsafe. Pinned exactly: a young, single-owner crate that parses untrusted files;

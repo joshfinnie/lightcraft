@@ -3,6 +3,7 @@ name = "lightcraft-pipeline"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+publish.workspace = true
 description = "LightCraft develop pipeline: scene-referred, float, resolution independent (CPU reference) (L2)"
 
 [lints]

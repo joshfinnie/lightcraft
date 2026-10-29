@@ -1,0 +1,85 @@
+# `cargo deny check` (a `cargo xtask ci` step): the product stays pure Rust with permissive
+# licences, from crates.io only, with no known vulnerability left unexplained.
+
+[graph]
+# what LightCraft ships for (Linux packaging is kept)
+targets = ["aarch64-apple-darwin", "x86_64-pc-windows-msvc", "x86_64-unknown-linux-gnu", "wasm32-unknown-unknown"]
+all-features = false
+
+[licenses]
+# No GPL/LGPL/AGPL (or any other copyleft) code: a crate under one is refused, and a dual-licensed
+# crate is taken under the permissive side.
+allow = [
+    "0BSD",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "BSL-1.0",
+    "CC0-1.0",
+    "CDLA-Permissive-2.0",
+    "IJG",
+    "ISC",
+    "MIT",
+    "Unicode-3.0",
+    "Unlicense",
+    "Zlib",
+]
+confidence-threshold = 0.9
+exceptions = [
+    # egui's built-in faces, drawn after Inter for characters it lacks (see CLAUDE.md, Assets)
+    { crate = "epaint_default_fonts", allow = ["OFL-1.1", "Ubuntu-font-1.0"] },
+]
+
+[licenses.private]
+ignore = true
+
+[bans]
+multiple-versions = "allow"
+wildcards = "deny"
+allow-wildcard-paths = true
+deny = [
+    # C, C++ or assembly built into the product (pure Rust only)
+    "ring",
+    "aws-lc-rs",
+    "aws-lc-sys",
+    "openssl",
+    "openssl-sys",
+    "libz-sys",
+    "zstd-sys",
+    "bzip2-sys",
+    "lzma-sys",
+    "cmake",
+    "bindgen",
+    # the C compiler driver: only for the Wayland client glue winit needs on Linux
+    { crate = "cc", wrappers = ["wayland-backend"] },
+]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+
+[advisories]
+# Each ignore says why the advisory can't reach LightCraft; drop it once the crate that pins the
+# affected version moves on.
+ignore = [
+    # rustls-rustcrypto 0.0.2-alpha pins these. It takes only `alg_id` constants from
+    # rustls-webpki 0.102: chains are verified by rustls's own rustls-webpki 0.103 (patched).
+    { id = "RUSTSEC-2026-0049", reason = "rustls-webpki 0.102 verification code is not used (rustls-rustcrypto takes alg_id constants only)" },
+    { id = "RUSTSEC-2026-0098", reason = "rustls-webpki 0.102 verification code is not used (rustls-rustcrypto takes alg_id constants only)" },
+    { id = "RUSTSEC-2026-0099", reason = "rustls-webpki 0.102 verification code is not used (rustls-rustcrypto takes alg_id constants only)" },
+    { id = "RUSTSEC-2026-0104", reason = "rustls-webpki 0.102 verification code is not used (rustls-rustcrypto takes alg_id constants only)" },
+    { id = "RUSTSEC-2026-0382", reason = "flagged for rustls-webpki 0.102, whose verification code is not used; 0.103.16 (used) is patched" },
+    { id = "RUSTSEC-2023-0071", reason = "Marvin attack needs RSA private-key operations; a TLS client only verifies signatures with public keys" },
+    { id = "RUSTSEC-2026-0387", reason = "crypto-bigint 0.5 handles secrets only in P-256/P-384 key exchange, which lightcraft-fetch turns off (X25519 only)" },
+    # candle-core 0.9 pins zip 7 to read .npz/.safetensors entries by name; extract() is never called
+    { id = "RUSTSEC-2026-0367", reason = "zip extract() is not called (candle-core reads entries by name)" },
+    { id = "RUSTSEC-2026-0368", reason = "zip extract() is not called (candle-core reads entries by name)" },
+    { id = "RUSTSEC-2026-0369", reason = "zip extract() is not called (candle-core reads entries by name)" },
+    # unmaintained, no replacement upstream yet
+    { id = "RUSTSEC-2024-0436", reason = "paste: a compile-time macro of faer-core 0.17 (denoise); nothing of it runs" },
+    { id = "RUSTSEC-2026-0192", reason = "ttf-parser: under ab_glyph, parses only the bundled Inter" },
+    { id = "RUSTSEC-2026-0370", reason = "zvariant: Linux accessibility (AT-SPI) under winit/accesskit" },
+    { id = "RUSTSEC-2026-0371", reason = "zbus_names: Linux accessibility (AT-SPI) under winit/accesskit" },
+    { id = "RUSTSEC-2026-0372", reason = "zvariant_derive: Linux accessibility (AT-SPI) under winit/accesskit" },
+]

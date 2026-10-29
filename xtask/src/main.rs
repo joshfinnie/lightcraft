@@ -23,6 +23,9 @@ usage: cargo xtask <command>
 
 commands:
   assets          every image/icon/font/media file is attributed in assets/ATTRIBUTION.md; no Adobe assets
+  deps            cargo deny check (deny.toml): permissive licences only (no GPL family), no crate that builds
+                  C/C++/assembly into the product, crates.io sources only, every RustSec advisory fixed or
+                  explained; needs `cargo install --locked cargo-deny`
   bench [FILE] [--strict] [--threshold PCT]
                   run the render benchmark, append to target/bench/history.jsonl, compare CPU time with
                   the previous run (default input: corpus/raw/arw-sony-a7m3-compressed.arw)
@@ -37,7 +40,7 @@ commands:
                   build the browser app (apps/lightcraft-web) into <target>/web-site/;
                   --serve serves it on http://127.0.0.1:<port> (default 8080)
   ci [--hardware] [--summary-md]
-                  fmt --check, clippy -D warnings, heif, test, GPU probe, parity refs, layers, assets, wasm
+                  fmt --check, clippy -D warnings, heif, test, GPU probe, parity refs, layers, assets, deps, wasm
                   (stops at first failure); writes target/ci/report.json (machine, GPU adapters, data,
                   steps, skipped tests) and target/ci/summary.md; --hardware also runs the GPU tests on
                   every backend with a hardware adapter; --summary-md prints the Markdown summary
@@ -60,6 +63,7 @@ fn main() -> ExitCode {
         Some("version") => version::run(&root(), &rest),
         Some("layers") => cmd_layers(),
         Some("assets") => assets::run(&root()),
+        Some("deps") => cmd_deps(),
         Some("bench") => bench::run(&root(), &rest),
         Some("parity") => parity::run(&root(), rest.contains(&"--write")),
         Some("wasm") => cmd_wasm(),
@@ -246,6 +250,19 @@ pub fn metadata() -> Result<serde_json::Value, String> {
     serde_json::from_slice(&out.stdout).map_err(|e| format!("cargo metadata: bad JSON: {e}"))
 }
 
+/// The dependency gate: `cargo deny check` against `deny.toml` (licences, banned crates, sources,
+/// advisories). The advisory database is fetched each run, so a new advisory fails the next run
+/// until the crate is updated or the advisory is ignored there with its reason.
+fn cmd_deps() -> Result<(), String> {
+    let installed = cargo().args(["deny", "--version"]).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).status();
+    if !installed.is_ok_and(|s| s.success()) {
+        return Err("deps: cargo-deny is not installed (cargo install --locked cargo-deny)".into());
+    }
+    let mut c = cargo();
+    c.args(["deny", "--log-level", "error", "check"]);
+    run(c, "cargo deny check")
+}
+
 fn cmd_layers() -> Result<(), String> {
     let crates = layers::from_metadata(&metadata()?)?;
     println!("Dependency layering (plan/architecture.md §3)\n");
@@ -413,6 +430,7 @@ fn cmd_ci(args: &[&str]) -> Result<(), String> {
     steps.push(("parity", Box::new(|| parity::run(&root, false))));
     steps.push(("layers", Box::new(cmd_layers)));
     steps.push(("assets", Box::new(|| assets::run(&root))));
+    steps.push(("deps", Box::new(cmd_deps)));
     steps.push(("wasm", Box::new(cmd_wasm)));
 
     let mut results = Vec::new();

@@ -57,7 +57,11 @@ of it.
 
 ## Non-negotiables
 - **Clean-room.** Never read/disassemble anything inside Adobe app bundles (names/listings only). Never copy Adobe icons, presets, profiles (DCP), lens profiles (LCP), camera matrices, fonts. Observation of the installed Lightroom is read-only (it syncs the user's personal library: never import/edit/rate/delete there). Never copy GPL/LGPL/AGPL code (darktable, RawTherapee, ART, LibRaw, rawspeed, rawloader, rawler, lensfun, dcraw-derived GPL code…).
-- **Pure Rust** in the product. No C/C++ dependencies.
+- **Pure Rust** in the product. No C/C++ dependencies. `cargo xtask deps` (`cargo deny check`, `deny.toml`; in `ci`)
+  refuses crates that build C/C++/assembly (`ring`, `aws-lc-*`, `openssl`, `*-sys` compression…), copyleft
+  licences, sources other than crates.io, and RustSec advisories. An advisory that can't reach LightCraft is
+  ignored in `deny.toml` with the reason; never ignore one to make a commit pass without checking that.
+  Install the tool once: `cargo install --locked cargo-deny`.
 - **Layering** (`plan/architecture.md` §3, enforced by `cargo xtask layers`): nothing below L5 depends on egui/eframe/winit/rfd.
 - **Everything is a command** (`crates/engine`): id, label, menu path, shortcut, params, enabled(), run(). UI, CLI and control channel all dispatch by id. Every slider is a `develop` control spec.
   A command's params are a `params!` struct (`crates/engine/src/cmd/params.rs`) named in its `cmd!`: a key it doesn't
@@ -69,7 +73,7 @@ of it.
   label, cancel)` for its whole run. It adopts the cancel flag the job already checks (`Cancel::Flag`), or uses
   `Cancel::No` when the job can't stop. No progress window, panel or progress toast of its own; its tests assert the row.
 - **Resolution independence:** settings use normalized image coordinates and relative radii; previews and exports must match.
-- **Quality gates** before every commit: `cargo xtask ci` (fmt, clippy -D warnings, tests, layers, assets, wasm).
+- **Quality gates** before every commit: `cargo xtask ci` (fmt, clippy -D warnings, tests, layers, assets, deps, wasm).
 - **Commits:** one task id per commit (`M2.3: local Laplacian highlights/shadows`). Only green states. End messages with the attribution line required by the environment.
 
 ## Assets: icons, images, fonts (ABSOLUTE RULE — never violate)

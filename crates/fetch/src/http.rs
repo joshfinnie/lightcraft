@@ -175,9 +175,19 @@ fn is_timeout(e: &std::io::Error) -> bool {
     matches!(e.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut | ErrorKind::Interrupted)
 }
 
+/// The RustCrypto provider, keeping X25519 as its only key exchange: its P-256 and P-384 key
+/// exchanges run on `crypto-bigint` 0.5, whose arithmetic on secrets isn't constant-time
+/// (RUSTSEC-2026-0387); X25519 (`x25519-dalek`) doesn't use it. The curves still verify
+/// certificate signatures, which handles nothing secret.
+fn provider() -> rustls::crypto::CryptoProvider {
+    let mut p = rustls_rustcrypto::provider();
+    p.kx_groups.retain(|g| g.name() == rustls::NamedGroup::X25519);
+    p
+}
+
 fn tls_config() -> Result<Arc<rustls::ClientConfig>, HttpError> {
     let roots = rustls::RootCertStore { roots: webpki_roots::TLS_SERVER_ROOTS.to_vec() };
-    let config = rustls::ClientConfig::builder_with_provider(Arc::new(rustls_rustcrypto::provider()))
+    let config = rustls::ClientConfig::builder_with_provider(Arc::new(provider()))
         .with_safe_default_protocol_versions()
         .map_err(|e| HttpError::Tls(e.to_string()))?
         .with_root_certificates(roots)
@@ -565,6 +575,14 @@ mod tests_connect {
     }
 
     /// A name lookup that hangs is given up on at the connect timeout, and Cancel stops it at once (issue #1532).
+    /// Key exchange is X25519 alone (see [`provider`]); TLS still configures.
+    #[test]
+    fn tls_key_exchange_is_x25519_only() {
+        let names: Vec<_> = provider().kx_groups.iter().map(|g| g.name()).collect();
+        assert_eq!(names, [rustls::NamedGroup::X25519]);
+        assert!(tls_config().is_ok());
+    }
+
     #[test]
     fn a_hung_name_lookup_times_out_and_can_be_cancelled() {
         let cancel = AtomicBool::new(false);

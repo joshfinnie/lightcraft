@@ -6,6 +6,7 @@ members = ["crates/*", "apps/*", "xtask"]
 version = "0.10.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
+publish = false
 rust-version = "1.90"
 repository = "https://github.com/joshfinnie/lightcraft"
 
@@ -62,7 +63,7 @@ libc = "0.2" # dev-only: process CPU time in benches
 dhat = "0.3" # opt-in heap profiling (lightcraft --features dhat-heap) and heap tests; never in product builds
 
 # formats
-quick-xml = "0.38"
+quick-xml = "0.42"
 miniz_oxide = "0.8"
 
 # codecs
