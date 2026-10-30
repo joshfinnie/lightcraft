@@ -20,15 +20,23 @@ Windows x64 PC. The web build is kept working too.
 - **Upstream PRs merged ahead of upstream**, picked for safety first: refusing malformed
   commands, mask and spot targets before they change anything; bounded TIFF parsing and
   overflow-safe size checks for hostile files; export and GPU failures that stop cleanly
-  instead of crashing; MCP tools that write files marked as destructive.
+  instead of crashing.
 - **A locked-down control port.** The automation channel requires a per-run token and drops
   idle connections after 5 minutes (see [Automation](#automation)).
 - **Fixes of my own**, each with a regression test: RGBA images within the pixel limit no
   longer refused, click and drag counts bounded on the control channel, one format for
-  shutter, aperture, ISO and focal length everywhere, real timestamps in the web build, a
-  flaky MCP test on macOS, and a warning-free wasm build.
-- **Less to maintain.** No FreeBSD or Nix packaging and no CI for platforms I don't use. No MCP
-  server, and no separate `lightcraft-cli`: the app's own binary takes the CLI's subcommands.
+  shutter, aperture, ISO and focal length everywhere, real timestamps in the web build, and a
+  warning-free wasm build.
+- **Faster where it shows.** The loupe, the menu bar and slider drags stop re-hashing settings
+  and re-asking the selection every frame, and exports no longer copy the whole image on the
+  way to the encoder.
+- **A dependency gate.** `cargo xtask deps` (`cargo deny`) refuses crates that build C or
+  assembly, copyleft licences, sources other than crates.io and unexplained security advisories.
+  TLS key exchange is X25519 only.
+- **Less to maintain.** English only (no translations; Inter is the only font), its own app id
+  (`com.joshfinnie.lightcraft`), no FreeBSD or Nix packaging, no hosted CI, no MCP server, and no
+  separate `lightcraft-cli`: the app's own binary takes the CLI's subcommands. Linux packaging
+  (`packaging/linux`) is kept and should build, but isn't tested.
 
 `git log --oneline upstream/main..main` lists every change.
 
@@ -38,11 +46,12 @@ A non-destructive raw developer and photo library modelled on Lightroom Classic'
 Light, Color, Effects, Tone Curve, colour grading, masking, presets and profiles, crop and
 geometry, black and white, ratings, flags, labels, albums, smart collections and search. Native
 on macOS and Windows, in the browser via WebAssembly, and scriptable from the command line and a local control channel.
-Upstream's [ROADMAP.md](ROADMAP.md) has the detailed feature status.
+[ROADMAP.md](ROADMAP.md) has the detailed feature status.
 
 ## Build and run
 
-Rust 1.95 or newer.
+Rust 1.95 or newer. `make setup` installs the toolchains, tools and test corpora on a new machine
+(`make help` lists the other targets).
 
 ```sh
 git clone git@github.com:joshfinnie/lightcraft.git && cd lightcraft
@@ -78,8 +87,11 @@ through `lightcraft.com`, which ships beside `lightcraft.exe`.
 
 ## Working on the fork
 
-- `cargo xtask ci` (fmt, clippy, tests, parity, layers, assets, wasm) passes before anything
-  lands on `main`. There is no hosted CI; this is the gate.
+- `cargo xtask ci` (fmt, clippy, heif, tests, parity, layers, assets, deps, wasm) passes before
+  anything lands on `main`. There is no hosted CI; this is the gate.
+- Releases are built locally: `make release` puts the installers for this platform, the web zip
+  and `SHA256SUMS.txt` in `dist/release/`, and `make publish` uploads them to a draft GitHub
+  release ([docs/releasing.md](docs/releasing.md)).
 - Upstream PRs are fetched with `git fetch upstream pull/<N>/head:pr/<N>`, merged in small
   batches on an integration branch, and land on `main` only after a green `cargo xtask ci`.
 - The engineering rules are upstream's and still apply: clean-room, pure Rust, no proprietary

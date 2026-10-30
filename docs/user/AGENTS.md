@@ -1,13 +1,12 @@
 # User docs: rules for agents and contributors
 
-Everything in this folder (except this file, CLAUDE.md and README.md) is published at
-https://getartcraft.com/docs/lightcraft. The file path is the URL:
-`troubleshooting/raw-photos-look-dull.md` → `/docs/lightcraft/troubleshooting/raw-photos-look-dull`.
-Renaming a file breaks links, so add the old path to `redirect_from` when you rename.
+Everything in this folder (except this file and CLAUDE.md) is the user guide, read on GitHub or in
+a checkout. Renaming a file breaks links to it, so add the old path to `redirect_from` when you
+rename.
 
 ## Who reads this
 
-Artists and photographers using LightCraft, Discord mods answering them, and AI assistants looking
+Photographers using LightCraft, people answering their questions, and AI assistants looking
 things up for either. Write for a photographer, not a developer.
 
 ## Page rules
@@ -18,10 +17,11 @@ things up for either. Write for a photographer, not a developer.
 - Link to other pages instead of repeating them. Use relative links to the `.md` file:
   `[Install LightCraft](../getting-started/install.md)`.
 - No marketing copy, no "simply", no claims you have not checked in the code or a release.
-- Call the product "LightCraft", as the app, its downloads and getartcraft.com do.
+- Call the product "LightCraft", as the app and its downloads do.
 - Name UI labels exactly as the app shows them, in **bold**.
 - Troubleshooting pages: `## Symptoms`, `## Fix`, `## Why this happens` (optional),
-  `## Still stuck?` (link the issue tracker or Discord).
+  `## Still stuck?` (link the issue tracker, https://github.com/joshfinnie/lightcraft/issues).
+- Never link a specific issue or pull request number.
 
 ## Frontmatter
 
@@ -35,7 +35,7 @@ things up for either. Write for a photographer, not a developer.
 
 Only `key: value` and `key: [a, b]` lines work. Quote values that start with a quote or contain ` #`.
 
-Set `verified` to the latest release (the newest release tag) after checking the page against that tag with `git show <tag>:<path>`. Pages describe the latest release users download, not unreleased code on main.
+Set `verified` to the latest release (the newest release tag) after checking the page against that tag with `git show <tag>:<path>`. Pages describe the latest release users download, not unreleased code on main. Until this fork publishes a release, pages describe `main`, and `verified` still names the upstream release they were last checked against.
 
 ## Folders
 
@@ -45,14 +45,7 @@ Set `verified` to the latest release (the newest release tag) after checking the
 - `faq/` short answers
 - `reference/` lists and settings
 
-A folder's `index.md` names the folder in the sidebar. Files or folders starting with `_` are
-drafts and are not published.
-
-## Check before you push
-
-    node <path to your artcraft-services checkout>/frontend/apps/artcraft-website-next/scripts/docs/core.mjs docs/user
-
-The checker is not part of this repository.
+A folder's `index.md` lists its pages. Files or folders starting with `_` are drafts.
 
 ## Support PRs
 

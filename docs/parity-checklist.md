@@ -1,6 +1,6 @@
 # Lightroom parity checklist
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-27 · **Change:** minor (LR-BEHAV-BACKUP added; catalog generations and checksum in LR-BEHAV-AUTOSAVE) · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-30 · **Change:** patch (KEY-EXPORTDIALOG note; id reference described as local) · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6
 
 The measured, row-by-row checklist: one row per Lightroom feature, menu item and shortcut, what we
 have and what is missing. It answers *does the feature exist?* (feature breadth). Whether it is good
@@ -11,7 +11,7 @@ The rows are maintained by hand; the summary block is generated (`cargo xtask pa
 `cargo xtask parity` (part of `cargo xtask ci`) checks that every command id, control id and path
 cited here still exists. Formerly docs/parity.md.
 
-- **Ids** come from the (local, gitignored) reference in `plan/lightroom/`: `LR-…` = feature catalog (03),
+- **Ids** come from a local, uncommitted Lightroom reference (not in the repository): `LR-…` = feature catalog (03),
   `MENU-…` = menu items (04), `KEY-…` / `KEYC-…` = keyboard shortcuts (06, desktop / Classic), `LRC-…` = Classic
   extras (08). Ids are stable; never renumber.
 - **Tier** as in the catalog: **P0** core, **P1** important parity, **P2** later / AI / niche, **OOS** out of scope.
@@ -632,7 +632,7 @@ From `06-shortcuts.md` part 1. Evidence is our binding; conflicts are explained 
 | KEY-TOGGLEZOOM | Toggle zoom — Space | P0 | ✅ | `cmd:view.zoomToggle` | Space is a secondary binding (primary Z) |
 | KEY-MASKCOLOR | Cycle mask colour — ⇧O | P1 | ✅ | `cmd:view.maskOverlayColor`, `crates/ui-egui/src/shortcuts.rs` | ⇧O while masking cycles the overlay colour (while cropping: the guides' orientation); the overlay mode is in View ▸ Cycle Mask Overlay Mode |
 | KEY-EXPORTPREV | Export with previous — ⌘E | P0 | ✅ | `cmd:app.exportPrevious` | ⌘E (alias) and ⌥⇧⌘E (Classic) |
-| KEY-EXPORTDIALOG | Export dialog — ⇧E | P0 | ✅ | `cmd:dialog.export` | secondary binding (primary ⌘⇧E) |
+| KEY-EXPORTDIALOG | Export dialog — ⇧E | P0 | ✅ | `cmd:dialog.export` | ⇧E (`ALIASES`, `crates/ui-egui/src/shortcuts.rs`); ⌘⇧E is Edit in PhotoCraft |
 | KEY-ENTERFULLSCREEN | Window full screen — ⇧⌘F | P1 | ✅ | `cmd:view.enterFullScreen` | |
 | KEY-STACK | Group / ungroup stack — ⌘G / ⇧⌘G | P1 | ✅ | `cmd:stack.group`, `cmd:stack.ungroup` | also S expand/collapse, ⇧S top of stack |
 | KEY-GUIDEDUPRIGHT | Guided Upright — ⇧G | P1 | ✅ | `cmd:tool.guidedUpright`, `cmd:geometry.upright` | opens Crop & Geometry with Guided Upright on and the guide tool active; G toggles Photo Grid ↔ Square Grid (`cmd:view.gridToggle`) as observed |
@@ -894,3 +894,4 @@ right-to-left newline columns. Regression coverage:
 | 2026-10-13 | minor | KEYC-COMPARE: `=` / `-` (also `+`) increase / decrease the grid thumbnail size (`view.thumbSizeUp` / `view.thumbSizeDown`, View menu), grids only; status unchanged (🟡) |
 | 2026-10-21 | minor | LR-BEHAV-LOCALE, LR-BEHAV-LOCALIZE: not applicable, English only |
 | 2026-10-21 | minor | Inter is the only font: LR-EXP-WATERMARK draws vertical text in Inter (no Japanese faces or vertical forms), LRC-SS-OVERLAYS notes that scripts Inter lacks show missing-glyph boxes; statuses unchanged |
+| 2026-10-30 | patch | KEY-EXPORTDIALOG: ⇧E is the Export key, ⌘⇧E is Edit in PhotoCraft (was "primary ⌘⇧E"); the id reference described as local and uncommitted; statuses unchanged |

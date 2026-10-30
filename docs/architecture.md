@@ -1,25 +1,26 @@
 # Architecture
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-21 · **Change:** minor (Inter is the only font; the CI probe no longer reports a font input) · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6
+> **Last reviewed:** 2026-10-30 · **Last updated:** 2026-10-30 · **Change:** minor (crate table recounted and completed; gates and platforms as they are now) · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6
 
-How LightCraft is built today. The longer design document (`plan/architecture.md`) is local-only
-(`plan/` is gitignored); this page is the committed, current summary. Sizes are Rust lines counted
-on 2026-10-10 (≈ 202,000 tracked lines in 505 files: 24 library crates, 3 apps and `xtask`).
+How LightCraft is built today. A longer design document exists only as a local, uncommitted
+note; this page is the committed, current summary. Sizes are Rust lines counted
+on 2026-10-30 (≈ 317,000 tracked lines in 740 files: 29 library crates, 3 apps, `testkit` and `xtask`).
 
 ## Layers
 
 `cargo xtask layers` (part of `cargo xtask ci`, `xtask/src/layers.rs`) enforces that nothing below
-L5 depends on egui, eframe, winit or rfd, and that each crate only uses lower layers.
+L5 depends on egui, eframe, winit, rfd or `craft-ui`, and that each crate only uses lower layers.
 
 | Layer | Crates (lines) | Role |
 |---|---|---|
-| L0 | `geom` (1.4k), `color` (0.9k), `raster` (0.8k), `tiff` (2.0k), `fetch` (1.4k), `sysmem` (0.1k) | Matrices and warps, colour spaces and transfer functions, float image buffers, TIFF/IFD read and write, pinned HTTPS model downloads, the one `unsafe` FFI call (`malloc_zone_pressure_relief`) |
-| L1 | `raw` (22.3k), `codecs` (7.3k), `meta` (4.3k), `develop` (2.5k), `denoise-core` (2.2k), `denoise` (2.7k), `faces` (5.3k), `scenes` (1.0k), `heif` (2.1k, optional) | Raw decoders and demosaic, DNG colour model; standard codecs and encoders; EXIF/XMP/IPTC; the non-destructive edit model and control specs; AI denoise; face detection and recognition; procedural demo photos; HEIC |
-| L2 | `pipeline` (9.8k) | The develop pipeline: scene-referred float, resolution independent; the CPU reference (oracle) for everything else |
-| L3 | `catalog` (11.0k), `gpu` (5.1k), `preview` (1.3k), `merge` (3.8k), `segment` (2.3k) | Library model and persistence; wgpu compute twin of the pipeline; thumbnail/preview cache and job pool; HDR and panorama merge; SAM 3 segmentation |
-| L4 | `engine` (53.2k) | Session, command registry (everything is a command), history, render and export jobs, import, Lightroom catalog and preset import, faces index, view-models |
-| L5 | `ui-egui` (46.9k) | The Lightroom-style egui interface (swappable) |
-| L6 | `apps/lightcraft` (4.3k), `apps/lightcraft-console` (0.1k), `apps/lightcraft-web` (3.4k), `xtask` (3.4k), `testkit` (0.2k, dev-dependency only) | Desktop app (eframe + wgpu, native menus, control server) and its CLI subcommands (run, render, snapshot, commands, calibrate…; `docs/cli.md`), Windows console launcher (`lightcraft.com`), WASM build, tooling; test helpers (skips the CI report lists) |
+| L0 | `geom` (1.7k), `color` (0.9k), `raster` (1.4k), `tiff` (2.4k), `fetch` (1.6k), `sysmem` (0.1k), `heif` (2.1k, optional) | Matrices and warps, colour spaces and transfer functions, float image buffers, TIFF/IFD read and write, pinned HTTPS model downloads, the only `unsafe` (two FFI calls: `malloc_zone_pressure_relief` on macOS, `GlobalMemoryStatusEx` on Windows), HEIC |
+| L1 | `raw` (37.0k), `codecs` (10.8k), `meta` (6.1k), `develop` (3.2k), `denoise-core` (2.3k), `denoise` (3.3k), `faces` (6.3k), `inpaint` (0.8k), `geocode` (0.4k), `slideshow` (1.0k), `scenes` (1.0k) | Raw decoders and demosaic, DNG colour model; standard codecs and encoders; EXIF/XMP/IPTC; the non-destructive edit model and control specs; AI denoise; face detection and recognition; content-aware fill; offline reverse geocoding; slideshow layout and slide composer; procedural demo photos |
+| L2 | `pipeline` (12.3k), `lensdb` (1.0k) | The develop pipeline: scene-referred float, resolution independent; the CPU reference (oracle) for everything else; lens correction profiles |
+| L3 | `catalog` (13.5k), `gpu` (6.9k), `preview` (2.0k), `merge` (4.6k), `segment` (2.3k) | Library model and persistence; wgpu compute twin of the pipeline; thumbnail/preview cache and job pool; HDR and panorama merge; SAM 3 segmentation |
+| L4 | `engine` (91.1k) | Session, command registry (everything is a command), history, render and export jobs, import, Lightroom catalog and preset import, faces index, view-models |
+| L5 | `ui-egui` (78.1k), `craft-ui` (5.7k) | The Lightroom-style egui interface (swappable); reusable egui controls and icon catalogs (vendored from craft-libs) |
+| Standalone | `craft-docpath` (1.0k) | Whether a path or file URL stored in a document is a local file (vendored from craft-libs) |
+| L6 | `apps/lightcraft` (6.9k), `apps/lightcraft-console` (0.1k), `apps/lightcraft-web` (3.5k), `xtask` (5.5k), `testkit` (0.4k, dev-dependency only) | Desktop app (eframe + wgpu, native menus, control server) and its CLI subcommands (run, render, snapshot, commands, calibrate…; `docs/cli.md`), Windows console launcher (`lightcraft.com`), WASM build, tooling; test helpers (skips the CI report lists) |
 
 ## Data model
 
@@ -58,10 +59,14 @@ dispatch by id, and headless snapshots render the UI without a window.
 
 ## Quality gates
 
-`cargo xtask ci`: fmt, clippy `-D warnings` with the never-crash lints, the HEIF build, tests,
-`parity` (every id and path cited in [parity-checklist.md](parity-checklist.md) exists), `layers`,
-`assets` (every asset attributed, no Adobe formats) and the WASM build. Other workflows build and
-test FreeBSD and Windows ARM64, lint packaging, and build releases.
+`cargo xtask ci`, run locally: fmt, clippy `-D warnings` with the never-crash lints, the HEIF build,
+tests, `parity` (every id and path cited in [parity-checklist.md](parity-checklist.md) exists),
+`layers`, `assets` (every asset attributed, no Adobe formats), `deps` (`cargo deny check` against
+`deny.toml`: no C/C++ builds, copyleft licences or advisories) and the WASM build. The only hosted
+workflow is `.github/workflows/packaging-lint.yml`, a quick static check of the packaging. Releases are
+built locally (`make release`, [releasing.md](releasing.md)). The supported targets are Apple
+silicon macOS, Windows x64 and the web; the Linux packages (`packaging/linux`) are kept building but
+are not the tested target.
 
 `ci` also probes the machine: OS, CPUs, RAM, the GPU adapters of each backend (from the ignored
 `gpu_probe` test of `lightcraft-gpu`, run after the workspace tests so it reuses their build; xtask
@@ -77,6 +82,7 @@ the `lightcraft-gpu` tests once per backend with a hardware adapter (`LIGHTCRAFT
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-30 | minor | Crate table recounted and completed (`craft-ui`, `craft-docpath`, `geocode`, `inpaint`, `lensdb`, `slideshow`; `heif` is L0); `deps` gate; no hosted CI but the packaging lint |
 | 2026-10-21 | minor | Inter is the only font: no optional font input, so the CI machine probe no longer reports one |
 | 2026-10-11 | minor | Quality gates: the CI machine probe, visible skips (`testkit`) and `target/ci/report.json` |
 | 2026-10-10 | major | Created from the code (crate sizes, layers, data model, rendering, control, gates) |

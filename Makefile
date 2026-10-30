@@ -33,13 +33,14 @@ rust: ## Rust (stable >= 1.95 and nightly) and the wasm32 target, through rustup
 	  rustup update stable; fi; \
 	echo "Rust: $$(rustc +stable --version)"
 
-tools: rust ## wasm-bindgen (the version in Cargo.lock), cargo-fuzz, cargo-llvm-cov
+tools: rust ## wasm-bindgen (the version in Cargo.lock), cargo-deny, cargo-fuzz, cargo-llvm-cov
 	@if [ "$$(wasm-bindgen --version 2>/dev/null | cut -d' ' -f2)" != "$(WASM_BINDGEN)" ]; then \
 	  cargo install wasm-bindgen-cli --version $(WASM_BINDGEN) --locked; fi
+	@command -v cargo-deny >/dev/null 2>&1 || cargo install cargo-deny --locked
 	@command -v cargo-fuzz >/dev/null 2>&1 || cargo install cargo-fuzz --locked
 	@command -v cargo-llvm-cov >/dev/null 2>&1 || cargo install cargo-llvm-cov --locked
 	@rustup component add llvm-tools-preview --toolchain stable >/dev/null
-	@echo "Tools: wasm-bindgen $(WASM_BINDGEN), cargo-fuzz, cargo-llvm-cov"
+	@echo "Tools: wasm-bindgen $(WASM_BINDGEN), cargo-deny, cargo-fuzz, cargo-llvm-cov"
 
 # best effort: raw.pixls.us is sometimes unreachable, and tests skip what is missing
 corpus: ## PngSuite and CC0 sample raws into corpus/ (checked by sha256)
@@ -69,7 +70,7 @@ run: ## open the app (release build)
 web: ## the browser build, served at http://127.0.0.1:8080/
 	cargo xtask web --serve
 
-check: ## the full quality gate: fmt, clippy, tests, parity, layers, assets, wasm
+check: ## the full quality gate: fmt, clippy, heif, tests, parity, layers, assets, deps, wasm
 	cargo xtask ci
 
 test: ## the workspace tests only

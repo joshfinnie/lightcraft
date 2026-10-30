@@ -52,7 +52,7 @@ those:
 - the buffer is the file's length with only the planned ranges filled in; every other byte stays zero
   and its pages are never written. Its cost is the bytes read — on macOS a freed buffer of that size
   may stay in the allocator's cache instead of going back to the OS (measured on a 38k-photo import,
-  [#832](https://github.com/joshfinnie/lightcraft/issues/832)) — and the loader's memory gate counts
+  upstream #832) — and the loader's memory gate counts
   the whole file either way;
 - the module's own guarantee is what this path needs, and its corpus test asserts it: with the
   skipped bytes `0` and again `0xFF`, what a partly loaded buffer yields is what the whole file
@@ -86,7 +86,7 @@ sparse_corpus -- --nocapture` prints these numbers. `LIGHTCRAFT_PROFILE=1` says 
 [profile] preview …/arw-sony-a7rm4a-compressed.arw: read 688128 of 61832192 bytes (plan, window 483441)
 ```
 
-A Canon CR3's preview is a JPEG track instead (issue #832 measured 3 MB of one R5 Mark II file,
+A Canon CR3's preview is a JPEG track instead (upstream issue #832 measured 3 MB of one R5 Mark II file,
 ~15 %), and Canon is the largest bucket in [gaps.md](gaps.md)'s ranking (33 % of photographers), so
 before this change every unedited CR3 thumbnail paid for the whole file.
 

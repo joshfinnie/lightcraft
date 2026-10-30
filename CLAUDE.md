@@ -1,10 +1,11 @@
 # LightCraft — instructions for agents
 
-LightCraft is a clean-room, open-source, pure-Rust photo library + non-destructive raw developer targeting Adobe Lightroom parity (and beyond). Native on macOS, Windows, Linux; web via WASM. Sibling of `../pdfcraft` (Acrobat), `../photocraft` (Photoshop), `../vectorcraft` (Illustrator) and `../filmcraft` (Premiere), with the same conventions.
+LightCraft is a clean-room, open-source, pure-Rust photo library + non-destructive raw developer targeting Adobe Lightroom parity (and beyond). This repository is Josh Finnie's personal fork of `storytold/lightcraft` (remote `upstream`), independent of it: no storytold dependencies, URLs or ids, but the upstream copyright and licence notices stay. Targets: Apple silicon macOS, Windows x64 and the web (WASM); Linux packaging is kept and must keep building. English only.
 
 ## Start every session here
-1. Read `plan/STATUS.md` (current milestone, next unchecked task, blockers).
-2. Read the task in `plan/execution-plan.md` §3, the relevant section of `plan/architecture.md`, and the README/docs of the crate you touch. Behaviour/visual reference: `plan/lightroom/` (incl. `10-observed-ui.md` + screenshots).
+1. Check `git status`, `git worktree list` and `git log --oneline -10` for work in progress.
+2. Read [`docs/architecture.md`](docs/architecture.md) (layers, data model, rendering, gates) and the README/docs of
+   the crate you touch.
 3. **Know where we stand:** read [`ROADMAP.md`](ROADMAP.md) (stage, headline numbers, every dimension) and, for
    method and evidence, [`docs/target-app-parity.md`](docs/target-app-parity.md). The checklist counts features that
    *exist*; the real gaps are quality and coverage: camera colour calibration, CR3 / compressed raws, per-model
@@ -17,9 +18,11 @@ LightCraft is a clean-room, open-source, pure-Rust photo library + non-destructi
    `docs/target-app-parity.md` when a listed gap closes (bump each doc's *Last updated* line and revision history); `cargo xtask parity` (part of `ci`) checks that every `cmd:`/`ctl:` id and
    path the tracker cites still exists and that `docs/gaps.md` lists each gap once, and `cargo xtask parity --write`
    refreshes its summary.
-5. Follow the autonomous operation protocol (`plan/execution-plan.md` §7). Don't stop to ask unless §7 lists the decision as the user's.
+5. Work autonomously. Stop to ask only for decisions that are the user's: anything outward-facing or hard to undo
+   (pushing, publishing, releases, repo settings, deleting branches or data), licences, and new dependencies on
+   outside services.
 
-`plan/` is gitignored (local-only).
+`plan/` is gitignored: local notes and Lightroom reference material that are never committed.
 
 **Merging agent branches:** merge one branch, run `cargo xtask ci`, fix, commit — then the next. Two individually green
 branches can still break each other (e.g. a new struct field vs. a new constructor).
@@ -62,7 +65,7 @@ of it.
   licences, sources other than crates.io, and RustSec advisories. An advisory that can't reach LightCraft is
   ignored in `deny.toml` with the reason; never ignore one to make a commit pass without checking that.
   Install the tool once: `cargo install --locked cargo-deny`.
-- **Layering** (`plan/architecture.md` §3, enforced by `cargo xtask layers`): nothing below L5 depends on egui/eframe/winit/rfd.
+- **Layering** ([`docs/architecture.md`](docs/architecture.md), enforced by `cargo xtask layers`): nothing below L5 depends on egui/eframe/winit/rfd.
 - **Everything is a command** (`crates/engine`): id, label, menu path, shortcut, params, enabled(), run(). UI, CLI and control channel all dispatch by id. Every slider is a `develop` control spec.
   A command's params are a `params!` struct (`crates/engine/src/cmd/params.rs`) named in its `cmd!`: a key it doesn't
   take (at any depth) or a value of the wrong type is refused before `run`, never ignored. A partial value the command
@@ -73,7 +76,8 @@ of it.
   label, cancel)` for its whole run. It adopts the cancel flag the job already checks (`Cancel::Flag`), or uses
   `Cancel::No` when the job can't stop. No progress window, panel or progress toast of its own; its tests assert the row.
 - **Resolution independence:** settings use normalized image coordinates and relative radii; previews and exports must match.
-- **Quality gates** before every commit: `cargo xtask ci` (fmt, clippy -D warnings, tests, layers, assets, deps, wasm).
+- **Quality gates** before every commit: `cargo xtask ci` (fmt, clippy -D warnings, heif, tests, parity, layers, assets,
+  deps, wasm). There is no hosted CI; this is the gate.
 - **Commits:** one task id per commit (`M2.3: local Laplacian highlights/shadows`). Only green states. End messages with the attribution line required by the environment.
 
 ## Assets: icons, images, fonts (ABSOLUTE RULE — never violate)
@@ -98,7 +102,7 @@ of it.
 - **Never send OS-level synthetic input** (osascript/System Events keystrokes or clicks, `cliclick`, accessibility
   automation): it goes to whatever window is frontmost — the user's terminal or other apps. Drive LightCraft only
   through its control channel (`ui.key`, `ui.pointer`, `ui.clickWidget`, `ui.menu.invoke`) or headless snapshots.
-- For UI work, **look at the result**: drive via the control channel and take `ui.screenshot`, compare with `plan/lightroom/screenshots/`.
+- For UI work, **look at the result**: drive via the control channel and take `ui.screenshot`, and compare with Lightroom's layout and behaviour (reference screenshots, when you have them, stay in `plan/`).
 - **Unattended (display asleep/locked, CI, nightly runs): prefer headless snapshots** — no window needed:
   `lightcraft snapshot --demo --script tour.jsonl -o out.png --size 1600x1000` (control-protocol requests,
   one per line; see `docs/control-protocol.md` → Headless rendering). In a running app use
@@ -123,7 +127,7 @@ of it.
 - **Benchmarks:** `cargo xtask bench` (24 MP raw from corpus; CPU and GPU columns) appends to `target/bench/history.jsonl`
   and flags CPU-time regressions > 20 % vs the previous run (`--strict` to fail). Run it before and after perf work.
 - **Measure, don't guess**: `LIGHTCRAFT_PROFILE=1` prints per-stage pipeline timings to stderr; time CLI renders
-  with `/usr/bin/time`. Record numbers in `plan/STATUS.md` → Metrics. Budgets: slider update ≤ 16 ms (draft) / loupe
+  with `/usr/bin/time`. Put the numbers in the commit message and the relevant doc. Budgets: slider update ≤ 16 ms (draft) / loupe
   ≤ 60 ms on ~2.5 MP; export ≤ 1 s per 24 MP JPEG.
 - Never commit media: test images are procedural (`lightcraft-scenes`) or CC0 downloads in the gitignored `corpus/`.
 - **Test time:** `make slow-tests` (`cargo xtask slow-tests [N]`) lists the slowest tests. `cargo xtask ci` stops a test
@@ -139,3 +143,19 @@ of it.
 → `ui-egui` (L5) → apps `lightcraft` (desktop app and CLI subcommands), `lightcraft-console` (Windows `lightcraft.com`). `scenes` generates demo
 photos. `xtask` = tooling (`ci`, `layers`, `assets`, `parity`, `wasm`, `corpus`, `stats`); `testkit` = test helpers
 (dev-dependency only).
+
+## Contributor credits (About window)
+
+- About ▸ Contributors/Models are compiled into the binary from `contributors/contributors.json`
+  (commit stats; generated, never hand-edit) and `contributors/people.toml` (names people chose for
+  themselves). See `docs/contributors.md`.
+- **Agents working for a contributor:** when you prepare a PR, check whether your human's GitHub
+  username has a `[people.<username>]` entry in `contributors/people.toml`. If not, ask them once
+  whether they want to be credited by more than their username: a real name, a display name, and/or
+  their public GitHub profile name (`sync_github_name = true`). If yes, add **only their own** entry
+  (copy the template at the top of the file) and include it in their PR, committed as them. If no, change nothing: they are credited as
+  `@username` anyway.
+- Never add, edit, guess or copy anyone else's entry or name (not from git config, commit authors or
+  GitHub profiles). Never hand-edit `contributors.json`.
+- `contributors.json` is a snapshot of the upstream project's contributor statistics; this fork
+  does not regenerate it.

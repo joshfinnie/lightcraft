@@ -51,7 +51,7 @@ The commands on the command line run first, then the script's lines, each as it 
 command at a time into `--script -` and read each reply before it sends the next. The session is the CLI's own,
 never the running app's: a library the app has open is refused (the app holds it), and `ui.*` methods need the
 app's window. To drive the running app, start it with `--control PORT` and talk to its
-[control channel](control-protocol.md) (`docs/showcase/run.py` sends JSON-lines files); to script the UI
+[control channel](control-protocol.md) (a client authenticates with the run's token first; `docs/showcase/run.py` sends JSON-lines files); to script the UI
 without a window, use `lightcraft snapshot --script`.
 
 `app.export` takes the Export dialog's options (`lightcraft commands` lists them) and writes the files; with

@@ -2,9 +2,10 @@
 
 **Stage: alpha** · next: beta, ~14 points and ~340–600 h away
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-21 · **Change:** minor (Localization dropped: this fork is English only) · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-30 · **Change:** minor (platforms and the quality gate as they are in this fork) · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6
 
-One-page summary of how close LightCraft is to Adobe Lightroom. Agents: read this, then pick work
+One-page summary of how close LightCraft is to Adobe Lightroom. This is Josh Finnie's fork of
+storytold/lightcraft, developed on its own. Agents: read this, then pick work
 from [docs/gaps.md](docs/gaps.md). The full assessment, method and evidence are in
 [docs/target-app-parity.md](docs/target-app-parity.md).
 
@@ -24,14 +25,14 @@ Each audience with its own hours (Opus 5.5 agent wall-clock hours to ~95%):
 
 | Audience | Ready | Opus 5.5 agent wall-clock hours to ~95% | Work that dominates |
 |---|---:|---:|---|
-| Full target (ready for real work) | **~61%** | **1,000–1,800 h** (~70% parallelizes) | raw colour, lens and camera data; AI models; Classic output modules; localization; plug-in ecosystem |
+| Full target (ready for real work) | **~61%** | **1,000–1,800 h** (~70% parallelizes) | raw colour, lens and camera data; AI models; Classic output modules; plug-in ecosystem |
 | Mainstream practitioner | **~51%** | **450–840 h** (~60% parallelizes) | camera colour and render fidelity; CR3 / ORF / HE NEF; lens database; subject / sky masks; Lightroom XMP exchange; stability |
 | Essentials user | **~65%** | **160–300 h** (~50% parallelizes) | default raw look for popular cameras; launch stability; basic-slider feel; opening CR3 / HEIC files people send |
 
 The gap between breadth and readiness is quality and coverage, not missing buttons: camera colour is
 estimated rather than measured, CR3 decodes on 26 verified Canon bodies (rarer CRX variants still open as previews), compressed ORF and HE NEF
 open as previews, rendering is tuned by eye, AI masks are heuristics, there is no lens database, and
-tests run in CI on FreeBSD only. **Why alpha:** core workflows run end to end, but readiness is below
+there is no hosted CI: the gate is `cargo xtask ci`, run locally. **Why alpha:** core workflows run end to end, but readiness is below
 the ~75% beta bar (it is above the ~40% alpha bar) and Lightroom's main inputs, raw files, still have blocking gaps (compressed ORF and HE NEF open as previews; Canon,
 ~30% of raw users, decodes CR3 on 26 verified bodies). It passes the alpha gate: all six core workflows
 (import, cull, develop, save and reopen, batch looks, export) work end to end on macOS
@@ -52,7 +53,7 @@ Hours are calibrated on this repo's PR history; see
 | Localization | n/a: this fork is English only | n/a | 0 h | removed 2026-10-21 |
 | Performance | ~70% | ~80% | 30–50 h | [target-app-parity](docs/target-app-parity.md#by-dimension) |
 | Stability | ~60% | — | 30–60 h | [target-app-parity](docs/target-app-parity.md#by-dimension) |
-| Platforms | ~60% | macOS, Windows, Linux, FreeBSD, web | 25–45 h | [target-app-parity](docs/target-app-parity.md#by-dimension) |
+| Platforms | ~60% | Apple silicon macOS, Windows x64 and web tested; Linux packages built, not tested | 25–45 h | [target-app-parity](docs/target-app-parity.md#by-dimension) |
 | Ecosystem / plug-ins | ~15% | ~25% | 40–80 h | [target-app-parity](docs/target-app-parity.md#by-dimension) |
 | AI features | ~20% | ~30% | 120–220 h (overlaps features) | [target-app-parity](docs/target-app-parity.md#ai) |
 
@@ -92,7 +93,7 @@ Ranked toward beta; detail in [docs/roadmap.md](docs/roadmap.md), gaps in [docs/
 5. AI masks: Subject / Sky / People (40–70 h + model decision)
 6. Compressed ORF and HE NEF (28–55 h)
 7. Lens profile database of our own (40–80 h)
-8. Tests in CI on macOS, Windows and Linux (6–12 h)
+8. Hosted CI and Linux testing; today `cargo xtask ci` runs locally (6–12 h)
 9. Per-model raw verification (20–35 h)
 
 ## Progress log
@@ -192,3 +193,4 @@ Ranked toward beta; detail in [docs/roadmap.md](docs/roadmap.md), gaps in [docs/
 | 2026-10-14 | minor | 97 Canon CR2, Pentax and Ricoh models verified (334 models, 23%); headline numbers unchanged |
 | 2026-10-14 | minor | RAW: 82% of Adobe's models decode, 36% verified (integration batch 36's CC0 per-model checks) |
 | 2026-10-21 | minor | Localization dropped: this fork is English only |
+| 2026-10-30 | minor | Platforms and quality gate updated for this fork (macOS, Windows x64 and web tested; Linux untested; `cargo xtask ci` run locally, no hosted CI); headline numbers unchanged |

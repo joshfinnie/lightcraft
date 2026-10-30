@@ -10,7 +10,9 @@ to a draft GitHub Release.
    semantic version such as `1.2.0` or `1.2.0-rc.1`; a version with a hyphen is published as a
    prerelease.
 2. Run `make check` on the commit you are releasing.
-3. On each platform you ship (a Mac, a Windows PC, a Linux machine), run:
+3. On each platform you ship, run the following. The supported targets are Apple silicon macOS and
+   Windows x64 (the web zip comes with either); the Linux packages are kept building, but Linux is not
+   the tested target.
 
    ```sh
    make release          # installers for this platform, the web zip and SHA256SUMS.txt in dist/release/

@@ -1,10 +1,11 @@
 # LightCraft — instructions for agents
 
-LightCraft is a clean-room, open-source, pure-Rust photo library + non-destructive raw developer targeting Adobe Lightroom parity (and beyond). Native on macOS, Windows, Linux; web via WASM. Sibling of `../pdfcraft` (Acrobat), `../photocraft` (Photoshop), `../vectorcraft` (Illustrator) and `../filmcraft` (Premiere), with the same conventions.
+LightCraft is a clean-room, open-source, pure-Rust photo library + non-destructive raw developer targeting Adobe Lightroom parity (and beyond). This repository is Josh Finnie's personal fork of `storytold/lightcraft` (remote `upstream`), independent of it: no storytold dependencies, URLs or ids, but the upstream copyright and licence notices stay. Targets: Apple silicon macOS, Windows x64 and the web (WASM); Linux packaging is kept and must keep building. English only.
 
 ## Start every session here
-1. Read `plan/STATUS.md` (current milestone, next unchecked task, blockers).
-2. Read the task in `plan/execution-plan.md` §3, the relevant section of `plan/architecture.md`, and the README/docs of the crate you touch. Behaviour/visual reference: `plan/lightroom/` (incl. `10-observed-ui.md` + screenshots).
+1. Check `git status`, `git worktree list` and `git log --oneline -10` for work in progress.
+2. Read [`docs/architecture.md`](docs/architecture.md) (layers, data model, rendering, gates) and the README/docs of
+   the crate you touch.
 3. **Know where we stand:** read [`ROADMAP.md`](ROADMAP.md) (stage, headline numbers, every dimension) and, for
    method and evidence, [`docs/target-app-parity.md`](docs/target-app-parity.md). The checklist counts features that
    *exist*; the real gaps are quality and coverage: camera colour calibration, CR3 / compressed raws, per-model
@@ -15,10 +16,13 @@ LightCraft is a clean-room, open-source, pure-Rust photo library + non-destructi
    tracker is [`docs/parity-checklist.md`](docs/parity-checklist.md) (one row per feature, menu item and shortcut).
    When you land a feature, update its row(s) and the gap entry in the same commit, and the numbers in `ROADMAP.md` /
    `docs/target-app-parity.md` when a listed gap closes (bump each doc's *Last updated* line and revision history); `cargo xtask parity` (part of `ci`) checks that every `cmd:`/`ctl:` id and
-   path the tracker cites still exists, and `cargo xtask parity --write` refreshes its summary.
-5. Follow the autonomous operation protocol (`plan/execution-plan.md` §7). Don't stop to ask unless §7 lists the decision as the user's.
+   path the tracker cites still exists and that `docs/gaps.md` lists each gap once, and `cargo xtask parity --write`
+   refreshes its summary.
+5. Work autonomously. Stop to ask only for decisions that are the user's: anything outward-facing or hard to undo
+   (pushing, publishing, releases, repo settings, deleting branches or data), licences, and new dependencies on
+   outside services.
 
-`plan/` is gitignored (local-only).
+`plan/` is gitignored: local notes and Lightroom reference material that are never committed.
 
 **Merging agent branches:** merge one branch, run `cargo xtask ci`, fix, commit — then the next. Two individually green
 branches can still break each other (e.g. a new struct field vs. a new constructor).
@@ -56,15 +60,24 @@ of it.
 
 ## Non-negotiables
 - **Clean-room.** Never read/disassemble anything inside Adobe app bundles (names/listings only). Never copy Adobe icons, presets, profiles (DCP), lens profiles (LCP), camera matrices, fonts. Observation of the installed Lightroom is read-only (it syncs the user's personal library: never import/edit/rate/delete there). Never copy GPL/LGPL/AGPL code (darktable, RawTherapee, ART, LibRaw, rawspeed, rawloader, rawler, lensfun, dcraw-derived GPL code…).
-- **Pure Rust** in the product. No C/C++ dependencies.
-- **Layering** (`plan/architecture.md` §3, enforced by `cargo xtask layers`): nothing below L5 depends on egui/eframe/winit/rfd.
+- **Pure Rust** in the product. No C/C++ dependencies. `cargo xtask deps` (`cargo deny check`, `deny.toml`; in `ci`)
+  refuses crates that build C/C++/assembly (`ring`, `aws-lc-*`, `openssl`, `*-sys` compression…), copyleft
+  licences, sources other than crates.io, and RustSec advisories. An advisory that can't reach LightCraft is
+  ignored in `deny.toml` with the reason; never ignore one to make a commit pass without checking that.
+  Install the tool once: `cargo install --locked cargo-deny`.
+- **Layering** ([`docs/architecture.md`](docs/architecture.md), enforced by `cargo xtask layers`): nothing below L5 depends on egui/eframe/winit/rfd.
 - **Everything is a command** (`crates/engine`): id, label, menu path, shortcut, params, enabled(), run(). UI, CLI and control channel all dispatch by id. Every slider is a `develop` control spec.
   A command's params are a `params!` struct (`crates/engine/src/cmd/params.rs`) named in its `cmd!`: a key it doesn't
   take (at any depth) or a value of the wrong type is refused before `run`, never ignored. A partial value the command
   merges (`Patch`) is read with `params::from_value`, which checks it the same way. `tests/param_callers.rs` checks every
   written-out call in the repo against the keys its command takes.
+- **Long-running work shows in the activity stack** ([`docs/background-tasks.md`](docs/background-tasks.md)): anything
+  that runs off the UI thread and can take more than a moment holds a `TaskGuard` from `session.activity.start(kind,
+  label, cancel)` for its whole run. It adopts the cancel flag the job already checks (`Cancel::Flag`), or uses
+  `Cancel::No` when the job can't stop. No progress window, panel or progress toast of its own; its tests assert the row.
 - **Resolution independence:** settings use normalized image coordinates and relative radii; previews and exports must match.
-- **Quality gates** before every commit: `cargo xtask ci` (fmt, clippy -D warnings, tests, layers, assets, wasm).
+- **Quality gates** before every commit: `cargo xtask ci` (fmt, clippy -D warnings, heif, tests, parity, layers, assets,
+  deps, wasm). There is no hosted CI; this is the gate.
 - **Commits:** one task id per commit (`M2.3: local Laplacian highlights/shadows`). Only green states. End messages with the attribution line required by the environment.
 
 ## Assets: icons, images, fonts (ABSOLUTE RULE — never violate)
@@ -89,7 +102,7 @@ of it.
 - **Never send OS-level synthetic input** (osascript/System Events keystrokes or clicks, `cliclick`, accessibility
   automation): it goes to whatever window is frontmost — the user's terminal or other apps. Drive LightCraft only
   through its control channel (`ui.key`, `ui.pointer`, `ui.clickWidget`, `ui.menu.invoke`) or headless snapshots.
-- For UI work, **look at the result**: drive via the control channel and take `ui.screenshot`, compare with `plan/lightroom/screenshots/`.
+- For UI work, **look at the result**: drive via the control channel and take `ui.screenshot`, and compare with Lightroom's layout and behaviour (reference screenshots, when you have them, stay in `plan/`).
 - **Unattended (display asleep/locked, CI, nightly runs): prefer headless snapshots** — no window needed:
   `lightcraft snapshot --demo --script tour.jsonl -o out.png --size 1600x1000` (control-protocol requests,
   one per line; see `docs/control-protocol.md` → Headless rendering). In a running app use
@@ -99,6 +112,9 @@ of it.
 - Export goes through `lightcraft_engine::export` (one encoder for app, CLI and web). UI-only commands are rows of
   `UI_COMMANDS` in `crates/ui-egui/src/menus.rs` (id, label, shortcut, menu, params type, function), run by
   `crates/ui-egui/src/commands/*.rs`; their params are typed like the engine's.
+- Text boxes use `crates/ui-egui/src/text_field.rs` (`TextField`), not `egui::TextEdit`: it gives every field the
+  Cut / Copy / Paste / Select All menu, Esc restoring the text, and reports how an edit ended. Give each a widget id
+  that is unique on screen. Older fields still on `TextEdit` move over as they are touched.
 - Shell gotcha: `mv`/`cp` are aliased interactive here — use `/bin/mv -f` / `/bin/cp -f`.
 - Parallel agents: separate git worktrees and `CARGO_TARGET_DIR=target/agent-<name>`; each agent uses its **own control port** (pick one in 18000–19999, never the default 7980) and its own scratch subfolder (`<scratch>/<agent-name>/`) — never `rm -rf` shared paths; delete your target dir when done (disk is shared); keep every `Cargo.toml` valid at all times (the `crates/*` glob means one broken manifest breaks everyone).
 - Test corpora: `cargo xtask corpus --download` into `corpus/` (gitignored, CC0 only). Never commit media.
@@ -111,9 +127,13 @@ of it.
 - **Benchmarks:** `cargo xtask bench` (24 MP raw from corpus; CPU and GPU columns) appends to `target/bench/history.jsonl`
   and flags CPU-time regressions > 20 % vs the previous run (`--strict` to fail). Run it before and after perf work.
 - **Measure, don't guess**: `LIGHTCRAFT_PROFILE=1` prints per-stage pipeline timings to stderr; time CLI renders
-  with `/usr/bin/time`. Record numbers in `plan/STATUS.md` → Metrics. Budgets: slider update ≤ 16 ms (draft) / loupe
+  with `/usr/bin/time`. Put the numbers in the commit message and the relevant doc. Budgets: slider update ≤ 16 ms (draft) / loupe
   ≤ 60 ms on ~2.5 MP; export ≤ 1 s per 24 MP JPEG.
 - Never commit media: test images are procedural (`lightcraft-scenes`) or CC0 downloads in the gitignored `corpus/`.
+- **Test time:** `make slow-tests` (`cargo xtask slow-tests [N]`) lists the slowest tests. `cargo xtask ci` stops a test
+  step after 90 minutes (`LIGHTCRAFT_CI_STEP_MINUTES`), so a test that hangs fails the run.
+- **Fuzzing:** [`fuzz/`](fuzz/README.md) runs the raw, codec and metadata parsers under cargo-fuzz (nightly,
+  its own workspace). Run it after touching a parser; every finding becomes a synthetic regression test.
 - A test that can't run here (no GPU, corpus file, model) calls `lightcraft_testkit::skip!(Gpu, "why")`
   before it returns, not a bare `eprintln!`. `cargo xtask ci` then lists the skips and the machine's GPU adapters and
   data, and writes `target/ci/report.json` and `target/ci/summary.md` (Markdown for a PR).

@@ -4,9 +4,9 @@ description: LightCraft is a free, open-source photo library and raw developer, 
 verified: 0.7.1
 ---
 
-LightCraft is a photo library and raw developer that runs on your own computer. It is an open-source alternative to Adobe Lightroom, written in Rust, and part of the Craft App Suite from the ArtCraft team.
+LightCraft is a photo library and raw developer that runs on your own computer. It is an open-source alternative to Adobe Lightroom, written in Rust, and this version is a personal fork of the original LightCraft by the ArtCraft team.
 
-You import photos, sort them with ratings, flags and albums, and edit them without touching the originals. It reads raw files from Canon, Sony, Nikon, Fujifilm, Panasonic, Leica, Pentax and Olympus cameras, and DNG. There is no account, no cloud, no telemetry and no subscription. It runs on Windows, macOS and Linux, and in a web browser. LightCraft is in alpha, so expect rough edges.
+You import photos, sort them with ratings, flags and albums, and edit them without touching the originals. It reads raw files from Canon, Sony, Nikon, Fujifilm, Panasonic, Leica, Pentax and Olympus cameras, and DNG. There is no account, no cloud, no telemetry and no subscription. It runs on Apple silicon Macs, on 64-bit Windows and in a web browser. LightCraft is in alpha, so expect rough edges.
 
 ## Start here
 
@@ -23,4 +23,4 @@ You import photos, sort them with ratings, flags and albums, and edit them witho
 
 ## Get help
 
-Ask in [Discord](https://discord.gg/artcraft) or open an issue in the [issue tracker](https://github.com/joshfinnie/lightcraft/issues). Say which system and camera you use, and your LightCraft version (**Help** > **About LightCraft**; on macOS, **LightCraft** > **About LightCraft**).
+Open an issue in the [issue tracker](https://github.com/joshfinnie/lightcraft/issues). Say which system and camera you use, and your LightCraft version (**Help** > **About LightCraft**; on macOS, **LightCraft** > **About LightCraft**).

@@ -12,11 +12,14 @@ the crate is its own workspace and needs nightly Rust; nothing in the app depend
 | `meta_extract` | `lightcraft_meta::extract`, `read_exif`, `parse_iptc` and `parse_xmp` |
 
 ```text
-cargo install cargo-fuzz
+cargo install cargo-fuzz --locked
 cd fuzz
-cargo run --example seeds        # small valid files of every kind into corpus/<target>/
+cargo +nightly run --example seeds   # small valid files of every kind into corpus/<target>/
 cargo +nightly fuzz run raw_decode -O -- -max_total_time=300 -rss_limit_mb=4096 -timeout=10 -max_len=262144
 ```
+
+From the repository root, `make seeds` writes the seeds and `make fuzz FUZZ_TARGET=codecs_decode FUZZ_SECONDS=600`
+runs one target (`make smoke` decodes every sample and seed once).
 
 `-rss_limit_mb` and `-timeout` make an allocation sized by a header, or a decode that never ends,
 a finding like a panic. A finding is written to `artifacts/<target>/`; replay it with

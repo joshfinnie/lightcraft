@@ -34,12 +34,12 @@ guard.detail(&file_name);
   `Clone + Send`).
 - **`kind`** is a stable camelCase id that agents filter by (`export`, `import`, `scan`, `sync`, `previews`,
   `download`, `faces`, `cache`, `focus`…). **`label`** is a short English name in sentence case ("Building previews"). The stack shows it
-  translated, so add it to every catalog in `crates/ui-egui/locales/`.
+  through `tr` (`crates/ui-egui/src/i18n.rs`); the UI is English only, so there is no catalog to add it to.
 - **Progress:** `progress(done, total)`. A `total` of 0 means the amount of work isn't known yet, and the bar sweeps.
   `set_unit(Unit::Bytes)` makes the count read "12 of 340 MB"; `Unit::Percent` reads "40 %". The default `Unit::Count`
   reads "3 of 25".
 - **Detail:** what the job is on (a file name, a model's name). Detail set by engine code is a name, never a sentence.
-  UI code may set translated text.
+  UI code may set display text (through `tr`).
 - **Cancel:**
   - `Cancel::Flag(Arc<AtomicBool>)` adopts the flag the job already checks. The row's ✕, `activity.cancel` and the
     job's own Cancel then all set the same atomic.

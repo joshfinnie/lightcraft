@@ -241,7 +241,7 @@ places (`EngineError::LightroomCatalog`, so `lightcraft run --library` too). `li
 External apps can use this channel to send commands and poll the running desktop app for feedback
 (e.g. knob values or LEDs). Start the app with `--control PORT`, then keep a JSON-lines connection to
 `127.0.0.1:PORT`. Discover command ids, parameters and current enablement with `engine.commands`;
-use control ids and ranges from `develop.controls` rather than translated labels or widget positions.
+use control ids and ranges from `develop.controls` rather than display labels or widget positions.
 
 | Task | Command through `engine.execute` | Result / effect |
 |---|---|---|

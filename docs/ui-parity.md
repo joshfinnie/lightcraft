@@ -1,17 +1,17 @@
 # UI parity
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-14 · **Change:** minor (zoom row: soft proofing sharp at 1:1; canvas tools by keyboard; focus-order test; ~50 unnamed hand-drawn widgets named) · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-30 · **Change:** patch (Export dialog key no longer a deliberate difference; language commands gone; Lightroom reference described as local) · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6
 
 How LightCraft's interaction compares with Lightroom's: views, panels, tools and handles, modifier
 keys, shortcuts, zoom, context menus and feel. Rows for individual menu items and shortcuts live in
 [parity-checklist.md](parity-checklist.md) (sections Y and Z, Classic keys); this page is the
-assessment and the notes that don't fit a row. Visual reference for agents: `plan/lightroom/`
-(local, gitignored; `10-observed-ui.md` and screenshots).
+assessment and the notes that don't fit a row. The visual reference (notes and screenshots of
+Lightroom) is local and uncommitted; it is not part of the repository.
 
 ## Measured counts (2026-10-10)
 
 - 226 engine commands (`crates/engine/src/cmd/`, 30 modules) and 143 UI commands (`UI_COMMANDS` in
-  `crates/ui-egui/src/menus.rs`, 73 with a shortcut) plus 10 language commands; 23 secondary
+  `crates/ui-egui/src/menus.rs`, 73 with a shortcut) plus 10 language commands (removed 2026-10-21); 23 secondary
   shortcut bindings (`ALIASES`, `crates/ui-egui/src/shortcuts.rs`); a keymap editor.
 - 122 develop controls plus 10 indexed templates (`crates/develop/src/controls.rs`).
 - Checklist: menus 95.3% (86 in-scope rows), desktop shortcuts 94.4% (81 rows), Classic extras
@@ -42,7 +42,7 @@ modules and AI tools are counted with their features in [target-app-parity.md](t
 
 ## Shortcuts
 
-Compared `plan/lightroom/06-shortcuts.md` (desktop part) with our bindings: command specs in `crates/engine/src/cmd/`,
+Compared Lightroom's desktop shortcut list (from the local reference notes) with our bindings: command specs in `crates/engine/src/cmd/`,
 `UI_COMMANDS` in `crates/ui-egui/src/menus.rs` and secondary bindings (`ALIASES`) in `crates/ui-egui/src/shortcuts.rs`.
 `no_conflicting_bindings` (same file) fails when one key fires two actions.
 
@@ -61,10 +61,11 @@ under the UI command that wraps it (a no-op error); the UI command now wins.
 | Histogram | ⌘⇧H | ⌘0 | ⌘0 = Zoom to Fit |
 | Square Grid | ⇧G | (none; ⇧G = Guided Upright) | Guided Upright is a button in the Crop panel |
 | Hide / show pins (Tool Overlay) | ⇧H (cycles Auto, Always, Selected, Never) | H (Classic) | H opens Remove; View ▸ Tool Overlay and the Remove / Masking panels pick a mode |
-| Export dialog | ⌘⇧E (+ ⇧E) | ⇧E | ⌘⇧E is "Edit in Photoshop" there; no external-editor command yet |
 | Crop overlay cycle | ⇧O | O | O = mask overlay; ⇧O (mask colour / overlay orientation) unused otherwise |
 | Create Version | ⌘⇧S (+ ⇧M) | ⇧M (Windows: Ctrl+⇧S) | — |
 | Select None | ⌘⇧A (+ ⌘D) | ⌘D | — |
+
+The Export dialog is ⇧E, as in Lightroom; ⌘⇧E is Edit in PhotoCraft, where Lightroom has Edit in Photoshop.
 
 **Library culling (KEYC-RATING):** `0–5`, `6–9` and `P/X/U` reach egui on macOS even when displayed in the native menu (adapted from PR #261; issue #283). `Shift+0–9` applies and advances once; `Shift+P` picks and advances in Photo Grid / Square Grid and retains Presets elsewhere. See [library shortcuts](library-shortcuts.md) for the verified Classic mapping and regression coverage. `` ` `` cycles the flag (unflagged → pick → reject → unflagged) and ⌘↑ / ⌘↓ raise / lower it; the native menu leaves ⌘↑ / ⌘↓ to egui so Compare/Survey act on the active photo. Remaining Classic gaps: filter-bar keys.
 
@@ -140,3 +141,4 @@ a real screen reader on any platform yet.
 | 2026-10-12 | minor | Accessibility: an AccessKit tree audit test over every view, Develop tool and 13 dialogs; unnamed fields, slider ranges and the Auto Stack slider fixed; 30% → 55%; UI remaining 40–70 h → 34–58 h |
 | 2026-10-11 | minor | Zoom row: Compare and Reference get zoom windows; what remains of LR-VIEW-ZOOM is overlays and soft proofing |
 | 2026-10-10 | major | Created: measured command and shortcut counts, assessment by area, estimates; moved the shortcut conflicts section here from the checklist |
+| 2026-10-30 | patch | Shortcuts: Export dialog (⇧E) leaves the deliberate differences, ⌘⇧E is Edit in PhotoCraft; the 10 language commands in the dated counts noted as removed; the Lightroom reference described as local and uncommitted |

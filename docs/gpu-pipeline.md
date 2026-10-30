@@ -33,7 +33,7 @@ means to use (`lightcraft_gpu::backend`), for its compute device *and* for the d
 |---|---|
 | Windows | DX12 only — the Vulkan driver is never loaded unless asked for |
 | macOS | Metal |
-| Linux / BSD | Vulkan (the window also lists GL, eframe's default; no GL backend is compiled in) |
+| Linux | Vulkan (the window also lists GL, eframe's default; no GL backend is compiled in) |
 
 Overrides (read once at launch):
 - `LIGHTCRAFT_GPU_BACKEND=dx12 | vulkan | metal | gl | auto | off` (comma lists allowed, e.g.

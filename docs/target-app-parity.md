@@ -1,6 +1,6 @@
 # Target-app parity: LightCraft vs Adobe Lightroom
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-21 · **Change:** minor (Localization dropped: this fork is English only) · **Target:** Adobe Lightroom Classic 15.5 (August 2026) and Lightroom 9.6 (desktop)
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-30 · **Change:** minor (platforms and stability as they are in this fork; Localization out of the full sum) · **Target:** Adobe Lightroom Classic 15.5 (August 2026) and Lightroom 9.6 (desktop)
 
 The authoritative assessment of how close LightCraft is to Lightroom. The row-by-row checklist is
 [parity-checklist.md](parity-checklist.md); the ranked work list is [gaps.md](gaps.md); deep areas
@@ -52,8 +52,8 @@ phase #85, duplicate Local entries #22, black GPU exports on an Intel iGPU #78).
 | Hardware | ~50% | ~40% | 40–80 h (+ tethering and printing, counted under Classic modules) | [hardware-parity.md](hardware-parity.md) |
 | Localization | n/a: this fork is English only | n/a | 0 h | removed 2026-10-21 |
 | Performance | ~80% | ~70% | 30–50 h | 24 MP GPU slider 3.9 ms, export 0.3 s (measured, [gpu-pipeline.md](gpu-pipeline.md)); 85k library opens in 1.7–4.7 s; 100k test pending |
-| Stability | — | ~60% | 30–60 h | never-crash lints and guards workspace-wide, crash-tested journal, 2,561 tests; but CI runs tests only on FreeBSD, user reports keep finding bugs in ✅ areas |
-| Platforms | macOS, Windows (x64 / x86 / ARM64), Linux (AppImage, deb, rpm, Flatpak), web | ~60% | 25–45 h | macOS is where it is tested; Windows installer UI unverified on Windows (#79); web experimental (CPU only) |
+| Stability | — | ~60% | 30–60 h | never-crash lints and guards workspace-wide, crash-tested journal, 2,561 tests; but no hosted CI (`cargo xtask ci` runs locally), user reports keep finding bugs in ✅ areas |
+| Platforms | macOS, Windows (x64 / x86 / ARM64), Linux (AppImage, deb, rpm, Flatpak), web | ~60% | 25–45 h | tested on Apple silicon macOS, Windows x64 and the web build (CPU only); Linux packages are built but not tested; Windows installer UI unverified on Windows (#79) |
 | Ecosystem / plug-ins | ~25% | ~15% | 40–80 h + owner decision | no Lightroom SDK equivalent (export, publish, metadata plug-ins); beyond the target: JSON-lines control channel, CLI |
 | AI features | ~30% | ~20% | 120–220 h + model decisions | [AI](#ai) (overlaps the masking and Enhance rows; not added twice) |
 
@@ -89,8 +89,6 @@ search embeddings; generative remove runs in Adobe's cloud.
 
 | Feature | LightCraft | Status |
 |---|---|---|
-| 2026-10-12 | minor | Mamiya MEF decoded (raw-parity.md): 241 verified, 35 unsupported; rounded numbers unchanged |
-| 2026-10-12 | minor | Epson ERF decoded (raw-parity.md): 240 models verified, 229 preview-only; shares and rounded numbers unchanged |
 | Subject / Sky / Background masks | classical heuristics; the file's own DNG semantic mattes | 🟡 |
 | People (faces, body, hair, skin…) and Landscape masks | — | ⬜ |
 | Object / Describe masks | SAM 3 in pure Rust (Metal / CPU); opt-in 3.4 GB download, no mirror configured | 🟡 |
@@ -109,7 +107,7 @@ pure-Rust inference is proven (faces, SAM 3, denoise).
 
 ## Ready for real work, mainstream practitioner and essentials user
 
-Three readiness numbers (craftrules `standards/progress-docs.md`). The full number is a weighted
+Three readiness numbers (from the upstream progress-docs standard). The full number is a weighted
 sum over the dimensions with written weights. Mainstream and essentials take the weighted depth of
 the areas their user touches, then apply written multiplicative discounts for what still stops real
 work. Each has its own hours to ~95%, calibrated as in [How hours are calibrated](#how-hours-are-calibrated)
@@ -117,7 +115,7 @@ work. Each has its own hours to ~95%, calibrated as in [How hours are calibrated
 
 | Audience | Ready | Opus 5.5 agent wall-clock hours to ~95% | Work that dominates |
 |---|---:|---:|---|
-| Full target (ready for real work) | **~61%** | **1,000–1,800 h** (~70% parallelizes) | raw colour, lens and camera data; AI models; Classic output modules; localization; plug-in ecosystem |
+| Full target (ready for real work) | **~61%** | **1,000–1,800 h** (~70% parallelizes) | raw colour, lens and camera data; AI models; Classic output modules; plug-in ecosystem |
 | Mainstream practitioner | **~51%** | **450–840 h** (~60% parallelizes) | camera colour and render fidelity; CR3 / ORF / HE NEF; lens database; subject / sky masks; Lightroom XMP exchange; stability |
 | Essentials user | **~65%** | **160–300 h** (~50% parallelizes) | default raw look for popular cameras; launch stability; basic-slider feel; opening CR3 / HEIC files people send |
 
@@ -135,12 +133,12 @@ valued from the model-by-model measurement in [raw-parity.md](raw-parity.md):
 | UI/UX fidelity | 8% | 70% |
 | File formats (non-raw) | 6% | 70% |
 | Hardware | 3% | 40% |
-| Localization | 3% | 55% |
+| Localization (left out: English only since 2026-10-21) | 0% | n/a |
 | Performance | 6% | 70% |
 | Stability | 8% | 60% |
 | Platforms | 4% | 60% |
 | Ecosystem / plug-ins | 2% | 15% |
-| **Weighted sum** | 100% | **61.2% ≈ 61%** (range 56–66%) |
+| **Weighted sum** | 97% (renormalized) | **61.5% ≈ 61%** (range 56–66%; 61.2% with Localization at 3% × 55%) |
 
 Mainstream comes out lower than full: its scope is the raw-develop core, where LightCraft is weakest
 (camera colour, CR3 coverage), and its discounts are multiplicative, while the full sum is lifted by
@@ -157,7 +155,7 @@ essentials replaces its guessed 45% raw look with 84% × 0.75 (+1 point).
 | Discount | Mainstream | Essentials | Evidence |
 |---|---:|---:|---|
 | Interaction fidelity / UI clarity | ×0.95 | ×0.95 | brush live preview gaps and feathering (#517, #518); crop artefacts and limits (#731, #742, #770, #771); Compare white-balance selector (#743–#745); low-res slider previews (#330); dialogs taller than the window (#781); mouse-wheel scroll (#714) |
-| Stability on real machines | ×0.92 | ×0.92 | launch and quit crashes or silent startup failures (#250 macOS 12 Intel, #315 Windows Intel GPU, #431 Intel Mac, #260, #462, #783 Linux / Nouveau, #790 Windows installer); tests run in CI on FreeBSD only (gap 9) |
+| Stability on real machines | ×0.92 | ×0.92 | launch and quit crashes or silent startup failures (#250 macOS 12 Intel, #315 Windows Intel GPU, #431 Intel Mac, #260, #462, #783 Linux / Nouveau, #790 Windows installer); no hosted CI and Linux untested (gap 9) |
 | File exchange with Lightroom users (mainstream) / opening files people send (essentials) | ×0.92 | ×0.95 | Adobe XMP sidecars change colours (#290), XMP CameraProfile and Upright ignored (#204, #205), catalog import fails (#599), same Light values render differently (#523, #209), no write-back to `.lrcat`; for casual users: CR3 beyond verified bodies, compressed ORF, HE NEF open as previews (#473, #485, #556), HEIC trouble (#693) |
 | **Product** | **×0.804** | **×0.830** | |
 
@@ -206,7 +204,7 @@ basic sliders, crop, apply a preset, undo, export JPEGs.
 
 78.0% × 0.830 = **~65%** (range 60–70%).
 
-### User evidence (GitHub issues, excluding the four maintainers)
+### User evidence (upstream GitHub issues, excluding the four maintainers)
 
 - 324 issues from 159 users; 162 open. 8,719 stars, 2,698 forks (2026-10-10).
 - Of the 162 open: **~92 core-path bugs** (33 colour / rendering, 16 decoding, ~36 UI / workflow, 7
@@ -229,7 +227,7 @@ with the standard, no new evidence. The stage stays **alpha**.
 
 **Alpha.** Core workflows exist end to end (import, cull, develop, mask, export, catalog migration),
 but ready-for-real-work is ~61%, below the ~75% beta bar, and the main file formats have blocking
-gaps: Canon CR3 decodes from sensor data on three verified bodies only, compressed ORF and HE NEF
+gaps: Canon CR3 decodes from sensor data on 26 verified bodies (rarer CRX variants open as previews), compressed ORF and HE NEF
 open as previews, and colour on every non-DNG raw is estimated rather than measured.
 
 **Alpha gate:** all six core workflows (import, cull, develop, save and reopen, batch looks, export)
@@ -241,7 +239,7 @@ variants, compressed ORF, HE NEF as previews) degrade but don't block a workflow
 around them. Beta needs: CR3, ORF and
 HE NEF decoding from sensor data; measured colour for the popular models and a fidelity suite with
 scores; Subject / Sky / People masks; a lens profile database for the
-popular lenses; tests in CI on macOS, Windows and Linux.
+popular lenses; hosted CI, and Linux tested as well as macOS, Windows and the web.
 
 ## How hours are calibrated
 
@@ -315,3 +313,6 @@ P2 items 12–25 h; look tuning, performance, packaging, hardening 25–45 h.
 | 2026-10-10 | major | Created per the progress-docs standard: full re-measure (checklist recount, installed Lightroom 9.6 bundle listing, code counts, catalogs, CI), feature areas with weights, dimensions, AI, stage, calibration; merged ROADMAP's *Where we stand* and *Parity estimate* |
 | 2026-10-14 | minor | RAW: 82% of Adobe's models decode, 36% verified (integration batch 36) |
 | 2026-10-21 | minor | Localization dropped: this fork is English only |
+| 2026-10-12 | minor | Mamiya MEF decoded (raw-parity.md): 241 verified, 35 unsupported; rounded numbers unchanged |
+| 2026-10-12 | minor | Epson ERF decoded (raw-parity.md): 240 models verified, 229 preview-only; shares and rounded numbers unchanged |
+| 2026-10-30 | minor | Platforms: macOS, Windows x64 and web tested, Linux built but untested; Stability and the beta needs say "no hosted CI" (was "CI tests FreeBSD only"); Localization left out of the full sum (61.2% → 61.5%, still ~61%); Stage corrected to 26 verified CR3 bodies; two revision rows that had landed in the AI table moved here |

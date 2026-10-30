@@ -1,51 +1,47 @@
 ---
 title: Install LightCraft
-description: Download LightCraft for Windows 11, macOS or Linux, install it, and open your photo library.
+description: Download LightCraft for an Apple silicon Mac or 64-bit Windows, or build it from source, and open your photo library.
 order: 10
 verified: 0.7.1
 ---
 
-Download the file for your system from the [latest release](https://github.com/joshfinnie/lightcraft/releases/latest) and install it. In the file names, `<version>` stands for the version number, for example `0.7.1`. The [LightCraft page on getartcraft.com](https://getartcraft.com/apps/lightcraft) also links the download.
+Download the file for your system from the [releases page](https://github.com/joshfinnie/lightcraft/releases) and install it. If there is no release for your system yet, [build LightCraft from source](#build-from-source). In the file names, `<version>` stands for the version number, for example `0.10.0`.
 
-## Windows 11
+LightCraft is tested on Apple silicon Macs, 64-bit Windows and the web version.
 
-1. Open the [latest release](https://github.com/joshfinnie/lightcraft/releases/latest).
+## Windows
+
+1. Open the [releases page](https://github.com/joshfinnie/lightcraft/releases).
 2. Download `lightcraft-<version>-windows-x64.msi`. It fits most PCs (Intel and AMD, 64-bit).
 3. Run the file. The installer asks where to install. The default is `C:\Program Files\LightCraft`, and upgrades stay in the folder you chose.
 4. At the end, choose the option to start LightCraft.
 
-For a Snapdragon or other Arm PC, download `lightcraft-<version>-windows-arm64.msi` instead. For a 32-bit Windows, download `lightcraft-<version>-windows-x86.msi`.
-
-Upgrading from an installer older than 0.6.0 also keeps LightCraft in the folder it was installed in. If that folder was deleted, the upgrade installs to `C:\Program Files\LightCraft`.
-
-To run it without installing, download `lightcraft-<version>-windows-x64-portable.zip`. Portable builds for `arm64` and `x86` are on the release page too.
+To run it without installing, download `lightcraft-<version>-windows-x64-portable.zip`.
 
 ## macOS
 
-1. Download `lightcraft-<version>-macos-universal.dmg`. It works on Apple silicon and Intel Macs, and is signed and notarized.
-2. Open the file and install LightCraft.
+1. Download `lightcraft-<version>-macos-universal.dmg`.
+2. Open the file and drag LightCraft to **Applications**.
 
-## Linux
-
-The release has these files for `x86_64` and `aarch64` (Arm). Replace `x86_64` with `aarch64` on Arm.
-
-| File                                         | Notes                                                    |
-|----------------------------------------------|----------------------------------------------------------|
-| `lightcraft-<version>-linux-x86_64.AppImage` | Runs anywhere.                                           |
-| `lightcraft-<version>-linux-x86_64.flatpak`  | Sandboxed. Install with `flatpak install --user <file>`. |
-| `lightcraft-<version>-linux-x86_64.deb`      | For Debian and Ubuntu.                                   |
-| `lightcraft-<version>-linux-x86_64.rpm`      | For Fedora, RHEL and openSUSE.                           |
-| `lightcraft-<version>-linux-x86_64.tar.gz`   | Unpack anywhere.                                         |
-
-RISC-V builds are on the release page too. On a Wayland desktop, LightCraft runs through XWayland when it is available, because only X11 gives it file drag-and-drop.
-
-## Install with ArtCraft Launcher
-
-[ArtCraft Launcher](https://getartcraft.com/docs/craft-launcher) lists LightCraft and can install and update it for you. On Windows it installs the release `.msi`.
+If macOS refuses to open LightCraft because it cannot check it for malicious software, open **System Settings** > **Privacy & Security** and click **Open Anyway** next to the message about LightCraft.
 
 ## In a web browser
 
-The release also has `lightcraft-web-<version>.zip`, a static site that runs LightCraft in a modern browser. Host it on any static web server.
+A release can also have `lightcraft-web-<version>.zip`, a static site that runs LightCraft in a modern browser. Host it on any static web server.
+
+## Build from source
+
+You need [Rust](https://www.rust-lang.org/tools/install) 1.95 or newer. Then, in a terminal:
+
+    git clone https://github.com/joshfinnie/lightcraft.git
+    cd lightcraft
+    cargo run --release -p lightcraft
+
+The first build takes a while. The [README](https://github.com/joshfinnie/lightcraft/blob/main/README.md) has more commands, including the web version.
+
+## Linux
+
+There are no Linux downloads, and Linux is not tested. You can build the packages yourself from a source checkout: `packaging/linux/package.sh` makes an AppImage, a `.deb`, an `.rpm` and a `.tar.gz`, and `packaging/linux/flatpak-bundle.sh` turns the `.tar.gz` into a Flatpak. On a Wayland desktop, LightCraft runs through XWayland when it is available, because only X11 gives it file drag-and-drop.
 
 ## First run
 
@@ -54,4 +50,4 @@ The release also has `lightcraft-web-<version>.zip`, a static site that runs Lig
 
 ## Still stuck?
 
-Ask in [Discord](https://discord.gg/artcraft) or open an issue in the [issue tracker](https://github.com/joshfinnie/lightcraft/issues).
+Open an issue in the [issue tracker](https://github.com/joshfinnie/lightcraft/issues).

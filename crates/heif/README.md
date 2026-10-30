@@ -35,7 +35,7 @@ Feature `testdata` exposes `lightcraft_heif::testdata`: lossless synthetic HEIF 
 ## Why it is a separate, optional crate
 
 - **A young decoder.** heic-rs is new and has a single maintainer. It is pinned exactly
-  (`=0.1.1`); moving the pin is a reviewed change (re-run the crate tests and
+  (`=0.1.4`); moving the pin is a reviewed change (re-run the crate tests and
   `cargo test -p lightcraft-codecs --features heif`). The other permissive candidates were
   rejected: heif-oxide's HEVC decoder (rust_h265) follows FFmpeg's (LGPL) code structure, and
   gamut-heic has no HEVC decoder of its own.

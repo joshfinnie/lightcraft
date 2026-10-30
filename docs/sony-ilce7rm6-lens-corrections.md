@@ -177,8 +177,8 @@ decoder's full-frame Compressed and APS-C Compressed HQ files (`arw6-sony-ilce7r
 the full-frame lossless file where it is present.
 Four lenses: FE 24–70 mm F2.8 GM II (27 photos), FE 16–35 mm F2.8 GM II (12, all RawDB), FE 100 mm F2.8 Macro GM OSS
 (9), FE 200–600 mm F5.6–6.3 G OSS (6). 41 photos have in-camera distortion correction on (all private); 13 have it
-off (the 12 RawDB files and one private photo). Only aggregate numbers per lens are reported. The scripts are local
-(the gitignored `plan/arw6/lens/`), not in the repository; the steps are described so they can be redone.
+off (the 12 RawDB files and one private photo). Only aggregate numbers per lens are reported. The scripts were local,
+uncommitted notes, not in the repository; the steps are described so they can be redone.
 
 - **Oracle:** the camera JPEG inside each ARW (`JpgFromRaw`, 9984 × 6656 / 6528 × 4352, stored unrotated, turned to
   the photo's orientation). Tag values were read with ExifTool used as a tool. Clean room: no lens-correction code of

@@ -4,9 +4,12 @@
 embedded SVG catalogs; `buttons` paints accessible icon buttons; `tabs` handles tab fitting and
 interaction; `layout` provides toolbar fitting, split geometry and resize handles; `theme` shares widget-state styling.
 `docking` supplies transactional panel moves and an optional docking surface.
-The current delivery covers nine creative apps (DesignCraft, VectorCraft, PhotoCraft, FilmCraft, EffectCraft, CADCraft, PDFCraft, LightCraft and SoundCraft); prior basic and office adapters are separate. The [suite audit](../../docs/ui-components-audit.md#adoption-and-acceptance)
+The current delivery covers nine creative apps (DesignCraft, VectorCraft, PhotoCraft, FilmCraft, EffectCraft, CADCraft, PDFCraft, LightCraft and SoundCraft); prior basic and office adapters are separate. The craft-libs suite audit (`docs/ui-components-audit.md` there)
 records their scope and acceptance limits. Assets, complete themes, localization and command handling
 remain in each application. No icons, fonts or application engines are bundled.
+
+LightCraft vendors this crate from craft-libs (`crates/ui` at commit `5c874d5`; see `NOTICE` at the
+repository root). The craft-libs documents this README names are not part of this repository.
 
 ## SVG catalogs
 
@@ -172,7 +175,7 @@ and body callbacks, then returns actions for the app's command handler. Its floa
 inside the current egui viewport. Protected document canvases have no tab header. Per-panel size
 limits constrain geometry without overwriting saved preferred widths when the window shrinks.
 Applications with established chrome can use the shared transaction model and `resolve_drop`
-without changing their renderer. See [the docking guide](../../docs/ui-docking.md) for details.
+without changing their renderer. See the craft-libs docking guide (`docs/ui-docking.md` there) for details.
 
 ## Toolbar overflow
 
@@ -208,14 +211,14 @@ fn style_widgets(visuals: &mut egui::Visuals, palette: WidgetPalette, text: Colo
 
 This is a mechanism for coloring widgets, not a shared theme schema. Fonts, complete palettes,
 selection colors, shadows, spacing, context storage and preference serialization remain in each
-application. See the [eight-app comparison](../../docs/theme-infrastructure.md) for the exact
+application. See the craft-libs eight-app comparison (`docs/theme-infrastructure.md` there) for the exact
 common operation and the differences preserved by the adapters.
 
 ## Compatibility and checks
 
 The crate uses egui 0.36 and Rust 1.95 or later. Its production dependency disables egui's default
 features so fonts and rendering features remain the application's choice. See the
-[suite audit](../../docs/ui-components-audit.md) for candidates, policies and adoption order.
+craft-libs suite audit for candidates, policies and adoption order.
 
 Validation:
 
@@ -226,7 +229,7 @@ cargo test --workspace
 cargo check --target wasm32-unknown-unknown -p craft-ui
 ```
 
-The [visual regression suite](../../docs/ui-visual-regressions.md) compares the actual controls
+The visual regression suite (`tests/visual_regression.rs`) compares the actual controls
 against independent reference painters, including exact mesh and RGBA checks, and proves that
 color, spacing and stroke changes fail those comparisons. To retain reviewable PNG pairs:
 

@@ -5,7 +5,7 @@ order: 30
 verified: 0.7.1
 ---
 
-Open an issue in the [issue tracker](https://github.com/joshfinnie/lightcraft/issues), or ask in [Discord](https://discord.gg/artcraft). Include your version, your system, what you did, and what you expected.
+Open an issue in the [issue tracker](https://github.com/joshfinnie/lightcraft/issues). Include your version, your system, what you did, and what you expected.
 
 ## What to include
 
@@ -19,8 +19,8 @@ Open an issue in the [issue tracker](https://github.com/joshfinnie/lightcraft/is
 
 ## Where the log is
 
-LightCraft writes its log to `logs/lightcraft.log` in its settings folder. On Windows that is `%APPDATA%\LightCraft\logs\`. Each start moves the previous log to `lightcraft.1.log`, and that one to `lightcraft.2.log`, so the log of a run that crashed survives the next start.
+LightCraft writes its log to `logs/lightcraft.log` in its settings folder. On macOS that is `~/Library/Application Support/LightCraft/logs/`, and on Windows `%APPDATA%\LightCraft\logs\`. Each start moves the previous log to `lightcraft.1.log`, and that one to `lightcraft.2.log`, so the log of a run that crashed survives the next start.
 
 ## Still stuck?
 
-Ask in [Discord](https://discord.gg/artcraft).
+Add what you have found to your issue in the [issue tracker](https://github.com/joshfinnie/lightcraft/issues).

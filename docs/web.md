@@ -148,7 +148,7 @@ are the same in every version, so serve them with `Cache-Control: no-cache` (not
   `write` service hands each file to the browser as a download instead of writing it to disk.
 - **Automation.** `await lightcraft.command("library.info", "{}")` runs any engine or UI command
   by id on the next frame and resolves to the JSON result (`web.stats` reports storage, workers
-  and the render queue). This is how the headless-Chrome checks drive the page.
+  and the render queue). A script, such as a headless browser, can drive the page this way.
 
 ## Not yet
 

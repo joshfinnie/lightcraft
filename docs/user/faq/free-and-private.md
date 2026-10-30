@@ -13,7 +13,7 @@ On your computer. Your library lives in a folder you choose, by default `~/Pictu
 
 ## Which systems does it run on?
 
-LightCraft runs on Windows, macOS and Linux, and in a web browser. See [Install LightCraft](../getting-started/install.md).
+LightCraft runs on Apple silicon Macs, on 64-bit Windows and in a web browser. Linux packages can be built from the source, but Linux is not tested. See [Install LightCraft](../getting-started/install.md).
 
 ## Is it finished?
 
